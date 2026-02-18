@@ -9,9 +9,7 @@ This page gets OpenPocket running locally with the current Node.js + TypeScript 
 - At least one Android AVD
 - API key for your configured model profile
 
-## Option A: npm package (global install)
-
-After the package is published to npm:
+## Option A: npm package (no source checkout required)
 
 ```bash
 npm install -g openpocket
@@ -19,11 +17,23 @@ openpocket init
 openpocket onboard
 ```
 
+If you use the native macOS panel, install the release package from:
+
+- [OpenPocket Releases](https://github.com/SergioChan/openpocket/releases)
+
+Then start the panel:
+
+```bash
+openpocket panel start
+```
+
 ## Option B: local clone (no global install)
 
 ```bash
-cd /Users/sergiochan/Documents/GitHub/phone-use-agent
+git clone git@github.com:SergioChan/openpocket.git
+cd openpocket
 npm install
+npm run build
 ./openpocket init
 ./openpocket onboard
 ```
@@ -32,7 +42,10 @@ npm install
 
 Default runtime home is `~/.openpocket`, unless `OPENPOCKET_HOME` is set.
 
-For commands below, use `openpocket ...` for npm global install, or `./openpocket ...` for local clone.
+For commands below:
+
+- use `openpocket ...` for npm package install
+- use `./openpocket ...` for local clone
 
 Initialization creates:
 
@@ -47,14 +60,6 @@ Initialization creates:
 - provider-specific API key setup based on selected model
 - option prompts use Up/Down arrows + Enter
 - emulator wake-up + manual Gmail login for Play Store
-
-Alternative (macOS GUI onboarding):
-
-```bash
-openpocket panel start
-```
-
-Then complete onboarding directly in the menu bar control panel UI.
 
 If you explicitly want a user-local PATH command without npm global install:
 

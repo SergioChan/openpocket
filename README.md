@@ -54,18 +54,31 @@ flowchart LR
 - Model API key (for your selected model profile)
 - Telegram bot token (if using gateway)
 
-### 2. Clone and install dependencies
+### 2. Option A: Use the npm package (no source code required)
+
+```bash
+npm install -g openpocket
+openpocket init
+openpocket onboard
+```
+
+If you use the native macOS panel, install the release package from:
+
+- [OpenPocket Releases](https://github.com/SergioChan/openpocket/releases)
+
+Then start the panel:
+
+```bash
+openpocket panel start
+```
+
+### 3. Option B: Use a local source clone (for contributors)
 
 ```bash
 git clone git@github.com:SergioChan/openpocket.git
 cd openpocket
 npm install
 npm run build
-```
-
-### 3. Initialize runtime state
-
-```bash
 ./openpocket init
 ./openpocket onboard
 ```
@@ -73,6 +86,15 @@ npm run build
 `./openpocket` runs `dist/cli.js` when present and falls back to `tsx src/cli.ts` in local dev installs.
 
 ### 4. Start runtime
+
+For npm package install:
+
+```bash
+openpocket emulator start
+openpocket gateway start
+```
+
+For local source clone:
 
 ```bash
 ./openpocket emulator start
@@ -110,8 +132,10 @@ export OPENPOCKET_HOME="$HOME/.openpocket"
 
 ## CLI Surface
 
-For local source development, use `./openpocket ...`.
-If you installed the local launcher with `install-cli`, you can use `openpocket ...`.
+Command prefix by install mode:
+
+- npm package install: use `openpocket ...`
+- local source clone: use `./openpocket ...` (or `openpocket ...` after `install-cli`)
 
 ```bash
 ./openpocket --help
