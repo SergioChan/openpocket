@@ -62,7 +62,7 @@ On first `onboard`, OpenPocket creates:
 - provider-specific API key setup based on selected model
 - option prompts use Up/Down arrows + Enter
 - emulator wake-up + manual Gmail login for Play Store
-- Android dependency doctor + auto-install on macOS when required
+- Android dependency doctor + auto-install on macOS when required (includes Java 17+ runtime for sdkmanager)
 
 If you explicitly want a user-local PATH command without npm global install:
 

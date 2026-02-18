@@ -6,8 +6,9 @@ dist/
 .DS_Store
 *.log
 .idea/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
+frontend/.vitepress/dist/
+frontend/.vitepress/cache/
+frontend/.vitepress/.temp/
 
 # npm auth
 .npmrc

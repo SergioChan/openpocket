@@ -25,10 +25,10 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
-    "docs:dev": "vitepress dev docs --host",
-    "docs:build": "vitepress build docs",
-    "docs:build:pages": "DOCS_BASE=/openpocket/ vitepress build docs",
-    "docs:preview": "vitepress preview docs --host"
+    "docs:dev": "vitepress dev frontend --host",
+    "docs:build": "vitepress build frontend",
+    "docs:build:vercel": "DOCS_BASE=/ vitepress build frontend",
+    "docs:preview": "vitepress preview frontend --host"
   },
   "engines": {
     "node": ">=20"

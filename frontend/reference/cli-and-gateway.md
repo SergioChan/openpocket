@@ -42,6 +42,7 @@ Local clone launcher:
 - saves normalized config
 - ensures workspace bootstrap files and directories
 - runs Android dependency doctor (auto-install on macOS when tools are missing)
+- ensures Java 17+ for Android command line tools; auto-installs via Homebrew on macOS if needed
 - runs interactive onboarding wizard (consent/model/API key/emulator login)
 
 ## `install-cli`

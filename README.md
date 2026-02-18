@@ -3,7 +3,7 @@
 [![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-0f766e.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/language-TypeScript-2563eb.svg)](https://www.typescriptlang.org/)
 [![Runtime](https://img.shields.io/badge/runtime-Local--emulator--first-0f172a.svg)](#architecture)
-[![Docs](https://img.shields.io/badge/docs-VitePress-0a9396.svg)](./docs/index.md)
+[![Docs](https://img.shields.io/badge/docs-VitePress-0a9396.svg)](./frontend/index.md)
 
 OpenPocket is a local emulator-first phone-use agent runtime for Android automation.
 
@@ -102,7 +102,7 @@ npm run build
 `openpocket onboard` automatically verifies Android runtime dependencies:
 
 1. If local tools are already installed, dependency installation is skipped.
-2. If tools are missing on macOS, OpenPocket tries automatic installation (Homebrew, Android SDK packages, and default AVD bootstrap).
+2. If tools are missing on macOS, OpenPocket tries automatic installation (Homebrew, Java 17+ runtime, Android SDK packages, and default AVD bootstrap).
 
 You can skip this step in CI/tests with:
 
@@ -190,10 +190,10 @@ Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
 The documentation frontend is implemented in this repository:
 
-- Site source: [`/docs`](./docs)
-- VitePress config: [`/docs/.vitepress/config.mjs`](./docs/.vitepress/config.mjs)
-- Custom homepage: [`/docs/index.md`](./docs/index.md)
-- Custom theme styles: [`/docs/.vitepress/theme/custom.css`](./docs/.vitepress/theme/custom.css)
+- Site source: [`/frontend`](./frontend)
+- VitePress config: [`/frontend/.vitepress/config.mjs`](./frontend/.vitepress/config.mjs)
+- Custom homepage: [`/frontend/index.md`](./frontend/index.md)
+- Custom theme styles: [`/frontend/.vitepress/theme/custom.css`](./frontend/.vitepress/theme/custom.css)
 
 ### Documentation Website
 
@@ -209,10 +209,10 @@ npm run docs:dev
 npm run docs:build
 ```
 
-- Build for GitHub Pages (project-path base):
+- Build for Vercel (root base path):
 
 ```bash
-npm run docs:build:pages
+npm run docs:build:vercel
 ```
 
 - Preview built docs:
@@ -223,27 +223,22 @@ npm run docs:preview
 
 ### Deployment options
 
-- GitHub Pages workflow: [`.github/workflows/deploy-docs-pages.yml`](./.github/workflows/deploy-docs-pages.yml)
 - Vercel config: [`vercel.json`](./vercel.json)
-- Deployment guide: [`/docs/get-started/deploy-docs.md`](./docs/get-started/deploy-docs.md)
-
-Expected GitHub Pages URL for this repo:
-
-- `https://sergiochan.github.io/openpocket/`
+- Deployment guide: [`/frontend/get-started/deploy-docs.md`](./frontend/get-started/deploy-docs.md)
 
 ### Docs entry points
 
-- [Docs Home](./docs/index.md)
-- [Documentation Hubs](./docs/hubs.md)
-- [Get Started](./docs/get-started/index.md)
-- [Project Blueprint](./docs/concepts/project-blueprint.md)
-- [Reference](./docs/reference/index.md)
-- [Ops Runbook](./docs/ops/runbook.md)
+- [Docs Home](./frontend/index.md)
+- [Documentation Hubs](./frontend/hubs.md)
+- [Get Started](./frontend/get-started/index.md)
+- [Project Blueprint](./frontend/concepts/project-blueprint.md)
+- [Reference](./frontend/reference/index.md)
+- [Ops Runbook](./frontend/ops/runbook.md)
 
 ## Repository Structure
 
 - [`/src`](./src): runtime source code (agent, gateway, device, tools, onboarding)
-- [`/docs`](./docs): project documentation + VitePress site source
+- [`/frontend`](./frontend): standalone frontend site (homepage + docs)
 - [`/test`](./test): runtime contract and integration tests
 - [`/apps/openpocket-menubar`](./apps/openpocket-menubar): native macOS menu bar control panel
 - [`/dist`](./dist): build output
@@ -261,7 +256,7 @@ npm test
 
 - Keep code, docs, comments, and tests in English.
 - Prefer behavior-driven changes with matching tests.
-- Document new runtime capabilities under `/docs` in the relevant hub.
+- Document new runtime capabilities under `/frontend` in the relevant hub.
 
 ## Security and Safety Notes
 

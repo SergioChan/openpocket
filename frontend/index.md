@@ -160,7 +160,7 @@ flowchart LR
     <a class="op-doc-link" :href="withBase('/get-started/deploy-docs')">
       <span class="op-doc-chip">Publish</span>
       <strong>Deploy Docs</strong>
-      <span class="op-doc-copy">Publish this documentation site via GitHub Pages or Vercel.</span>
+      <span class="op-doc-copy">Publish this documentation site on Vercel.</span>
       <span class="op-doc-cta">Deploy</span>
     </a>
     <a class="op-doc-link" :href="withBase('/hubs')">
