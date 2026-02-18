@@ -54,42 +54,38 @@ flowchart LR
 - Model API key (for your selected model profile)
 - Telegram bot token (if using gateway)
 
-### 2. Install and initialize (npm package)
-
-After publishing to npm, use:
+### 2. Clone and install dependencies
 
 ```bash
-npm install -g openpocket
-openpocket init
-openpocket onboard
+git clone git@github.com:SergioChan/openpocket.git
+cd openpocket
+npm install
+npm run build
 ```
 
-### 3. Install and initialize (local clone, no global install)
+### 3. Initialize runtime state
 
 ```bash
-cd /Users/sergiochan/Documents/GitHub/phone-use-agent
-npm install
 ./openpocket init
 ./openpocket onboard
 ```
 
-`./openpocket` automatically runs `dist/cli.js` when present, and falls back to `tsx src/cli.ts` in dev installs.
+`./openpocket` runs `dist/cli.js` when present and falls back to `tsx src/cli.ts` in local dev installs.
 
 ### 4. Start runtime
 
-Use `openpocket ...` (npm global install) or `./openpocket ...` (local clone):
-
 ```bash
-openpocket emulator start
-openpocket gateway start
+./openpocket emulator start
+./openpocket gateway start
 ```
 
-### 5. Command resolution and PATH behavior
+### 5. Optional: install a user-local command
 
-- `init` / `setup` / `onboard` do **not** modify your shell config or PATH.
-- Use `openpocket ...` when installed from npm globally.
-- Use `./openpocket ...` when running from a local cloned repository.
-- `openpocket install-cli` is optional and explicit; run it only if you want a user-local launcher under `~/.local/bin/openpocket`.
+```bash
+./openpocket install-cli
+```
+
+This installs `~/.local/bin/openpocket` and updates shell rc files when needed.
 
 ## Configuration
 
@@ -114,23 +110,30 @@ export OPENPOCKET_HOME="$HOME/.openpocket"
 
 ## CLI Surface
 
-Use `openpocket ...` if installed via npm global package, or `./openpocket ...` in a local clone.
+For local source development, use `./openpocket ...`.
+If you installed the local launcher with `install-cli`, you can use `openpocket ...`.
 
 ```bash
-openpocket --help
-openpocket init
-openpocket install-cli
-openpocket setup
-openpocket onboard
-openpocket config-show
-openpocket emulator start
-openpocket emulator status
-openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
-openpocket script run --text "echo hello"
-openpocket skills list
-openpocket gateway start
-openpocket panel start
+./openpocket --help
+./openpocket init
+./openpocket install-cli
+./openpocket setup
+./openpocket onboard
+./openpocket config-show
+./openpocket emulator start
+./openpocket emulator status
+./openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
+./openpocket script run --text "echo hello"
+./openpocket skills list
+./openpocket gateway start
+./openpocket panel start
 ```
+
+`openpocket panel start` on macOS uses this order:
+
+1. Open an already-installed panel app from `/Applications` or `~/Applications`.
+2. If running from a source clone with `apps/openpocket-menubar`, build and launch from source.
+3. If neither is available (typical npm install), open GitHub Releases and guide PKG installation.
 
 ## Documentation
 

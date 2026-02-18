@@ -2,6 +2,11 @@
   "name": "openpocket",
   "version": "0.2.0-mvp-ts",
   "description": "OpenPocket Node.js TypeScript runtime",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SergioChan/openpocket.git"
+  },
+  "homepage": "https://github.com/SergioChan/openpocket",
   "main": "dist/cli.js",
   "bin": {
     "openpocket": "dist/cli.js"

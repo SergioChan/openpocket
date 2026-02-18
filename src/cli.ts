@@ -14,6 +14,8 @@ import { ScriptExecutor } from "./tools/script-executor";
 import { runSetupWizard } from "./onboarding/setup-wizard";
 import { installCliShortcut } from "./install/cli-shortcut";
 
+const DEFAULT_PANEL_RELEASE_URL = "https://github.com/SergioChan/openpocket/releases/latest";
+
 function printHelp(): void {
   // eslint-disable-next-line no-console
   console.log(`OpenPocket CLI (Node.js + TypeScript)\n
@@ -47,6 +49,65 @@ Examples:
   openpocket gateway start
   openpocket panel start
 `);
+}
+
+function getPanelReleaseUrl(): string {
+  const fromEnv = process.env.OPENPOCKET_PANEL_RELEASE_URL?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+
+  try {
+    const packageJsonPath = path.resolve(__dirname, "..", "package.json");
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as {
+      homepage?: string;
+      repository?: string | { url?: string };
+    };
+    if (pkg.homepage?.trim()) {
+      return pkg.homepage.includes("/releases")
+        ? pkg.homepage
+        : `${pkg.homepage.replace(/\/$/, "")}/releases/latest`;
+    }
+    const repoUrlRaw =
+      typeof pkg.repository === "string"
+        ? pkg.repository
+        : pkg.repository?.url;
+    const repoUrl = repoUrlRaw?.replace(/^git\+/, "").replace(/\.git$/, "");
+    if (repoUrl?.includes("github.com")) {
+      const normalized = repoUrl.replace(/^git@github.com:/, "https://github.com/");
+      return `${normalized.replace(/\/$/, "")}/releases/latest`;
+    }
+  } catch {
+    // ignore and fallback
+  }
+
+  return DEFAULT_PANEL_RELEASE_URL;
+}
+
+function resolveInstalledPanelApp(): string | null {
+  const home = process.env.HOME ?? "";
+  const candidates = [
+    "/Applications/OpenPocket Control Panel.app",
+    path.join(home, "Applications", "OpenPocket Control Panel.app"),
+    "/Applications/OpenPocketMenuBar.app",
+    path.join(home, "Applications", "OpenPocketMenuBar.app"),
+  ].filter(Boolean);
+
+  for (const appPath of candidates) {
+    if (fs.existsSync(appPath)) {
+      return appPath;
+    }
+  }
+  return null;
+}
+
+function openPanelApp(appPath: string): boolean {
+  const result = spawnSync("/usr/bin/open", [appPath], { stdio: "ignore" });
+  return (result.status ?? 1) === 0;
+}
+
+function openReleasePage(url: string): void {
+  spawnSync("/usr/bin/open", [url], { stdio: "ignore" });
 }
 
 function takeOption(args: string[], name: string): { value: string | null; rest: string[] } {
@@ -259,43 +320,63 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
     throw new Error("OpenPocket menu bar panel is supported on macOS only.");
   }
 
+  const installedApp = resolveInstalledPanelApp();
+  if (installedApp) {
+    if (!openPanelApp(installedApp)) {
+      throw new Error(`Failed to open installed panel app: ${installedApp}`);
+    }
+    // eslint-disable-next-line no-console
+    console.log(`OpenPocket Control Panel opened: ${installedApp}`);
+    return 0;
+  }
+
   const panelDir = path.resolve(__dirname, "..", "apps", "openpocket-menubar");
   const buildScript = path.join(panelDir, "scripts", "build.sh");
   const runScript = path.join(panelDir, "scripts", "run.sh");
-  if (!fs.existsSync(runScript) || !fs.existsSync(buildScript)) {
-    throw new Error(`Menu bar app launcher not found: ${runScript}`);
+  const hasBundledSource = fs.existsSync(runScript) && fs.existsSync(buildScript);
+
+  if (hasBundledSource) {
+    const buildResult = spawnSync("/usr/bin/env", ["bash", buildScript], {
+      stdio: "inherit",
+      cwd: panelDir,
+    });
+    if (buildResult.error) {
+      throw buildResult.error;
+    }
+    if ((buildResult.status ?? 1) !== 0) {
+      return buildResult.status ?? 1;
+    }
+
+    const appBinary = path.join(panelDir, ".build", "debug", "OpenPocketMenuBar");
+    if (!fs.existsSync(appBinary)) {
+      throw new Error(`Built menu bar app not found: ${appBinary}`);
+    }
+
+    const env = { ...process.env };
+    if (configPath?.trim()) {
+      env.OPENPOCKET_CONFIG_PATH = path.resolve(configPath.trim());
+    }
+
+    const child = spawn(appBinary, [], {
+      cwd: panelDir,
+      detached: true,
+      stdio: "ignore",
+      env,
+    });
+    child.unref();
+    // eslint-disable-next-line no-console
+    console.log(`OpenPocket Control Panel started (pid=${child.pid ?? "unknown"}).`);
+    return 0;
   }
 
-  const buildResult = spawnSync("/usr/bin/env", ["bash", buildScript], {
-    stdio: "inherit",
-    cwd: panelDir,
-  });
-  if (buildResult.error) {
-    throw buildResult.error;
-  }
-  if ((buildResult.status ?? 1) !== 0) {
-    return buildResult.status ?? 1;
-  }
-
-  const appBinary = path.join(panelDir, ".build", "debug", "OpenPocketMenuBar");
-  if (!fs.existsSync(appBinary)) {
-    throw new Error(`Built menu bar app not found: ${appBinary}`);
-  }
-
-  const env = { ...process.env };
-  if (configPath?.trim()) {
-    env.OPENPOCKET_CONFIG_PATH = path.resolve(configPath.trim());
-  }
-
-  const child = spawn(appBinary, [], {
-    cwd: panelDir,
-    detached: true,
-    stdio: "ignore",
-    env,
-  });
-  child.unref();
+  const releaseUrl = getPanelReleaseUrl();
   // eslint-disable-next-line no-console
-  console.log(`OpenPocket Control Panel started (pid=${child.pid ?? "unknown"}).`);
+  console.log("OpenPocket panel app is not installed on this Mac.");
+  // eslint-disable-next-line no-console
+  console.log(`Opening download page: ${releaseUrl}`);
+  openReleasePage(releaseUrl);
+  // eslint-disable-next-line no-console
+  console.log("Install the macOS PKG from Releases, then run: openpocket panel start");
   return 0;
 }
 

@@ -24,8 +24,10 @@ Local clone launcher:
 
 ## `panel start` (macOS)
 
-- launches native menu bar control panel app (`apps/openpocket-menubar`)
-- builds if needed, then starts app in background and returns control to terminal
+- startup order:
+- first tries installed panel app in `/Applications` and `~/Applications`
+- then falls back to source build launch from `apps/openpocket-menubar` (local clone/dev)
+- if panel app is not found, opens GitHub Releases for PKG download guidance
 - menu bar only (no Dock icon)
 - includes UI onboarding, runtime controls, permissions, storage scope, and prompt management
 
