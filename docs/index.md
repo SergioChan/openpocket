@@ -114,6 +114,10 @@ flowchart LR
       <strong>Ops</strong>
       Day-2 runbook, troubleshooting, and operational guardrails.
     </a>
+    <a class="op-doc-link" href="/get-started/deploy-docs">
+      <strong>Deploy Docs</strong>
+      Publish the docs site with GitHub Pages or Vercel.
+    </a>
     <a class="op-doc-link" href="/hubs">
       <strong>Doc Hubs</strong>
       High-level documentation overview and scope policy.

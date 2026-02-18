@@ -1,6 +1,11 @@
 import { defineConfig } from "vitepress";
 
+const docsBaseRaw = process.env.DOCS_BASE?.trim() ?? "/";
+const docsBase = docsBaseRaw.startsWith("/") ? docsBaseRaw : `/${docsBaseRaw}`;
+const normalizedBase = docsBase.endsWith("/") ? docsBase : `${docsBase}/`;
+
 export default defineConfig({
+  base: normalizedBase,
   lang: "en-US",
   title: "OpenPocket",
   description: "Local-first phone-use agent runtime with auditable sessions and docs.",
@@ -34,6 +39,7 @@ export default defineConfig({
           { text: "Index", link: "/get-started/" },
           { text: "Quickstart", link: "/get-started/quickstart" },
           { text: "Configuration", link: "/get-started/configuration" },
+          { text: "Deploy Documentation Site", link: "/get-started/deploy-docs" },
         ],
       },
       {

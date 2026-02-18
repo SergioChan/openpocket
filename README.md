@@ -134,6 +134,15 @@ openpocket panel start
 
 ## Documentation
 
+### Where the frontend is
+
+The documentation frontend is implemented in this repository:
+
+- Site source: [`/docs`](./docs)
+- VitePress config: [`/docs/.vitepress/config.mjs`](./docs/.vitepress/config.mjs)
+- Custom homepage: [`/docs/index.md`](./docs/index.md)
+- Custom theme styles: [`/docs/.vitepress/theme/custom.css`](./docs/.vitepress/theme/custom.css)
+
 ### Documentation Website
 
 - Start local docs server:
@@ -148,11 +157,27 @@ npm run docs:dev
 npm run docs:build
 ```
 
+- Build for GitHub Pages (project-path base):
+
+```bash
+npm run docs:build:pages
+```
+
 - Preview built docs:
 
 ```bash
 npm run docs:preview
 ```
+
+### Deployment options
+
+- GitHub Pages workflow: [`.github/workflows/deploy-docs-pages.yml`](./.github/workflows/deploy-docs-pages.yml)
+- Vercel config: [`vercel.json`](./vercel.json)
+- Deployment guide: [`/docs/get-started/deploy-docs.md`](./docs/get-started/deploy-docs.md)
+
+Expected GitHub Pages URL for this repo:
+
+- `https://sergiochan.github.io/openpocket/`
 
 ### Docs entry points
 
