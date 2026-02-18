@@ -31,6 +31,12 @@ To use a custom domain, set repository variable:
 
 When `PAGES_CUSTOM_DOMAIN` is set, the workflow also writes a `CNAME` file into build output automatically.
 
+This repository also includes a default custom-domain file:
+
+- `docs/public/CNAME` -> `openpocket.ai`
+
+So static builds include the expected domain unless overridden by workflow variable.
+
 ### Published URL
 
 Project pages default for this repository:
