@@ -271,5 +271,4 @@ npm test
 
 ## License
 
-License file is not finalized yet for this repository.
-Add a license before public distribution.
+[MIT](./LICENSE)
