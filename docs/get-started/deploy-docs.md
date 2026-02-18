@@ -17,17 +17,29 @@ This repository includes a ready workflow:
 3. Push to `main`.
 4. Wait for workflow `Deploy Docs to GitHub Pages` to finish.
 
+### Base Path and Custom Domain
+
+The workflow resolves `DOCS_BASE` automatically:
+
+- default (project pages): `/<repo-name>/`
+- custom domain configured: `/`
+- explicit override: repository variable `PAGES_DOCS_BASE`
+
+To use a custom domain, set repository variable:
+
+- `PAGES_CUSTOM_DOMAIN` (example: `docs.example.com`)
+
+When `PAGES_CUSTOM_DOMAIN` is set, the workflow also writes a `CNAME` file into build output automatically.
+
 ### Published URL
 
-For this repository name (`openpocket`), the docs URL is expected to be:
+Project pages default for this repository:
 
 - `https://sergiochan.github.io/openpocket/`
 
-The workflow builds docs with:
+With custom domain configured:
 
-- `DOCS_BASE=/<repo-name>/`
-
-So links and static assets resolve correctly on project pages.
+- `https://<your-domain>/`
 
 ## Option B: Vercel
 

@@ -38,8 +38,44 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve docs base
+        id: docs_base
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+          PAGES_DOCS_BASE: ${{ vars.PAGES_DOCS_BASE }}
+          PAGES_CUSTOM_DOMAIN: ${{ vars.PAGES_CUSTOM_DOMAIN }}
+        run: |
+          custom_domain="$(echo "${PAGES_CUSTOM_DOMAIN}" | xargs)"
+          docs_base="$(echo "${PAGES_DOCS_BASE}" | xargs)"
+
+          if [ -z "${docs_base}" ]; then
+            if [ -n "${custom_domain}" ]; then
+              docs_base="/"
+            else
+              docs_base="/${REPO_NAME}/"
+            fi
+          fi
+
+          case "${docs_base}" in
+            /*) ;;
+            *) docs_base="/${docs_base}" ;;
+          esac
+
+          case "${docs_base}" in
+            */) ;;
+            *) docs_base="${docs_base}/" ;;
+          esac
+
+          echo "docs_base=${docs_base}" >> "${GITHUB_OUTPUT}"
+          echo "custom_domain=${custom_domain}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved DOCS_BASE=${docs_base}"
+
       - name: Build docs
-        run: DOCS_BASE=/${{ github.event.repository.name }}/ npm run docs:build
+        run: DOCS_BASE=${{ steps.docs_base.outputs.docs_base }} npm run docs:build
+
+      - name: Write CNAME
+        if: ${{ steps.docs_base.outputs.custom_domain != '' }}
+        run: echo "${{ steps.docs_base.outputs.custom_domain }}" > docs/.vitepress/dist/CNAME
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
