@@ -1,0 +1,106 @@
+import { defineConfig } from "vitepress";
+
+export default defineConfig({
+  lang: "en-US",
+  title: "OpenPocket",
+  description: "Local-first phone-use agent runtime with auditable sessions and docs.",
+  lastUpdated: true,
+  cleanUrls: true,
+  ignoreDeadLinks: [
+    // Native app docs may not exist in all checkouts.
+    /openpocket-menubar/,
+  ],
+  themeConfig: {
+    siteTitle: "OpenPocket",
+    nav: [
+      { text: "Home", link: "/" },
+      { text: "Get Started", link: "/get-started/" },
+      { text: "Reference", link: "/reference/" },
+      { text: "Runbook", link: "/ops/runbook" },
+      { text: "Doc Hubs", link: "/hubs" },
+    ],
+    sidebar: [
+      {
+        text: "Overview",
+        items: [
+          { text: "Home", link: "/" },
+          { text: "Documentation Hubs", link: "/hubs" },
+        ],
+      },
+      {
+        text: "Get Started",
+        collapsed: false,
+        items: [
+          { text: "Index", link: "/get-started/" },
+          { text: "Quickstart", link: "/get-started/quickstart" },
+          { text: "Configuration", link: "/get-started/configuration" },
+        ],
+      },
+      {
+        text: "Concepts",
+        collapsed: false,
+        items: [
+          { text: "Index", link: "/concepts/" },
+          { text: "Architecture", link: "/concepts/architecture" },
+          { text: "Prompting and Decision Model", link: "/concepts/prompting" },
+          { text: "Sessions and Memory", link: "/concepts/sessions-memory" },
+        ],
+      },
+      {
+        text: "Tools",
+        collapsed: false,
+        items: [
+          { text: "Index", link: "/tools/" },
+          { text: "Skills", link: "/tools/skills" },
+          { text: "Scripts", link: "/tools/scripts" },
+        ],
+      },
+      {
+        text: "Reference",
+        collapsed: false,
+        items: [
+          { text: "Index", link: "/reference/" },
+          { text: "Config Defaults", link: "/reference/config-defaults" },
+          { text: "Prompt Templates", link: "/reference/prompt-templates" },
+          { text: "Action and Output Schema", link: "/reference/action-schema" },
+          { text: "Session and Memory Formats", link: "/reference/session-memory-formats" },
+          { text: "CLI and Gateway", link: "/reference/cli-and-gateway" },
+          { text: "Filesystem Layout", link: "/reference/filesystem-layout" },
+        ],
+      },
+      {
+        text: "Ops",
+        collapsed: false,
+        items: [
+          { text: "Index", link: "/ops/" },
+          { text: "Runbook", link: "/ops/runbook" },
+          { text: "Troubleshooting", link: "/ops/troubleshooting" },
+        ],
+      },
+      {
+        text: "Legacy",
+        collapsed: true,
+        items: [
+          { text: "Implementation Plan", link: "/implementation-plan" },
+          { text: "MVP Runbook (Legacy Entry)", link: "/mvp-runbook" },
+        ],
+      },
+    ],
+    search: {
+      provider: "local",
+    },
+    outline: {
+      level: [2, 3],
+    },
+    footer: {
+      message: "OpenPocket documentation is built from implemented runtime behavior.",
+      copyright: "Copyright © OpenPocket Contributors",
+    },
+  },
+  markdown: {
+    theme: {
+      light: "github-light",
+      dark: "github-dark",
+    },
+  },
+});

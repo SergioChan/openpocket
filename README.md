@@ -1,91 +1,120 @@
 # OpenPocket
 
-OpenPocket is a local phone-use agent runtime built with Node.js and TypeScript:
+[![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-0f766e.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/language-TypeScript-2563eb.svg)](https://www.typescriptlang.org/)
+[![Runtime](https://img.shields.io/badge/runtime-Local--first-0f172a.svg)](#architecture)
+[![Docs](https://img.shields.io/badge/docs-VitePress-0a9396.svg)](./docs/index.md)
 
-`Telegram -> local gateway -> model inference -> adb -> Android Emulator`
+OpenPocket is a local-first phone-use agent runtime for Android automation.
 
-## Documentation
+It combines a practical CLI, a Telegram gateway, model-driven planning, and adb-based action execution with auditable persistence:
 
-The project now uses a hub-based documentation framework (inspired by OpenClaw docs structure):
+`Telegram / CLI -> Gateway -> Agent Runtime -> Model Client -> adb -> Android Emulator`
 
-- [Documentation Home](./docs/README.md)
-- [Get Started](./docs/get-started/README.md)
-- [Concepts](./docs/concepts/README.md)
-- [Tools](./docs/tools/README.md)
-- [Reference](./docs/reference/README.md)
-- [Ops](./docs/ops/README.md)
+## Why OpenPocket
 
-For exact specs requested most often:
+- **Local execution boundary**: device control stays local through adb.
+- **Auditable runs**: sessions, daily memory, screenshots, and script artifacts are persisted.
+- **Provider flexibility**: model endpoint fallback and profile-based config.
+- **Operator-friendly**: setup wizard, heartbeat, cron scheduler, and controlled run-loop.
+- **macOS control panel**: optional native menu bar app for operational control.
 
-- [Prompt Templates](./docs/reference/prompt-templates.md)
-- [Config Defaults](./docs/reference/config-defaults.md)
-- [Session and Memory Formats](./docs/reference/session-memory-formats.md)
-- [Skills](./docs/tools/skills.md)
-- [Scripts](./docs/tools/scripts.md)
+## Key Capabilities
 
-## Repository Structure
+- Emulator control: `start`, `stop`, `status`, `list-avds`, `hide`, `show`, `screenshot`
+- Agent actions: `tap`, `swipe`, `type`, `keyevent`, `launch_app`, `shell`, `run_script`, `wait`, `finish`
+- Gateway modes: Telegram polling, chat/task routing, `/stop`, `/cronrun`, `/run`
+- Runtime services: heartbeat monitoring, cron job execution, signal-aware gateway restarts
+- Script safety: allowlist, deny patterns, timeout, output limits, and run archives
+- Workspace memory: per-task session files + daily memory timeline
 
-- `src/`: TypeScript source code (main runtime)
-- `dist/`: build output
-- `docs/`: documentation
-- `test/`: Node test suite
-- `apps/openpocket-menubar/`: native macOS menu bar control panel app
+## Architecture
 
-## Implemented Capabilities
-
-- Emulator controls: `start/stop/status/list-avds/hide/show/screenshot`
-- Agent action loop: `tap/swipe/type/keyevent/launch_app/shell/run_script/wait/finish`
-- Model endpoint fallback: `chat/completions -> responses -> completions`
-- Telegram gateway with chat/task auto routing and `/stop`
-- Gateway run-loop: long-running process with `SIGUSR1` restart and graceful shutdown
-- Heartbeat runner: periodic health logs + stuck-task warning
-- Cron service: scheduled local tasks from `workspace/cron/jobs.json`
-- Native macOS menu bar control panel:
-  - menu bar icon without Dock icon
-  - UI onboarding
-  - permission and storage scope management
-  - prompt file management
-- Local session and daily memory persistence
-- Step screenshot retention with max-count cleanup
-- Skill loading from workspace/local/bundled sources
-- Controlled script executor (allowlist + deny patterns + timeout + run artifacts)
+```mermaid
+flowchart LR
+  U["User / Telegram"] --> G["OpenPocket Gateway"]
+  G --> A["Agent Runtime"]
+  A --> M["Model Client"]
+  A --> D["ADB Runtime"]
+  A --> S["Script Executor"]
+  D --> E["Android Emulator"]
+  A --> W["Workspace Store"]
+  W --> SS["sessions/*.md"]
+  W --> MM["memory/YYYY-MM-DD.md"]
+  W --> RR["scripts/runs/*"]
+```
 
 ## Quick Start
+
+### 1. Prerequisites
+
+- Node.js 20+
+- Android SDK emulator + platform-tools (`adb`)
+- At least one Android AVD
+- Model API key (for your selected model profile)
+- Telegram bot token (if using gateway)
+
+### 2. Install and initialize (npm package)
+
+After publishing to npm, use:
+
+```bash
+npm install -g openpocket
+openpocket init
+openpocket onboard
+```
+
+### 3. Install and initialize (local clone, no global install)
 
 ```bash
 cd /Users/sergiochan/Documents/GitHub/phone-use-agent
 npm install
-npm run build
-node dist/cli.js init
-openpocket setup
+./openpocket init
+./openpocket onboard
 ```
 
-If `openpocket` is not yet in your PATH in the current shell, run `node dist/cli.js setup` once.
+`./openpocket` automatically runs `dist/cli.js` when present, and falls back to `tsx src/cli.ts` in dev installs.
 
-`init` automatically installs a local launcher at `~/.local/bin/openpocket` (no `npm link` required).
-If this is your first install, restart your shell (or run `source ~/.zshrc` / `source ~/.bashrc`) to use `openpocket ...` directly.
+### 4. Start runtime
 
-`setup`/`onboard` is an interactive onboarding flow (OpenClaw-style) that runs in the terminal:
+Use `openpocket ...` (npm global install) or `./openpocket ...` (local clone):
 
-- local runtime and data-handling user consent
-- model profile selection (GPT-5.2/5.3 Codex, Claude Sonnet/Opus, AutoGLM, etc.)
-- provider-specific API key setup based on selected model
-- option prompts use Up/Down arrows + Enter (no numeric input)
-- one-click emulator launch with guided manual Gmail sign-in for Play Store
+```bash
+openpocket emulator start
+openpocket gateway start
+```
 
-## Environment Variables
+### 5. Command resolution and PATH behavior
+
+- `init` / `setup` / `onboard` do **not** modify your shell config or PATH.
+- Use `openpocket ...` when installed from npm globally.
+- Use `./openpocket ...` when running from a local cloned repository.
+- `openpocket install-cli` is optional and explicit; run it only if you want a user-local launcher under `~/.local/bin/openpocket`.
+
+## Configuration
+
+Primary config file:
+
+- `~/.openpocket/config.json` (or `OPENPOCKET_HOME/config.json`)
+
+Example config template:
+
+- [`openpocket.config.example.json`](./openpocket.config.example.json)
+
+Common environment variables:
 
 ```bash
 export OPENAI_API_KEY="<your_openai_key>"
 export OPENROUTER_API_KEY="<your_openrouter_key>"
+export AUTOGLM_API_KEY="<your_autoglm_key>"
 export TELEGRAM_BOT_TOKEN="<your_telegram_bot_token>"
-# optional
 export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
 export OPENPOCKET_HOME="$HOME/.openpocket"
-export AUTOGLM_API_KEY="<optional_for_autoglm_profile>"
 ```
 
-## CLI Commands
+## CLI Surface
+
+Use `openpocket ...` if installed via npm global package, or `./openpocket ...` in a local clone.
 
 ```bash
 openpocket --help
@@ -96,25 +125,73 @@ openpocket onboard
 openpocket config-show
 openpocket emulator start
 openpocket emulator status
-openpocket emulator screenshot --out ~/Desktop/screen.png
-openpocket skills list
-openpocket script run --text "echo hello"
 openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
+openpocket script run --text "echo hello"
+openpocket skills list
 openpocket gateway start
 openpocket panel start
 ```
 
-After running `init` once, you can usually run:
+## Documentation
+
+### Documentation Website
+
+- Start local docs server:
 
 ```bash
-openpocket onboard
-openpocket gateway start
+npm run docs:dev
 ```
 
-`openpocket panel start` builds the native menu app (if needed), launches it in background, and returns the shell prompt.
-
-## Tests
+- Build static docs:
 
 ```bash
+npm run docs:build
+```
+
+- Preview built docs:
+
+```bash
+npm run docs:preview
+```
+
+### Docs entry points
+
+- [Docs Home](./docs/index.md)
+- [Documentation Hubs](./docs/hubs.md)
+- [Get Started](./docs/get-started/README.md)
+- [Reference](./docs/reference/README.md)
+- [Ops Runbook](./docs/ops/runbook.md)
+
+## Repository Structure
+
+- [`/src`](./src): runtime source code (agent, gateway, device, tools, onboarding)
+- [`/docs`](./docs): project documentation + VitePress site source
+- [`/test`](./test): runtime contract and integration tests
+- [`/apps/openpocket-menubar`](./apps/openpocket-menubar): native macOS menu bar control panel
+- [`/dist`](./dist): build output
+
+## Development
+
+Run checks:
+
+```bash
+npm run check
 npm test
 ```
+
+## Contributing
+
+- Keep code, docs, comments, and tests in English.
+- Prefer behavior-driven changes with matching tests.
+- Document new runtime capabilities under `/docs` in the relevant hub.
+
+## Security and Safety Notes
+
+- `run_script` execution is guarded by an allowlist and deny patterns.
+- Timeout and output truncation are enforced per script run.
+- Local paths are sanitized/redacted in Telegram-facing outputs.
+
+## License
+
+License file is not finalized yet for this repository.
+Add a license before public distribution.

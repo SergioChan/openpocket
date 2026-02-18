@@ -6,6 +6,11 @@ dist/
 .DS_Store
 *.log
 .idea/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+# npm auth
+.npmrc
 
 # local debug captures
 debug_screen_*.png

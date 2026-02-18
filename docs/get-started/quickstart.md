@@ -9,24 +9,30 @@ This page gets OpenPocket running locally with the current Node.js + TypeScript 
 - At least one Android AVD
 - API key for your configured model profile
 
-## Install and Build
+## Option A: npm package (global install)
+
+After the package is published to npm:
+
+```bash
+npm install -g openpocket
+openpocket init
+openpocket onboard
+```
+
+## Option B: local clone (no global install)
 
 ```bash
 cd /Users/sergiochan/Documents/GitHub/phone-use-agent
 npm install
-npm run build
+./openpocket init
+./openpocket onboard
 ```
 
-## Initialize Runtime Home
-
-```bash
-node dist/cli.js init
-openpocket setup
-```
-
-If `openpocket` is not available in the current shell yet, run `node dist/cli.js setup` once.
+`./openpocket` uses `dist/cli.js` when present and falls back to `tsx src/cli.ts` in dev installs.
 
 Default runtime home is `~/.openpocket`, unless `OPENPOCKET_HOME` is set.
+
+For commands below, use `openpocket ...` for npm global install, or `./openpocket ...` for local clone.
 
 Initialization creates:
 
@@ -50,11 +56,10 @@ openpocket panel start
 
 Then complete onboarding directly in the menu bar control panel UI.
 
-`init` also installs local launcher `~/.local/bin/openpocket` (best effort), so after reloading shell you can run:
+If you explicitly want a user-local PATH command without npm global install:
 
 ```bash
-openpocket onboard
-openpocket gateway start
+./openpocket install-cli
 ```
 
 ## Required Environment Variables

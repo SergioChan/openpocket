@@ -4,7 +4,7 @@ This legacy page now points to the new documentation hubs.
 
 For current operational guidance, use:
 
-- [Documentation Home](./README.md)
+- [Documentation Home](./hubs.md)
 - [Quickstart](./get-started/quickstart.md)
 - [Configuration](./get-started/configuration.md)
 - [Runbook](./ops/runbook.md)

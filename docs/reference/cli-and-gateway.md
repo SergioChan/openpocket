@@ -16,6 +16,12 @@ openpocket [--config <path>] gateway [start|telegram]
 openpocket panel start
 ```
 
+Local clone launcher:
+
+```text
+./openpocket <command>
+```
+
 ## `panel start` (macOS)
 
 - launches native menu bar control panel app (`apps/openpocket-menubar`)
@@ -28,7 +34,7 @@ openpocket panel start
 - loads/creates config
 - saves normalized config
 - ensures workspace bootstrap files and directories
-- installs local CLI launcher (`~/.local/bin/openpocket`) as best effort
+- does not modify shell PATH automatically
 
 ## `install-cli`
 

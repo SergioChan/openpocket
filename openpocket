@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+DIST_CLI="$ROOT_DIR/dist/cli.js"
+TS_CLI="$ROOT_DIR/src/cli.ts"
+TSX_BIN="$ROOT_DIR/node_modules/.bin/tsx"
+
+if [[ -f "$DIST_CLI" ]]; then
+  exec node "$DIST_CLI" "$@"
+fi
+
+if [[ -x "$TSX_BIN" ]]; then
+  exec "$TSX_BIN" "$TS_CLI" "$@"
+fi
+
+echo "OpenPocket local launcher is not ready."
+echo "Run: npm install && npm run build"
+exit 1

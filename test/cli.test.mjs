@@ -55,6 +55,25 @@ test("init creates config and workspace files", () => {
   }
 });
 
+test("init does not install CLI shortcut implicitly", () => {
+  const runtimeHome = makeHome("openpocket-ts-init-runtime-");
+  const shellHome = makeHome("openpocket-ts-init-shell-");
+
+  const result = runCli(["init"], {
+    OPENPOCKET_HOME: runtimeHome,
+    HOME: shellHome,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  assert.equal(
+    fs.existsSync(path.join(shellHome, ".local", "bin", "openpocket")),
+    false,
+    "init should not create launcher without install-cli",
+  );
+  assert.equal(fs.existsSync(path.join(shellHome, ".zshrc")), false, "init should not touch .zshrc");
+  assert.equal(fs.existsSync(path.join(shellHome, ".bashrc")), false, "init should not touch .bashrc");
+});
+
 test("legacy snake_case config is migrated to camelCase by init", () => {
   const home = makeHome("openpocket-ts-migrate-");
   const cfgPath = path.join(home, "config.json");

@@ -160,17 +160,6 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
 async function runSetupCommand(configPath: string | undefined): Promise<number> {
   const cfg = loadConfig(configPath);
   saveConfig(cfg);
-  try {
-    const shortcut = installCliShortcut();
-    // eslint-disable-next-line no-console
-    console.log(`CLI launcher ready: ${shortcut.commandPath}`);
-    if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
-      // eslint-disable-next-line no-console
-      console.log("Restart shell (or `source ~/.zshrc` / `source ~/.bashrc`) to use `openpocket` directly.");
-    }
-  } catch {
-    // Setup can continue even if shortcut installation fails.
-  }
   await runSetupWizard(cfg);
   return 0;
 }
@@ -323,17 +312,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   if (command === "init") {
     const cfg = loadConfig(configPath ?? undefined);
     saveConfig(cfg);
-    try {
-      const shortcut = installCliShortcut();
-      // eslint-disable-next-line no-console
-      console.log(`CLI launcher ready: ${shortcut.commandPath}`);
-      if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
-        // eslint-disable-next-line no-console
-        console.log("Restart shell (or `source ~/.zshrc` / `source ~/.bashrc`) to use `openpocket` directly.");
-      }
-    } catch {
-      // Do not block init on shortcut install failure.
-    }
     // eslint-disable-next-line no-console
     console.log(`OpenPocket initialized.\nConfig: ${cfg.configPath}`);
     return 0;
