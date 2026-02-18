@@ -13,6 +13,7 @@ import { SkillLoader } from "./skills/skill-loader";
 import { ScriptExecutor } from "./tools/script-executor";
 import { runSetupWizard } from "./onboarding/setup-wizard";
 import { installCliShortcut } from "./install/cli-shortcut";
+import { ensureAndroidPrerequisites } from "./environment/android-prerequisites";
 
 const DEFAULT_PANEL_RELEASE_URL = "https://github.com/SergioChan/openpocket/releases/latest";
 
@@ -20,9 +21,7 @@ function printHelp(): void {
   // eslint-disable-next-line no-console
   console.log(`OpenPocket CLI (Node.js + TypeScript)\n
 Usage:
-  openpocket [--config <path>] init
   openpocket [--config <path>] install-cli
-  openpocket [--config <path>] setup
   openpocket [--config <path>] onboard
   openpocket [--config <path>] config-show
   openpocket [--config <path>] emulator status
@@ -38,10 +37,12 @@ Usage:
   openpocket [--config <path>] gateway [start|telegram]
   openpocket panel start
 
+Legacy aliases (deprecated):
+  openpocket [--config <path>] init
+  openpocket [--config <path>] setup
+
 Examples:
-  openpocket init
-  openpocket install-cli
-  openpocket setup
+  openpocket onboard
   openpocket emulator start
   openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
   openpocket skills list
@@ -218,9 +219,21 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
   return 0;
 }
 
-async function runSetupCommand(configPath: string | undefined): Promise<number> {
+async function runBootstrapCommand(configPath: string | undefined): Promise<ReturnType<typeof loadConfig>> {
   const cfg = loadConfig(configPath);
+  await ensureAndroidPrerequisites(cfg, {
+    autoInstall: true,
+    logger: (line) => {
+      // eslint-disable-next-line no-console
+      console.log(`[OpenPocket][env] ${line}`);
+    },
+  });
   saveConfig(cfg);
+  return cfg;
+}
+
+async function runOnboardCommand(configPath: string | undefined): Promise<number> {
+  const cfg = await runBootstrapCommand(configPath);
   await runSetupWizard(cfg);
   return 0;
 }
@@ -391,10 +404,17 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const command = rest[0];
 
   if (command === "init") {
-    const cfg = loadConfig(configPath ?? undefined);
-    saveConfig(cfg);
     // eslint-disable-next-line no-console
-    console.log(`OpenPocket initialized.\nConfig: ${cfg.configPath}`);
+    console.log("[OpenPocket] `init` is deprecated. Use `openpocket onboard`.");
+    const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+    if (interactive) {
+      return runOnboardCommand(configPath ?? undefined);
+    }
+    const cfg = await runBootstrapCommand(configPath ?? undefined);
+    // eslint-disable-next-line no-console
+    console.log(`OpenPocket bootstrap completed.\nConfig: ${cfg.configPath}`);
+    // eslint-disable-next-line no-console
+    console.log("Run `openpocket onboard` in an interactive terminal to complete consent/model/API key onboarding.");
     return 0;
   }
 
@@ -433,8 +453,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return runScriptCommand(configPath ?? undefined, rest.slice(1));
   }
 
-  if (command === "setup" || command === "onboard") {
-    return runSetupCommand(configPath ?? undefined);
+  if (command === "setup") {
+    // eslint-disable-next-line no-console
+    console.log("[OpenPocket] `setup` is deprecated. Use `openpocket onboard`.");
+    return runOnboardCommand(configPath ?? undefined);
+  }
+
+  if (command === "onboard") {
+    return runOnboardCommand(configPath ?? undefined);
   }
 
   throw new Error(`Unknown command: ${command}`);

@@ -14,6 +14,7 @@ function runCli(args, env = {}) {
     cwd: repoRoot,
     env: {
       ...process.env,
+      OPENPOCKET_SKIP_ENV_SETUP: "1",
       ...env,
     },
     encoding: "utf-8",
@@ -163,12 +164,14 @@ test("agent command without API key fails and writes session/memory", () => {
   assert.match(memoryBody, /FAIL/);
 });
 
-test("help output includes setup and onboard commands", () => {
+test("help output uses onboard as primary command and lists legacy aliases", () => {
   const result = runCli(["--help"]);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /install-cli/);
-  assert.match(result.stdout, /setup/);
   assert.match(result.stdout, /onboard/);
+  assert.match(result.stdout, /Legacy aliases/);
+  assert.match(result.stdout, /\binit\b/);
+  assert.match(result.stdout, /\bsetup\b/);
   assert.match(result.stdout, /gateway \[start\|telegram\]/);
   assert.match(result.stdout, /panel start/);
 });
