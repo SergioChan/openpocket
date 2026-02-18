@@ -40,7 +40,7 @@ The loader accepts old keys and maps them automatically, including:
 - top-level (also): `heartbeat_config`, `cron_config`
 - nested: `avd_name`, `android_sdk_root`, `bot_token`, `max_steps`, `save_step_screenshots`, `allowed_commands`, `base_url`, `api_key`, `reasoning_effort`, etc.
 
-After `init`, saved config uses camelCase keys.
+After `onboard` (or legacy `init`), saved config uses camelCase keys.
 
 ## Validation and Clamps
 

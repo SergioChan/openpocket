@@ -2,10 +2,10 @@
 
 [![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-0f766e.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/language-TypeScript-2563eb.svg)](https://www.typescriptlang.org/)
-[![Runtime](https://img.shields.io/badge/runtime-Local--first-0f172a.svg)](#architecture)
+[![Runtime](https://img.shields.io/badge/runtime-Local--emulator--first-0f172a.svg)](#architecture)
 [![Docs](https://img.shields.io/badge/docs-VitePress-0a9396.svg)](./docs/index.md)
 
-OpenPocket is a local-first phone-use agent runtime for Android automation.
+OpenPocket is a local emulator-first phone-use agent runtime for Android automation.
 
 It combines a practical CLI, a Telegram gateway, model-driven planning, and adb-based action execution with auditable persistence:
 
@@ -13,11 +13,26 @@ It combines a practical CLI, a Telegram gateway, model-driven planning, and adb-
 
 ## Why OpenPocket
 
-- **Local execution boundary**: device control stays local through adb.
+- **No main-phone resource usage**: tasks run on a local emulator, not on your physical phone.
+- **Local execution boundary**: device control stays local through adb instead of a hosted cloud phone service.
 - **Auditable runs**: sessions, daily memory, screenshots, and script artifacts are persisted.
+- **Dual control modes**: direct local emulator control and agent-driven control in one runtime.
 - **Provider flexibility**: model endpoint fallback and profile-based config.
 - **Operator-friendly**: setup wizard, heartbeat, cron scheduler, and controlled run-loop.
 - **macOS control panel**: optional native menu bar app for operational control.
+
+## Who It Is For
+
+OpenPocket targets both developers and everyday users who need repeatable mobile task execution.
+
+Representative scenarios:
+
+- shopping workflows
+- entertainment app routines
+- social interaction support
+- recurring mobile actions that benefit from automation
+
+Near-term roadmap includes remote phone access to the local runtime for human-in-the-loop control.
 
 ## Key Capabilities
 
@@ -32,16 +47,17 @@ It combines a practical CLI, a Telegram gateway, model-driven planning, and adb-
 
 ```mermaid
 flowchart LR
-  U["User / Telegram"] --> G["OpenPocket Gateway"]
+  U["Local User / Telegram"] --> G["OpenPocket Gateway"]
   G --> A["Agent Runtime"]
   A --> M["Model Client"]
   A --> D["ADB Runtime"]
   A --> S["Script Executor"]
-  D --> E["Android Emulator"]
+  D --> E["Android Emulator (Local)"]
   A --> W["Workspace Store"]
   W --> SS["sessions/*.md"]
   W --> MM["memory/YYYY-MM-DD.md"]
   W --> RR["scripts/runs/*"]
+  RP["User Phone (Upcoming Remote Control)"] -.-> G
 ```
 
 ## Quick Start
@@ -58,7 +74,6 @@ flowchart LR
 
 ```bash
 npm install -g openpocket
-openpocket init
 openpocket onboard
 ```
 
@@ -79,11 +94,21 @@ git clone git@github.com:SergioChan/openpocket.git
 cd openpocket
 npm install
 npm run build
-./openpocket init
 ./openpocket onboard
 ```
 
 `./openpocket` runs `dist/cli.js` when present and falls back to `tsx src/cli.ts` in local dev installs.
+
+`openpocket onboard` automatically verifies Android runtime dependencies:
+
+1. If local tools are already installed, dependency installation is skipped.
+2. If tools are missing on macOS, OpenPocket tries automatic installation (Homebrew, Android SDK packages, and default AVD bootstrap).
+
+You can skip this step in CI/tests with:
+
+```bash
+export OPENPOCKET_SKIP_ENV_SETUP=1
+```
 
 ### 4. Start runtime
 
@@ -139,9 +164,7 @@ Command prefix by install mode:
 
 ```bash
 ./openpocket --help
-./openpocket init
 ./openpocket install-cli
-./openpocket setup
 ./openpocket onboard
 ./openpocket config-show
 ./openpocket emulator start
@@ -152,6 +175,8 @@ Command prefix by install mode:
 ./openpocket gateway start
 ./openpocket panel start
 ```
+
+Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
 `openpocket panel start` on macOS uses this order:
 
@@ -210,8 +235,9 @@ Expected GitHub Pages URL for this repo:
 
 - [Docs Home](./docs/index.md)
 - [Documentation Hubs](./docs/hubs.md)
-- [Get Started](./docs/get-started/README.md)
-- [Reference](./docs/reference/README.md)
+- [Get Started](./docs/get-started/index.md)
+- [Project Blueprint](./docs/concepts/project-blueprint.md)
+- [Reference](./docs/reference/index.md)
 - [Ops Runbook](./docs/ops/runbook.md)
 
 ## Repository Structure

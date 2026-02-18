@@ -1,14 +1,15 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
 const docsBaseRaw = process.env.DOCS_BASE?.trim() ?? "/";
 const docsBase = docsBaseRaw.startsWith("/") ? docsBaseRaw : `/${docsBaseRaw}`;
 const normalizedBase = docsBase.endsWith("/") ? docsBase : `${docsBase}/`;
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   base: normalizedBase,
   lang: "en-US",
   title: "OpenPocket",
-  description: "Local-first phone-use agent runtime with auditable sessions and docs.",
+  description: "Local emulator-first phone-use agent for everyday workflows with auditable local control.",
   lastUpdated: true,
   cleanUrls: true,
   ignoreDeadLinks: [
@@ -19,6 +20,7 @@ export default defineConfig({
     siteTitle: "OpenPocket",
     nav: [
       { text: "Home", link: "/" },
+      { text: "Blueprint", link: "/concepts/project-blueprint" },
       { text: "Get Started", link: "/get-started/" },
       { text: "Reference", link: "/reference/" },
       { text: "Runbook", link: "/ops/runbook" },
@@ -47,6 +49,7 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: "Index", link: "/concepts/" },
+          { text: "Project Blueprint", link: "/concepts/project-blueprint" },
           { text: "Architecture", link: "/concepts/architecture" },
           { text: "Prompting and Decision Model", link: "/concepts/prompting" },
           { text: "Sessions and Memory", link: "/concepts/sessions-memory" },
@@ -109,4 +112,5 @@ export default defineConfig({
       dark: "github-dark",
     },
   },
-});
+  mermaid: {},
+}));

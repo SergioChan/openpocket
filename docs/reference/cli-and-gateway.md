@@ -3,9 +3,7 @@
 ## CLI Command Surface
 
 ```text
-openpocket [--config <path>] init
 openpocket [--config <path>] install-cli
-openpocket [--config <path>] setup
 openpocket [--config <path>] onboard
 openpocket [--config <path>] config-show
 openpocket [--config <path>] emulator status|start|stop|hide|show|list-avds|screenshot [--out <path>]
@@ -14,6 +12,13 @@ openpocket [--config <path>] skills list
 openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
 openpocket [--config <path>] gateway [start|telegram]
 openpocket panel start
+```
+
+Legacy aliases (deprecated):
+
+```text
+openpocket [--config <path>] init
+openpocket [--config <path>] setup
 ```
 
 Local clone launcher:
@@ -31,21 +36,20 @@ Local clone launcher:
 - menu bar only (no Dock icon)
 - includes UI onboarding, runtime controls, permissions, storage scope, and prompt management
 
-## `init`
+## `onboard`
 
 - loads/creates config
 - saves normalized config
 - ensures workspace bootstrap files and directories
-- does not modify shell PATH automatically
+- runs Android dependency doctor (auto-install on macOS when tools are missing)
+- runs interactive onboarding wizard (consent/model/API key/emulator login)
 
 ## `install-cli`
 
 - explicitly (re)installs local CLI launcher at `~/.local/bin/openpocket`
 - adds `~/.local/bin` export line to `~/.zshrc` and `~/.bashrc` when missing
 
-## `setup` / `onboard`
-
-Interactive onboarding wizard (OpenClaw-style CLI flow):
+Interactive onboarding wizard flow:
 
 - prints setup banner/logo
 - presents required user consent (local runtime + cloud model boundary)
@@ -54,6 +58,17 @@ Interactive onboarding wizard (OpenClaw-style CLI flow):
 - option prompts use Up/Down arrows + Enter (no numeric menu input)
 - can start/show emulator and guide manual Gmail login for Play Store
 - writes onboarding state to `state/onboarding.json`
+
+## Legacy Alias: `init`
+
+- deprecated compatibility alias
+- in interactive terminals: behaves like `onboard`
+- in non-interactive terminals: runs bootstrap only (config + workspace + env doctor), without prompts
+
+## Legacy Alias: `setup`
+
+- deprecated compatibility alias
+- behaves like `onboard`
 
 ## `agent`
 

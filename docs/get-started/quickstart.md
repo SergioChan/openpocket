@@ -2,6 +2,8 @@
 
 This page gets OpenPocket running locally with the current Node.js + TypeScript runtime.
 
+OpenPocket runs automation on a local Android emulator, so tasks do not consume resources on your physical phone.
+
 ## Prerequisites
 
 - Node.js 20+
@@ -9,11 +11,12 @@ This page gets OpenPocket running locally with the current Node.js + TypeScript 
 - At least one Android AVD
 - API key for your configured model profile
 
+You do not need to root or modify your personal phone to use OpenPocket.
+
 ## Option A: npm package (no source checkout required)
 
 ```bash
 npm install -g openpocket
-openpocket init
 openpocket onboard
 ```
 
@@ -34,7 +37,6 @@ git clone git@github.com:SergioChan/openpocket.git
 cd openpocket
 npm install
 npm run build
-./openpocket init
 ./openpocket onboard
 ```
 
@@ -47,25 +49,28 @@ For commands below:
 - use `openpocket ...` for npm package install
 - use `./openpocket ...` for local clone
 
-Initialization creates:
+On first `onboard`, OpenPocket creates:
 
 - `config.json`
 - `workspace/` with bootstrap files and directories
 - `state/` for runtime state and emulator logs
 
-`setup` creates/updates onboarding state in `state/onboarding.json` and guides:
+`onboard` creates/updates onboarding state in `state/onboarding.json` and guides:
 
 - user consent
 - model profile selection (GPT/Claude/AutoGLM profiles)
 - provider-specific API key setup based on selected model
 - option prompts use Up/Down arrows + Enter
 - emulator wake-up + manual Gmail login for Play Store
+- Android dependency doctor + auto-install on macOS when required
 
 If you explicitly want a user-local PATH command without npm global install:
 
 ```bash
 ./openpocket install-cli
 ```
+
+Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
 ## Required Environment Variables
 
@@ -105,6 +110,19 @@ Result includes:
 - terminal summary message
 - session file path (`workspace/sessions/session-*.md`)
 - daily memory append in `workspace/memory/YYYY-MM-DD.md`
+
+## Control Modes
+
+OpenPocket supports two operating styles:
+
+- direct local control of the emulator by the user
+- agent control of the same emulator runtime
+
+This allows practical handoff between manual and automated execution.
+
+Planned next step:
+
+- connect from user phone to the local runtime for remote human-in-the-loop control
 
 ## Run Telegram Gateway
 

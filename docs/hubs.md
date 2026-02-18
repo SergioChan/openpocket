@@ -11,18 +11,29 @@ All pages in this folder document implemented behavior in the current TypeScript
 For the native macOS menu bar app, see:
 - [OpenPocket Menu Bar App](../apps/openpocket-menubar/README.md)
 
+## Product Direction
+
+OpenPocket is a local emulator-first phone-use agent aimed at real consumer scenarios, not only developer workflows.
+
+- local emulator execution instead of cloud-hosted phone runtime
+- no resource usage on the user’s main phone during agent runs
+- local data and permission boundary by default
+- dual control model: direct human control + agent control
+- upcoming remote phone control for human-in-the-loop interaction
+
 ## Documentation Hubs
 
 | Hub | Purpose | Entry |
 | --- | --- | --- |
 | Get Started | Install, initialize, and configure quickly | [Quickstart](./get-started/quickstart.md) |
-| Concepts | Understand runtime design and core agent mechanics | [Architecture](./concepts/architecture.md) |
+| Concepts | Understand blueprint, architecture, and core agent mechanics | [Project Blueprint](./concepts/project-blueprint.md) |
 | Tools | Skill and script authoring and runtime behavior | [Skills](./tools/skills.md) |
 | Reference | Precise schemas, defaults, formats, and commands | [Config Defaults](./reference/config-defaults.md) |
 | Ops | Day-2 runbook and troubleshooting | [Runbook](./ops/runbook.md) |
 
 ## Most Requested Specs
 
+- Product blueprint: [Project Blueprint](./concepts/project-blueprint.md)
 - Prompt templates: [Prompt Templates](./reference/prompt-templates.md)
 - Default values: [Config Defaults](./reference/config-defaults.md)
 - Session and memory formats: [Session and Memory Formats](./reference/session-memory-formats.md)
@@ -32,7 +43,7 @@ For the native macOS menu bar app, see:
 
 ## Documentation Scope Policy
 
-- Document only what exists in code today.
+- Document implemented behavior first, and clearly mark roadmap items as planned.
 - Mark fallback behavior and normalization rules explicitly.
 - Keep examples executable with current CLI.
 

@@ -1,65 +1,86 @@
 # Architecture
 
-OpenPocket is a local phone-use agent runtime.
+OpenPocket is a local-first phone-use runtime centered on a local Android emulator.
 
 ## Runtime Topology
 
 ```text
-Telegram / CLI
-      |
-      v
+User (CLI / Telegram / Panel)
+           |
+           v
 Gateway / Command Router
-      |
-      v
+           |
+           v
 AgentRuntime + HeartbeatRunner + CronService
-  |        |         |          |
-  v        v         v          v
+   |          |          |            |
+   v          v          v            v
 ModelClient AdbRuntime SkillLoader ScriptExecutor
-      |         |
-      v         v
-   LLM APIs   Android Emulator (adb)
+    |          |
+    v          v
+ LLM APIs   Android Emulator (local adb target)
 ```
+
+## Why Emulator-First Matters
+
+- automation does not consume runtime resources on the user’s main phone
+- execution remains local instead of running on a hosted cloud phone service
+- task artifacts and permissions stay under local control
+
+## Control Modes
+
+OpenPocket supports two complementary control paths on the same runtime:
+
+- **Human direct control**: users can directly operate the local emulator.
+- **Agent control**: agent actions operate the local emulator via `adb`.
+
+This makes human-agent handoff practical for real app workflows.
 
 ## Main Components
 
-- `AgentRuntime`: orchestrates task loop, step execution, progress callback, and session/memory persistence.
-- `ModelClient`: builds multimodal prompts, calls model endpoint, parses and normalizes action output.
-- `AdbRuntime`: device snapshot capture and action execution (`tap/swipe/type/...`).
-- `EmulatorManager`: start/stop/status/screenshot and adb/emulator binary resolution.
-- `WorkspaceStore`: creates session files and appends daily memory.
-- `SkillLoader`: discovers markdown skills from workspace/local/bundled sources.
-- `ScriptExecutor`: validates and executes `run_script` actions in a restricted model.
-- `TelegramGateway`: command routing, chat/task decision path, and progress reporting.
-- `HeartbeatRunner`: periodic liveness snapshots, busy-task watchdog warning, local heartbeat log.
-- `CronService`: periodic scheduler reading `workspace/cron/jobs.json` and triggering due tasks.
-- `runGatewayLoop`: long-running gateway process loop with graceful stop and `SIGUSR1` restart.
+- `AgentRuntime`: orchestrates task loop, step execution, and session/memory persistence.
+- `ModelClient`: builds multimodal prompts, calls model endpoints, parses normalized actions.
+- `AdbRuntime`: captures snapshots and executes mobile actions (`tap`, `swipe`, `type`, etc.).
+- `EmulatorManager`: manages emulator lifecycle (`start`, `stop`, `status`, `screenshot`).
+- `WorkspaceStore`: writes auditable session and daily memory files.
+- `SkillLoader`: loads markdown skills from workspace/local/bundled sources.
+- `ScriptExecutor`: validates and executes `run_script` with allowlist and safety controls.
+- `TelegramGateway`: routes chat/task commands and sends progress.
+- `HeartbeatRunner`: emits liveness snapshots and stuck-task warnings.
+- `CronService`: triggers scheduled tasks from `workspace/cron/jobs.json`.
+- `runGatewayLoop`: robust long-running gateway loop with graceful restart/stop behavior.
 
 ## Task Lifecycle
 
-1. Create session markdown file.
-2. Resolve model profile and API key.
+1. Create a session markdown file.
+2. Resolve model profile and credentials.
 3. For each step:
-   - capture screen snapshot
-   - optionally save local screenshot
+   - capture emulator snapshot
+   - optionally persist screenshot
    - request next action from model
-   - execute action (`adb` or script executor)
-   - append step to session and history buffer
-   - send progress callback if enabled
-4. Finish on `action.type=finish`, max steps, error, or user stop.
-5. Finalize session and append a daily memory line.
-6. Optionally send `KEYCODE_HOME` at task end.
+   - execute action via `adb` or script runner
+   - append step history to session
+   - emit progress callback when configured
+4. Stop on `finish`, step cap, error, or explicit user stop.
+5. Finalize session and append one daily memory entry.
+6. Optionally return emulator to home screen.
 
 ## Model Endpoint Fallback
 
-OpenPocket tries endpoints in fallback order and remembers the successful mode:
+OpenPocket attempts provider endpoints in fallback order:
 
 - task loop (`ModelClient`): `chat` -> `responses` -> `completions`
 - chat assistant (`ChatAssistant`): `responses` -> `chat` -> `completions`
 
-This improves compatibility with providers that do not implement every endpoint.
+This keeps runtime compatibility across providers with partial endpoint support.
 
 ## Persistence Model
 
-- Stateful files are local-first under `OPENPOCKET_HOME`.
-- Task execution is auditable through session markdown and script run artifacts.
-- Screenshot retention is bounded by configurable max count.
+- runtime state is stored under `OPENPOCKET_HOME`
+- task execution is auditable through session/memory/script artifacts
+- screenshot storage uses configured retention limits
+
+## Near-Term Architecture Extension
+
+Planned next step:
+
+- remote connection from user phone to the local runtime for human-in-the-loop controls (pause/resume/approve/retry)

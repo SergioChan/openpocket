@@ -6,7 +6,7 @@ This runbook focuses on day-to-day operation of the current runtime.
 
 1. Ensure Android emulator dependencies are available.
 2. Verify config and environment variables.
-3. Run onboarding setup if first launch.
+3. Run onboarding if first launch.
 4. Start emulator and check booted device.
 5. Start gateway or run tasks from CLI.
 
@@ -14,7 +14,7 @@ Commands:
 
 ```bash
 openpocket config-show
-openpocket setup
+openpocket onboard
 openpocket emulator status
 openpocket emulator start
 openpocket gateway start
