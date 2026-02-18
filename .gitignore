@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.build/
+.env
+.env.*
+.DS_Store
+*.log
+.idea/
+
+# local debug captures
+debug_screen_*.png

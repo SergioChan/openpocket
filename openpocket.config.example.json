@@ -1,0 +1,113 @@
+{
+  "projectName": "OpenPocket",
+  "workspaceDir": "~/.openpocket/workspace",
+  "stateDir": "~/.openpocket/state",
+  "defaultModel": "gpt-5.2-codex",
+  "emulator": {
+    "avdName": "OpenPocket_AVD",
+    "androidSdkRoot": "",
+    "headless": false,
+    "bootTimeoutSec": 180
+  },
+  "telegram": {
+    "botToken": "",
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "allowedChatIds": [],
+    "pollTimeoutSec": 25
+  },
+  "agent": {
+    "maxSteps": 50,
+    "loopDelayMs": 1200,
+    "progressReportInterval": 1,
+    "returnHomeOnTaskEnd": true,
+    "lang": "en",
+    "verbose": true,
+    "deviceId": null
+  },
+  "screenshots": {
+    "saveStepScreenshots": true,
+    "directory": "~/.openpocket/state/screenshots",
+    "maxCount": 400
+  },
+  "scriptExecutor": {
+    "enabled": true,
+    "timeoutSec": 60,
+    "maxOutputChars": 6000,
+    "allowedCommands": [
+      "adb",
+      "am",
+      "pm",
+      "input",
+      "echo",
+      "pwd",
+      "ls",
+      "cat",
+      "grep",
+      "rg",
+      "sed",
+      "awk",
+      "bash",
+      "sh",
+      "node",
+      "npm"
+    ]
+  },
+  "heartbeat": {
+    "enabled": true,
+    "everySec": 30,
+    "stuckTaskWarnSec": 600,
+    "writeLogFile": true
+  },
+  "cron": {
+    "enabled": true,
+    "tickSec": 10,
+    "jobsFile": "~/.openpocket/workspace/cron/jobs.json"
+  },
+  "models": {
+    "gpt-5.2-codex": {
+      "baseUrl": "https://api.openai.com/v1",
+      "model": "gpt-5.2-codex",
+      "apiKey": "",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "gpt-5.3-codex": {
+      "baseUrl": "https://api.openai.com/v1",
+      "model": "gpt-5.3-codex",
+      "apiKey": "",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "claude-sonnet-4.6": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "claude-sonnet-4.6",
+      "apiKey": "",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "claude-opus-4.6": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "claude-opus-4.6",
+      "apiKey": "",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "autoglm-phone": {
+      "baseUrl": "https://api.z.ai/api/paas/v4",
+      "model": "autoglm-phone-multilingual",
+      "apiKey": "",
+      "apiKeyEnv": "AUTOGLM_API_KEY",
+      "maxTokens": 3000,
+      "reasoningEffort": null,
+      "temperature": null
+    }
+  }
+}

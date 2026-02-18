@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { loadConfig } = require("../dist/config/index.js");
+const { ScriptExecutor } = require("../dist/tools/script-executor.js");
+
+test("ScriptExecutor executes allowed commands", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-script-ok-"));
+  process.env.OPENPOCKET_HOME = home;
+  const cfg = loadConfig();
+  const exec = new ScriptExecutor(cfg);
+
+  const result = await exec.execute("echo hello_openpocket");
+  assert.equal(result.ok, true, result.stderr);
+  assert.match(result.stdout, /hello_openpocket/);
+  assert.equal(fs.existsSync(path.join(result.runDir, "result.json")), true);
+});
+
+test("ScriptExecutor blocks commands outside allowlist", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-script-deny-"));
+  process.env.OPENPOCKET_HOME = home;
+  const cfg = loadConfig();
+  const exec = new ScriptExecutor(cfg);
+
+  const result = await exec.execute("curl https://example.com");
+  assert.equal(result.ok, false);
+  assert.match(result.stderr, /not allowed/i);
+});

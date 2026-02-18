@@ -1,0 +1,150 @@
+export interface EmulatorConfig {
+  avdName: string;
+  androidSdkRoot: string;
+  headless: boolean;
+  bootTimeoutSec: number;
+}
+
+export interface TelegramConfig {
+  botToken: string;
+  botTokenEnv: string;
+  allowedChatIds: number[];
+  pollTimeoutSec: number;
+}
+
+export interface AgentConfig {
+  maxSteps: number;
+  loopDelayMs: number;
+  progressReportInterval: number;
+  returnHomeOnTaskEnd: boolean;
+  lang: "en";
+  verbose: boolean;
+  deviceId: string | null;
+}
+
+export interface ScreenshotConfig {
+  saveStepScreenshots: boolean;
+  directory: string;
+  maxCount: number;
+}
+
+export interface ScriptExecutorConfig {
+  enabled: boolean;
+  timeoutSec: number;
+  maxOutputChars: number;
+  allowedCommands: string[];
+}
+
+export interface HeartbeatConfig {
+  enabled: boolean;
+  everySec: number;
+  stuckTaskWarnSec: number;
+  writeLogFile: boolean;
+}
+
+export interface CronConfig {
+  enabled: boolean;
+  tickSec: number;
+  jobsFile: string;
+}
+
+export interface ModelProfile {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  apiKeyEnv: string;
+  maxTokens: number;
+  reasoningEffort: "low" | "medium" | "high" | "xhigh" | null;
+  temperature: number | null;
+}
+
+export interface OpenPocketConfig {
+  projectName: string;
+  workspaceDir: string;
+  stateDir: string;
+  defaultModel: string;
+  emulator: EmulatorConfig;
+  telegram: TelegramConfig;
+  agent: AgentConfig;
+  screenshots: ScreenshotConfig;
+  scriptExecutor: ScriptExecutorConfig;
+  heartbeat: HeartbeatConfig;
+  cron: CronConfig;
+  models: Record<string, ModelProfile>;
+  configPath: string;
+}
+
+export interface EmulatorStatus {
+  avdName: string;
+  devices: string[];
+  bootedDevices: string[];
+}
+
+export interface ScreenSnapshot {
+  deviceId: string;
+  currentApp: string;
+  width: number;
+  height: number;
+  screenshotBase64: string;
+  capturedAt: string;
+}
+
+export type AgentAction =
+  | { type: "tap"; x: number; y: number; reason?: string }
+  | {
+      type: "swipe";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      durationMs?: number;
+      reason?: string;
+    }
+  | { type: "type"; text: string; reason?: string }
+  | { type: "keyevent"; keycode: string; reason?: string }
+  | { type: "launch_app"; packageName: string; reason?: string }
+  | { type: "shell"; command: string; reason?: string }
+  | { type: "run_script"; script: string; timeoutSec?: number; reason?: string }
+  | { type: "wait"; durationMs?: number; reason?: string }
+  | { type: "finish"; message: string };
+
+export interface ModelStepOutput {
+  thought: string;
+  action: AgentAction;
+  raw: string;
+}
+
+export interface AgentRunResult {
+  ok: boolean;
+  message: string;
+  sessionPath: string;
+}
+
+export interface AgentProgressUpdate {
+  step: number;
+  maxSteps: number;
+  currentApp: string;
+  actionType: string;
+  message: string;
+  thought: string;
+  screenshotPath: string | null;
+}
+
+export interface SkillInfo {
+  id: string;
+  name: string;
+  description: string;
+  source: "workspace" | "local" | "bundled";
+  path: string;
+}
+
+export interface CronJob {
+  id: string;
+  name: string;
+  enabled: boolean;
+  everySec: number;
+  task: string;
+  chatId: number | null;
+  model: string | null;
+  runOnStartup: boolean;
+}

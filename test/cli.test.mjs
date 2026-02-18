@@ -1,0 +1,181 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cliPath = path.join(repoRoot, "dist", "cli.js");
+
+function runCli(args, env = {}) {
+  return spawnSync("node", [cliPath, ...args], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      ...env,
+    },
+    encoding: "utf-8",
+  });
+}
+
+function makeHome(prefix) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+test("init creates config and workspace files", () => {
+  const home = makeHome("openpocket-ts-init-");
+  const result = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const cfgPath = path.join(home, "config.json");
+  assert.equal(fs.existsSync(cfgPath), true, "config.json should exist");
+
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
+  assert.equal(cfg.projectName, "OpenPocket");
+  assert.equal(cfg.defaultModel, "gpt-5.2-codex");
+
+  const mustFiles = [
+    "AGENTS.md",
+    "SOUL.md",
+    "USER.md",
+    "IDENTITY.md",
+    "TOOLS.md",
+    "HEARTBEAT.md",
+    "MEMORY.md",
+    path.join("cron", "jobs.json"),
+  ];
+  for (const file of mustFiles) {
+    assert.equal(
+      fs.existsSync(path.join(home, "workspace", file)),
+      true,
+      `workspace file missing: ${file}`,
+    );
+  }
+});
+
+test("legacy snake_case config is migrated to camelCase by init", () => {
+  const home = makeHome("openpocket-ts-migrate-");
+  const cfgPath = path.join(home, "config.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    cfgPath,
+    `${JSON.stringify(
+      {
+        project_name: "OpenPocket",
+        workspace_dir: path.join(home, "workspace"),
+        state_dir: path.join(home, "state"),
+        default_model: "gpt-5.2-codex",
+        emulator: {
+          avd_name: "TestAVD",
+          android_sdk_root: "",
+          headless: false,
+          boot_timeout_sec: 120,
+        },
+        telegram: {
+          bot_token: "",
+          bot_token_env: "TELEGRAM_BOT_TOKEN",
+          allowed_chat_ids: [],
+          poll_timeout_sec: 20,
+        },
+        agent: {
+          max_steps: 10,
+          lang: "en",
+          verbose: true,
+          device_id: null,
+        },
+        models: {
+          "gpt-5.2-codex": {
+            base_url: "https://api.openai.com/v1",
+            model: "gpt-5.2-codex",
+            api_key: "",
+            api_key_env: "OPENAI_API_KEY",
+            max_tokens: 4096,
+            reasoning_effort: "medium",
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf-8",
+  );
+
+  const result = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const newCfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
+  assert.equal(typeof newCfg.projectName, "string");
+  assert.equal(newCfg.project_name, undefined);
+  assert.equal(newCfg.emulator.avdName, "TestAVD");
+  assert.equal(newCfg.emulator.avd_name, undefined);
+  assert.equal(newCfg.models["gpt-5.2-codex"].baseUrl, "https://api.openai.com/v1");
+  assert.equal(newCfg.models["gpt-5.2-codex"].base_url, undefined);
+});
+
+test("agent command without API key fails and writes session/memory", () => {
+  const home = makeHome("openpocket-ts-agent-");
+  const init = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const run = runCli(["agent", "Open Chrome"], {
+    OPENPOCKET_HOME: home,
+    OPENAI_API_KEY: "",
+  });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /Missing API key/);
+  assert.match(run.stdout, /Session:/);
+
+  const sessionsDir = path.join(home, "workspace", "sessions");
+  const sessionFiles = fs.readdirSync(sessionsDir).filter((f) => f.endsWith(".md"));
+  assert.equal(sessionFiles.length > 0, true, "session markdown should exist");
+
+  const sessionBody = fs.readFileSync(path.join(sessionsDir, sessionFiles[0]), "utf-8");
+  assert.match(sessionBody, /Missing API key/);
+
+  const date = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const dayName = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.md`;
+  const memoryPath = path.join(home, "workspace", "memory", dayName);
+  assert.equal(fs.existsSync(memoryPath), true, "daily memory file should exist");
+  const memoryBody = fs.readFileSync(memoryPath, "utf-8");
+  assert.match(memoryBody, /FAIL/);
+});
+
+test("help output includes setup and onboard commands", () => {
+  const result = runCli(["--help"]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /install-cli/);
+  assert.match(result.stdout, /setup/);
+  assert.match(result.stdout, /onboard/);
+  assert.match(result.stdout, /gateway \[start\|telegram\]/);
+  assert.match(result.stdout, /panel start/);
+});
+
+test("gateway start command is accepted (reaches token validation)", () => {
+  const home = makeHome("openpocket-ts-gateway-start-");
+  const init = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const run = runCli(["gateway", "start"], {
+    OPENPOCKET_HOME: home,
+    TELEGRAM_BOT_TOKEN: "",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Telegram bot token is empty/);
+});
+
+test("gateway defaults to start when subcommand is omitted", () => {
+  const home = makeHome("openpocket-ts-gateway-default-");
+  const init = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const run = runCli(["gateway"], {
+    OPENPOCKET_HOME: home,
+    TELEGRAM_BOT_TOKEN: "",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Telegram bot token is empty/);
+});

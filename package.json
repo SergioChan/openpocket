@@ -1,0 +1,30 @@
+{
+  "name": "openpocket",
+  "version": "0.2.0-mvp-ts",
+  "private": true,
+  "description": "OpenPocket Node.js TypeScript runtime",
+  "main": "dist/cli.js",
+  "bin": {
+    "openpocket": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/node-telegram-bot-api": "^0.64.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

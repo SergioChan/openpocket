@@ -1,0 +1,433 @@
+import TelegramBot, { type Message } from "node-telegram-bot-api";
+
+import type { CronJob, OpenPocketConfig } from "../types";
+import { saveConfig } from "../config";
+import { AgentRuntime } from "../agent/agent-runtime";
+import { EmulatorManager } from "../device/emulator-manager";
+import { ChatAssistant } from "./chat-assistant";
+import { CronService, type CronRunResult } from "./cron-service";
+import { HeartbeatRunner } from "./heartbeat-runner";
+
+export class TelegramGateway {
+  private readonly config: OpenPocketConfig;
+  private readonly emulator: EmulatorManager;
+  private readonly agent: AgentRuntime;
+  private readonly bot: TelegramBot;
+  private readonly cron: CronService;
+  private readonly heartbeat: HeartbeatRunner;
+  private chat: ChatAssistant;
+  private running = false;
+  private stoppedPromise: Promise<void> | null = null;
+  private stopResolver: (() => void) | null = null;
+
+  constructor(config: OpenPocketConfig) {
+    this.config = config;
+    this.emulator = new EmulatorManager(config);
+    this.agent = new AgentRuntime(config);
+    this.chat = new ChatAssistant(config);
+
+    const token =
+      config.telegram.botToken.trim() ||
+      (config.telegram.botTokenEnv ? process.env[config.telegram.botTokenEnv]?.trim() : "") ||
+      "";
+
+    if (!token) {
+      throw new Error(
+        `Telegram bot token is empty. Set config.telegram.botToken or env ${config.telegram.botTokenEnv}.`,
+      );
+    }
+
+    this.bot = new TelegramBot(token, {
+      polling: {
+        interval: 1000,
+        params: {
+          timeout: config.telegram.pollTimeoutSec,
+        },
+      },
+    });
+
+    this.heartbeat = new HeartbeatRunner(config, {
+      readSnapshot: () => {
+        const status = this.emulator.status();
+        return {
+          busy: this.agent.isBusy(),
+          currentTask: this.agent.getCurrentTask(),
+          taskRuntimeMs: this.agent.getCurrentTaskRuntimeMs(),
+          devices: status.devices.length,
+          bootedDevices: status.bootedDevices.length,
+        };
+      },
+    });
+
+    this.cron = new CronService(config, {
+      runTask: async (job) => this.runScheduledJob(job),
+      log: (line) => {
+        // eslint-disable-next-line no-console
+        console.log(line);
+      },
+    });
+  }
+
+  private log(message: string): void {
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][gateway] ${new Date().toISOString()} ${message}`);
+  }
+
+  private compact(text: string, maxChars: number): string {
+    const oneLine = text.replace(/\s+/g, " ").trim();
+    if (oneLine.length <= maxChars) {
+      return oneLine;
+    }
+    return `${oneLine.slice(0, Math.max(0, maxChars - 3))}...`;
+  }
+
+  private sanitizeForChat(text: string, maxChars: number): string {
+    const withoutInternalLines = text
+      .split("\n")
+      .filter((line) => !/^\s*(Session|Auto skill|Auto script)\s*:/i.test(line))
+      .join("\n");
+
+    const redacted = withoutInternalLines
+      .replace(/local_screenshot=\S+/gi, "local_screenshot=[saved locally]")
+      .replace(/runDir=\S+/gi, "runDir=[local-dir]")
+      .replace(/\/(?:Users|home|var|tmp)\/[^\s)\]]+/g, "[local-path]")
+      .replace(/[A-Za-z]:\\[^\s)\]]+/g, "[local-path]");
+
+    return this.compact(redacted, maxChars);
+  }
+
+  async start(): Promise<void> {
+    if (this.running) {
+      return;
+    }
+    this.running = true;
+    this.stoppedPromise = new Promise<void>((resolve) => {
+      this.stopResolver = resolve;
+    });
+
+    this.bot.on("message", this.handleMessage);
+    this.bot.on("polling_error", this.handlePollingError);
+    this.heartbeat.start();
+    this.cron.start();
+    this.log("telegram polling started");
+    this.log("OpenPocket Telegram gateway running...");
+  }
+
+  async stop(reason = "manual"): Promise<void> {
+    if (!this.running) {
+      return;
+    }
+    this.running = false;
+    this.bot.removeListener("message", this.handleMessage);
+    this.bot.removeListener("polling_error", this.handlePollingError);
+    this.heartbeat.stop();
+    this.cron.stop();
+    try {
+      await this.bot.stopPolling();
+    } catch {
+      // Ignore stop polling errors on shutdown.
+    }
+    this.log(`gateway stopped reason=${reason}`);
+    this.stopResolver?.();
+    this.stopResolver = null;
+  }
+
+  async runForever(): Promise<void> {
+    await this.start();
+    await this.waitForStop();
+  }
+
+  async waitForStop(): Promise<void> {
+    if (!this.stoppedPromise) {
+      return;
+    }
+    await this.stoppedPromise;
+  }
+
+  private readonly handlePollingError = (error: Error): void => {
+    this.log(`polling error: ${error.message}`);
+  };
+
+  private readonly handleMessage = async (message: Message): Promise<void> => {
+    try {
+      this.log(`incoming chat=${message.chat.id} text=${JSON.stringify(message.text ?? "")}`);
+      await this.consumeMessage(message);
+    } catch (error) {
+      const chatId = message.chat.id;
+      this.log(`handler error chat=${chatId} error=${(error as Error).message}`);
+      await this.bot.sendMessage(chatId, `OpenPocket error: ${(error as Error).message}`);
+    }
+  };
+
+  private allowed(chatId: number): boolean {
+    const allow = this.config.telegram.allowedChatIds;
+    if (!allow || allow.length === 0) {
+      return true;
+    }
+    return allow.includes(chatId);
+  }
+
+  private async consumeMessage(message: Message): Promise<void> {
+    const chatId = message.chat.id;
+    if (!this.allowed(chatId)) {
+      return;
+    }
+
+    const text = message.text?.trim();
+    if (!text) {
+      return;
+    }
+
+    if (text.startsWith("/help")) {
+      await this.bot.sendMessage(
+        chatId,
+        [
+          "OpenPocket commands:",
+          "/status",
+          "/model [name]",
+          "/startvm",
+          "/stopvm",
+          "/hidevm",
+          "/showvm",
+          "/screen",
+          "/skills",
+          "/clear",
+          "/stop",
+          "/cronrun <job-id>",
+          "/run <task>",
+          "Send plain text directly. I will auto-route to chat or task mode. Use /run to force task mode.",
+        ].join("\n"),
+      );
+      return;
+    }
+
+    if (text.startsWith("/status")) {
+      const status = this.emulator.status();
+      await this.bot.sendMessage(
+        chatId,
+        [
+          `Project: ${this.config.projectName}`,
+          `Model: ${this.config.defaultModel}`,
+          `Agent busy: ${this.agent.isBusy()}`,
+          `Current task: ${this.agent.getCurrentTask() ?? "(none)"}`,
+          `AVD: ${status.avdName}`,
+          `Devices: ${status.devices.length > 0 ? status.devices.join(", ") : "(none)"}`,
+          `Booted: ${status.bootedDevices.length > 0 ? status.bootedDevices.join(", ") : "(none)"}`,
+        ].join("\n"),
+      );
+      return;
+    }
+
+    if (text.startsWith("/model")) {
+      const requested = text.replace("/model", "").trim();
+      if (!requested) {
+        await this.bot.sendMessage(
+          chatId,
+          `Current model: ${this.config.defaultModel}\nAvailable: ${Object.keys(this.config.models).join(", ")}`,
+        );
+        return;
+      }
+
+      if (!this.config.models[requested]) {
+        await this.bot.sendMessage(chatId, `Unknown model: ${requested}`);
+        return;
+      }
+
+      this.config.defaultModel = requested;
+      saveConfig(this.config);
+      this.chat = new ChatAssistant(this.config);
+      await this.bot.sendMessage(chatId, `Default model updated: ${requested}`);
+      return;
+    }
+
+    if (text.startsWith("/startvm")) {
+      const messageText = await this.emulator.start();
+      await this.bot.sendMessage(chatId, messageText);
+      return;
+    }
+
+    if (text.startsWith("/stopvm")) {
+      await this.bot.sendMessage(chatId, this.emulator.stop());
+      return;
+    }
+
+    if (text.startsWith("/hidevm")) {
+      await this.bot.sendMessage(chatId, this.emulator.hideWindow());
+      return;
+    }
+
+    if (text.startsWith("/showvm")) {
+      await this.bot.sendMessage(chatId, this.emulator.showWindow());
+      return;
+    }
+
+    if (text.startsWith("/screen")) {
+      const screenshotPath = this.agent.captureManualScreenshot();
+      this.log(`manual screenshot chat=${chatId} path=${screenshotPath}`);
+      await this.bot.sendMessage(chatId, "Screenshot saved in local storage.");
+      return;
+    }
+
+    if (text.startsWith("/skills")) {
+      const skills = this.agent.listSkills();
+      if (skills.length === 0) {
+        await this.bot.sendMessage(chatId, "No skills loaded.");
+        return;
+      }
+      const body = skills
+        .slice(0, 25)
+        .map((skill) => `- [${skill.source}] ${skill.name}: ${skill.description}`)
+        .join("\n");
+      await this.bot.sendMessage(chatId, `Loaded skills (${skills.length}):\n${body}`);
+      return;
+    }
+
+    if (text === "/clear") {
+      this.chat.clear(chatId);
+      await this.bot.sendMessage(chatId, "Conversation memory cleared.");
+      return;
+    }
+
+    if (text === "/stop") {
+      const accepted = this.agent.stopCurrentTask();
+      await this.bot.sendMessage(chatId, accepted ? "Stop requested." : "No running task.");
+      return;
+    }
+
+    if (text.startsWith("/cronrun")) {
+      const jobId = text.replace("/cronrun", "").trim();
+      if (!jobId) {
+        await this.bot.sendMessage(chatId, "Usage: /cronrun <job-id>");
+        return;
+      }
+      const found = await this.cron.runNow(jobId);
+      await this.bot.sendMessage(chatId, found ? `Cron job triggered: ${jobId}` : `Cron job not found: ${jobId}`);
+      return;
+    }
+
+    if (text.startsWith("/run")) {
+      const task = text.replace("/run", "").trim();
+      if (!task) {
+        await this.bot.sendMessage(chatId, "Usage: /run <task>");
+        return;
+      }
+      await this.runTaskAsync(chatId, task);
+      return;
+    }
+
+    const decision = await this.chat.decide(chatId, text);
+    this.log(
+      `decision chat=${chatId} mode=${decision.mode} confidence=${decision.confidence.toFixed(2)} reason=${decision.reason}`,
+    );
+    if (decision.mode === "task") {
+      const task = decision.task || text;
+      await this.runTaskAsync(chatId, task);
+      return;
+    }
+
+    const reply = decision.reply || (await this.chat.reply(chatId, text));
+    await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
+  }
+
+  private async runTaskAsync(chatId: number, task: string): Promise<void> {
+    if (this.agent.isBusy()) {
+      this.log(`task rejected busy chat=${chatId} task=${JSON.stringify(task)}`);
+      await this.bot.sendMessage(chatId, "A previous task is still running. Please wait.");
+      return;
+    }
+    await this.bot.sendMessage(chatId, `Task accepted: ${task}\nI will send step-by-step progress updates.`);
+    void this.runTaskAndReport({ chatId, task, source: "chat", modelName: null });
+  }
+
+  private async runScheduledJob(job: CronJob): Promise<CronRunResult> {
+    if (this.agent.isBusy()) {
+      return {
+        accepted: false,
+        ok: false,
+        message: "Agent is busy.",
+      };
+    }
+
+    if (job.chatId !== null) {
+      await this.bot.sendMessage(job.chatId, `Scheduled task started (${job.name}): ${job.task}`);
+    }
+
+    return this.runTaskAndReport({
+      chatId: job.chatId,
+      task: job.task,
+      source: "cron",
+      modelName: job.model,
+    });
+  }
+
+  private async runTaskAndReport(params: {
+    chatId: number | null;
+    task: string;
+    source: "chat" | "cron";
+    modelName: string | null;
+  }): Promise<CronRunResult> {
+    const { chatId, task, source, modelName } = params;
+    this.log(
+      `task accepted source=${source} chat=${chatId ?? "(none)"} task=${JSON.stringify(task)} model=${modelName ?? this.config.defaultModel}`,
+    );
+
+    try {
+      const result = await this.agent.runTask(
+        task,
+        modelName ?? undefined,
+        chatId === null
+          ? undefined
+          : async (progress) => {
+              this.log(
+                `progress source=${source} chat=${chatId} step=${progress.step}/${progress.maxSteps} action=${progress.actionType} app=${progress.currentApp}`,
+              );
+              const thought = this.sanitizeForChat(progress.thought, 120);
+              const actionResult = this.sanitizeForChat(progress.message, 180);
+              await this.bot.sendMessage(
+                chatId,
+                [
+                  `Progress ${progress.step}/${progress.maxSteps}`,
+                  `Current screen app: ${progress.currentApp}`,
+                  `Action: ${progress.actionType}`,
+                  `Reasoning: ${thought || "Continue observing and planning the next step."}`,
+                  `Result: ${actionResult || "Action executed."}`,
+                ].join("\n"),
+              );
+            },
+      );
+
+      this.log(`task done source=${source} chat=${chatId ?? "(none)"} ok=${result.ok} session=${result.sessionPath}`);
+
+      if (chatId !== null) {
+        if (result.ok) {
+          await this.bot.sendMessage(
+            chatId,
+            `Task completed.\nResult: ${this.sanitizeForChat(result.message, 800) || "Completed."}`,
+          );
+        } else {
+          await this.bot.sendMessage(
+            chatId,
+            `Task not completed.\nReason: ${this.sanitizeForChat(result.message, 800) || "Unknown error."}`,
+          );
+        }
+      }
+
+      return {
+        accepted: true,
+        ok: result.ok,
+        message: result.message,
+      };
+    } catch (error) {
+      const message = `Execution interrupted: ${(error as Error).message || "Unknown error."}`;
+      this.log(`task crash source=${source} chat=${chatId ?? "(none)"} error=${(error as Error).message}`);
+      if (chatId !== null) {
+        await this.bot.sendMessage(chatId, this.sanitizeForChat(message, 600));
+      }
+      return {
+        accepted: true,
+        ok: false,
+        message,
+      };
+    }
+  }
+}
