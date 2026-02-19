@@ -480,15 +480,19 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       const emulator = new EmulatorManager(cfg);
       const emulatorStatus = emulator.status();
       if (emulatorStatus.bootedDevices.length > 0) {
+        let detail = `ok (${emulatorStatus.bootedDevices.join(", ")})`;
+        if (process.platform === "darwin") {
+          detail = `${detail}; ${emulator.hideWindow()}`;
+        }
         printStartupStep(
           3,
           totalSteps,
           "Ensure emulator is running",
-          `ok (${emulatorStatus.bootedDevices.join(", ")})`,
+          detail,
         );
       } else {
         printStartupStep(3, totalSteps, "Ensure emulator is running", "starting");
-        const startMessage = await emulator.start();
+        const startMessage = await emulator.start(true);
         printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
       }
 
