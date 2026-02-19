@@ -143,6 +143,7 @@ private struct StatusBadge: View {
 
 private struct RuntimeTabView: View {
     @EnvironmentObject private var controller: OpenPocketController
+    private let previewTicker = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ScrollView {
@@ -194,6 +195,43 @@ private struct RuntimeTabView: View {
                     .padding(10)
                 }
 
+                GroupBox("Emulator Screen Preview") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 12) {
+                            Button("Refresh Preview") {
+                                controller.refreshEmulatorPreview()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Toggle("Auto refresh (2s)", isOn: $controller.emulatorPreviewAutoRefresh)
+                                .toggleStyle(.switch)
+
+                            Text(controller.emulatorPreviewStatusText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.black.opacity(0.88))
+
+                            if let image = controller.emulatorPreviewImage {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(10)
+                            } else {
+                                Text("Preview unavailable. Start emulator and click Refresh Preview.")
+                                    .foregroundStyle(.white.opacity(0.82))
+                                    .font(.system(size: 12))
+                                    .padding()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 240, maxHeight: 360)
+                    }
+                    .padding(10)
+                }
+
                 GroupBox("Core Paths") {
                     VStack(alignment: .leading, spacing: 12) {
                         if let cfg = controller.config {
@@ -238,6 +276,11 @@ private struct RuntimeTabView: View {
                 }
             }
             .padding(20)
+        }
+        .onReceive(previewTicker) { _ in
+            if controller.emulatorPreviewAutoRefresh {
+                controller.refreshEmulatorPreview()
+            }
         }
     }
 }

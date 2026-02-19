@@ -17,6 +17,9 @@ final class OpenPocketController: ObservableObject {
     @Published var logLines: [String] = []
     @Published var gatewayRunning: Bool = false
     @Published var emulatorStatusText: String = "Unknown"
+    @Published var emulatorPreviewImage: NSImage?
+    @Published var emulatorPreviewStatusText: String = "No preview captured yet."
+    @Published var emulatorPreviewAutoRefresh: Bool = false
     @Published var selectedPromptFile: PromptFileEntry?
     @Published var promptEditorText: String = ""
     @Published var promptEditorDirty: Bool = false
@@ -34,6 +37,7 @@ final class OpenPocketController: ObservableObject {
     private let fm = FileManager.default
     private var fileListRefreshToken: Int = 0
     private var emulatorStatusRefreshToken: Int = 0
+    private var emulatorPreviewRefreshing: Bool = false
 
     let repoRoot: URL
 
@@ -559,6 +563,58 @@ final class OpenPocketController: ObservableObject {
                 } else {
                     self.emulatorStatusText = "Running (\(parsed.bootedDevices.joined(separator: ", ")))"
                 }
+            }
+        }
+    }
+
+    func refreshEmulatorPreview() {
+        if emulatorPreviewRefreshing {
+            return
+        }
+        emulatorPreviewRefreshing = true
+        emulatorPreviewStatusText = "Capturing preview..."
+
+        let previewDir = paths.stateDir.appendingPathComponent("panel-preview", isDirectory: true)
+        let previewPath = previewDir.appendingPathComponent("emulator-preview.png")
+
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try self.fm.createDirectory(at: previewDir, withIntermediateDirectories: true)
+            } catch {
+                DispatchQueue.main.async {
+                    self.emulatorPreviewRefreshing = false
+                    self.emulatorPreviewStatusText = "Failed to create preview directory."
+                }
+                return
+            }
+
+            let result = self.bridge.runCommand(
+                workingDir: self.repoRoot,
+                args: ["emulator", "screenshot", "--out", previewPath.path],
+                timeoutSec: 45
+            )
+
+            DispatchQueue.main.async {
+                self.emulatorPreviewRefreshing = false
+
+                guard result.ok else {
+                    self.emulatorPreviewStatusText = "Preview capture failed."
+                    if !result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.appendLog("[preview] \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                    return
+                }
+
+                guard self.fm.fileExists(atPath: previewPath.path),
+                      let image = NSImage(contentsOf: previewPath) else {
+                    self.emulatorPreviewStatusText = "Preview image is unavailable."
+                    return
+                }
+
+                self.emulatorPreviewImage = image
+                let formatter = DateFormatter()
+                formatter.dateFormat = "HH:mm:ss"
+                self.emulatorPreviewStatusText = "Updated at \(formatter.string(from: Date()))"
             }
         }
     }
