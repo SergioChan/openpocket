@@ -10,14 +10,20 @@ import { saveConfig } from "../config";
 import { ensureDir, nowIso } from "../utils/paths";
 import { EmulatorManager } from "../device/emulator-manager";
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pkgJson = require("../../package.json") as { version: string; license: string };
+
 const OPENPOCKET_ASCII = [
   "  ____  _____  ______ _   _ ____   ___   ____ _  _______ _____ ",
   " / __ \\|  __ \\|  ____| \\ | |  _ \\ / _ \\ / ___| |/ / ____|_   _|",
   "| |  | | |__) | |__  |  \\| | |_) | | | | |   | ' /|  _|   | |  ",
   "| |  | |  ___/|  __| | |\\  |  __/| |_| | |___| . \\| |___  | |  ",
   "| |__| | |    | |____| | \\ | |    \\___/ \\____|_|\\_\\_____| |_|  ",
-  " \\____/|_|    |______|_|  \\_|_|               SETUP WIZARD      ",
+  " \\____/|_|    |______|_|  \\_|_|                                  ",
   "",
+  "                       ╔══════════════════╗                      ",
+  "                       ║   SETUP WIZARD   ║                      ",
+  "                       ╚══════════════════╝                      ",
 ];
 
 interface SetupState {
@@ -69,8 +75,16 @@ export type RunSetupOptions = {
 };
 
 function printHeader(): void {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const meta = [
+    `  Version: ${pkgJson.version}  |  Author: Sergio  |  License: ${pkgJson.license}`,
+    `  ${timestamp}`,
+    "",
+  ];
   // eslint-disable-next-line no-console
-  console.log(OPENPOCKET_ASCII.join("\n"));
+  console.log([...OPENPOCKET_ASCII, ...meta].join("\n"));
 }
 
 function onboardingStatePath(config: OpenPocketConfig): string {
