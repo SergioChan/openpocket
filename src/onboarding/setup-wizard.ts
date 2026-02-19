@@ -13,10 +13,19 @@ import { EmulatorManager } from "../device/emulator-manager";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pkgJson = require("../../package.json") as { version: string; license: string };
 
-const OPENPOCKET_TITLE = "OPENPOCKET";
-const SETUP_WIZARD_TITLE = "SETUP WIZARD";
+const OPENPOCKET_ASCII = [
+  "  ██████╗  ██████╗  ███████╗ ███╗   ██╗ ██████╗   ██████╗   ██████╗ ██╗  ██╗  ███████╗ ████████╗",
+  " ██╔═══██╗ ██╔══██╗ ██╔════╝ ████╗  ██║ ██╔══██╗ ██╔═══██╗ ██╔════╝ ██║ ██╔╝  ██╔════╝ ╚══██╔══╝",
+  " ██║   ██║ ██████╔╝ █████╗   ██╔██╗ ██║ ██████╔╝ ██║   ██║ ██║      █████╔╝   █████╗      ██║   ",
+  " ██║   ██║ ██╔═══╝  ██╔══╝   ██║╚██╗██║ ██╔═══╝  ██║   ██║ ██║      ██╔═██╗   ██╔══╝      ██║   ",
+  " ╚██████╔╝ ██║      ███████╗ ██║ ╚████║ ██║      ╚██████╔╝ ╚██████╗ ██║  ██╗  ███████╗    ██║   ",
+  "  ╚═════╝  ╚═╝      ╚══════╝ ╚═╝  ╚═══╝ ╚═╝       ╚═════╝   ╚═════╝ ╚═╝  ╚═╝  ╚══════╝    ╚═╝   ",
+];
+
+const SETUP_WIZARD_ASCII = "                             🤖  SETUP WIZARD                             ";
 
 const ANSI_RESET = "\u001b[0m";
+const ANSI_BOLD_WHITE = "\u001b[1;37m";
 const ANSI_BOLD_CYAN = "\u001b[1;36m";
 const ANSI_BOLD_GREEN = "\u001b[1;32m";
 const ANSI_BOLD_YELLOW = "\u001b[1;33m";
@@ -95,18 +104,17 @@ function printHeader(): void {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  const titleLine = `========== ${OPENPOCKET_TITLE} ==========`;
-  const wizardLine = `----- ${SETUP_WIZARD_TITLE} -----`;
   const meta = [
     colorize(`  Version: ${pkgJson.version}  |  Author: Sergio  |  License: ${pkgJson.license}`, ANSI_DIM, useColor),
     colorize(`  ${timestamp}`, ANSI_DIM, useColor),
     "",
   ];
+  const header = OPENPOCKET_ASCII.map((line) => colorize(line, ANSI_BOLD_WHITE, useColor));
   // eslint-disable-next-line no-console
   console.log(
     [
-      colorize(titleLine, ANSI_BOLD_CYAN, useColor),
-      colorize(wizardLine, ANSI_BOLD_YELLOW, useColor),
+      ...header,
+      colorize(SETUP_WIZARD_ASCII, ANSI_BOLD_YELLOW, useColor),
       "",
       ...meta,
     ].join("\n"),
