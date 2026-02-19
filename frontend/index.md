@@ -6,8 +6,8 @@ titleTemplate: OpenPocket Documentation
 
 hero:
   name: '<img class="op-hero-logo" src="/openpocket-logo.png" alt="OpenPocket logo" />'
-  text: Local Emulator Phone-Use Agent
-  tagline: Private mobile automation for daily life, running on your own machine.
+  text: A Second Phone That Never Sleeps.
+  tagline: OpenPocket runs an always-on agent phone locally, with privacy first.
   image:
     src: /openpocket-grid.svg
     alt: OpenPocket local emulator architecture
