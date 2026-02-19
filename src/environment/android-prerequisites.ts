@@ -32,6 +32,13 @@ interface RunResult {
   error: string | null;
 }
 
+interface JavaRuntimeInfo {
+  javaHome: string | null;
+  javaBin: string;
+  major: number;
+  rawVersion: string;
+}
+
 function run(
   cmd: string,
   args: string[],
@@ -93,6 +100,109 @@ function findInPath(binName: string): string | null {
     }
   }
   return null;
+}
+
+function parseJavaMajor(rawOutput: string): number | null {
+  const quoted = rawOutput.match(/version\s+"([^"]+)"/i)?.[1]?.trim();
+  if (quoted) {
+    const parts = quoted.split(/[._-]/).filter(Boolean);
+    if (parts[0] === "1" && parts.length > 1) {
+      const major = Number(parts[1]);
+      return Number.isFinite(major) ? major : null;
+    }
+    const major = Number(parts[0]);
+    return Number.isFinite(major) ? major : null;
+  }
+
+  const fallback = rawOutput.match(/\bopenjdk\s+(\d+)(?:[.\s]|$)/i)?.[1];
+  if (fallback) {
+    const major = Number(fallback);
+    return Number.isFinite(major) ? major : null;
+  }
+
+  return null;
+}
+
+function inspectJavaBin(javaBin: string): JavaRuntimeInfo | null {
+  const result = run(javaBin, ["-version"]);
+  const output = `${result.stdout}\n${result.stderr}`.trim();
+  if (!output) {
+    return null;
+  }
+  const major = parseJavaMajor(output);
+  if (!major) {
+    return null;
+  }
+  const javaHome = path.dirname(path.dirname(javaBin));
+  return {
+    javaHome,
+    javaBin,
+    major,
+    rawVersion: output.split("\n")[0] ?? output,
+  };
+}
+
+function detectBestJavaRuntime(): JavaRuntimeInfo | null {
+  const homeCandidates: string[] = [];
+  const envHome = process.env.JAVA_HOME?.trim();
+  if (envHome) {
+    homeCandidates.push(envHome);
+  }
+
+  const javaHomeDefault = run("/usr/libexec/java_home", []);
+  if (javaHomeDefault.ok) {
+    const resolved = javaHomeDefault.stdout.trim();
+    if (resolved) {
+      homeCandidates.push(resolved);
+    }
+  }
+
+  const vmDir = "/Library/Java/JavaVirtualMachines";
+  if (fs.existsSync(vmDir)) {
+    for (const name of fs.readdirSync(vmDir)) {
+      homeCandidates.push(path.join(vmDir, name, "Contents", "Home"));
+    }
+  }
+
+  homeCandidates.push("/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home");
+  homeCandidates.push("/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home");
+
+  const infos: JavaRuntimeInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const home of homeCandidates) {
+    const resolved = path.resolve(home);
+    if (seen.has(resolved)) {
+      continue;
+    }
+    seen.add(resolved);
+    const javaBin = path.join(resolved, "bin", "java");
+    if (!fs.existsSync(javaBin) || !canExecute(javaBin)) {
+      continue;
+    }
+    const info = inspectJavaBin(javaBin);
+    if (info) {
+      infos.push(info);
+    }
+  }
+
+  const pathJava = findInPath("java");
+  if (pathJava) {
+    const resolved = path.resolve(pathJava);
+    if (!seen.has(resolved)) {
+      const info = inspectJavaBin(resolved);
+      if (info) {
+        infos.push(info);
+      }
+    }
+  }
+
+  if (infos.length === 0) {
+    return null;
+  }
+
+  infos.sort((a, b) => b.major - a.major);
+  return infos[0];
 }
 
 function collectSdkRoot(config: OpenPocketConfig): { sdkRoot: string; configUpdated: boolean } {
@@ -176,23 +286,54 @@ function installHomebrew(logger: (line: string) => void): void {
   extendProcessPathForBrew();
 }
 
+function brewEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HOMEBREW_NO_AUTO_UPDATE: process.env.HOMEBREW_NO_AUTO_UPDATE ?? "1",
+    HOMEBREW_NO_ENV_HINTS: process.env.HOMEBREW_NO_ENV_HINTS ?? "1",
+  };
+}
+
 function installBrewCask(brew: string, cask: string, logger: (line: string) => void): boolean {
-  const exists = run(brew, ["list", "--cask", cask]);
+  const exists = run(brew, ["list", "--cask", cask], { env: brewEnv() });
   if (exists.ok) {
     logger(`brew cask '${cask}' already installed (skip).`);
     return false;
   }
   logger(`Installing brew cask '${cask}'...`);
-  const installed = run(brew, ["install", "--cask", cask], { inherit: true });
+  const installed = run(brew, ["install", "--cask", cask], { inherit: true, env: brewEnv() });
   if (!installed.ok) {
     throw new Error(`brew install --cask ${cask} failed.`);
   }
   return true;
 }
 
-function acceptSdkLicenses(sdkmanager: string, sdkRoot: string, logger: (line: string) => void): void {
+function resolveAndroidToolEnv(sdkRoot: string, javaHome: string): NodeJS.ProcessEnv {
+  const extraBins = [
+    path.join(javaHome, "bin"),
+    path.join(sdkRoot, "platform-tools"),
+    path.join(sdkRoot, "emulator"),
+  ];
+  const basePath = process.env.PATH ?? "";
+  const pathEntries = [...extraBins, ...basePath.split(path.delimiter)].filter(Boolean);
+  return {
+    ...process.env,
+    JAVA_HOME: javaHome,
+    ANDROID_SDK_ROOT: sdkRoot,
+    ANDROID_HOME: sdkRoot,
+    PATH: Array.from(new Set(pathEntries)).join(path.delimiter),
+  };
+}
+
+function acceptSdkLicenses(
+  sdkmanager: string,
+  sdkRoot: string,
+  logger: (line: string) => void,
+  toolEnv: NodeJS.ProcessEnv,
+): void {
   logger("Accepting Android SDK licenses...");
   const res = run(sdkmanager, [`--sdk_root=${sdkRoot}`, "--licenses"], {
+    env: toolEnv,
     input: `${"y\n".repeat(200)}`,
   });
   if (!res.ok) {
@@ -200,15 +341,25 @@ function acceptSdkLicenses(sdkmanager: string, sdkRoot: string, logger: (line: s
   }
 }
 
-function installSdkPackages(sdkmanager: string, sdkRoot: string, logger: (line: string) => void): void {
+function installSdkPackages(
+  sdkmanager: string,
+  sdkRoot: string,
+  logger: (line: string) => void,
+  toolEnv: NodeJS.ProcessEnv,
+): void {
   logger("Installing Android SDK packages: platform-tools, emulator, platforms;android-34 ...");
   const result = run(
     sdkmanager,
     [`--sdk_root=${sdkRoot}`, "platform-tools", "emulator", "platforms;android-34"],
-    { inherit: true },
+    { inherit: true, env: toolEnv },
   );
   if (!result.ok) {
-    throw new Error("Failed to install required Android SDK packages.");
+    throw new Error(
+      [
+        "Failed to install required Android SDK packages.",
+        "This usually means Java runtime is below 17 or JAVA_HOME points to an old JDK.",
+      ].join(" "),
+    );
   }
 }
 
@@ -216,6 +367,7 @@ function installOneSystemImage(
   sdkmanager: string,
   sdkRoot: string,
   logger: (line: string) => void,
+  toolEnv: NodeJS.ProcessEnv,
 ): string | null {
   const archTag = process.arch === "arm64" ? "arm64-v8a" : "x86_64";
   const candidates = Array.from(
@@ -230,7 +382,7 @@ function installOneSystemImage(
 
   for (const pkg of candidates) {
     logger(`Trying system image: ${pkg}`);
-    const res = run(sdkmanager, [`--sdk_root=${sdkRoot}`, pkg], { inherit: true });
+    const res = run(sdkmanager, [`--sdk_root=${sdkRoot}`, pkg], { inherit: true, env: toolEnv });
     if (res.ok) {
       logger(`System image ready: ${pkg}`);
       return pkg;
@@ -241,13 +393,8 @@ function installOneSystemImage(
   return null;
 }
 
-function listAvdNames(avdmanager: string, sdkRoot: string): string[] {
-  const env = {
-    ...process.env,
-    ANDROID_SDK_ROOT: sdkRoot,
-    ANDROID_HOME: sdkRoot,
-  };
-  const result = run(avdmanager, ["list", "avd"], { env });
+function listAvdNames(avdmanager: string, toolEnv: NodeJS.ProcessEnv): string[] {
+  const result = run(avdmanager, ["list", "avd"], { env: toolEnv });
   if (!result.ok) {
     return [];
   }
@@ -263,21 +410,16 @@ function listAvdNames(avdmanager: string, sdkRoot: string): string[] {
 
 function createAvd(
   avdmanager: string,
-  sdkRoot: string,
   avdName: string,
   imagePackage: string,
   logger: (line: string) => void,
+  toolEnv: NodeJS.ProcessEnv,
 ): boolean {
   logger(`Creating AVD '${avdName}' with image '${imagePackage}'...`);
-  const env = {
-    ...process.env,
-    ANDROID_SDK_ROOT: sdkRoot,
-    ANDROID_HOME: sdkRoot,
-  };
   const result = run(
     avdmanager,
     ["create", "avd", "--force", "-n", avdName, "-k", imagePackage],
-    { env, input: "no\n" },
+    { env: toolEnv, input: "no\n" },
   );
   if (!result.ok) {
     logger("Failed to create AVD automatically.");
@@ -305,10 +447,13 @@ export async function ensureAndroidPrerequisites(
     };
   }
 
-  const { sdkRoot, configUpdated } = collectSdkRoot(config);
+  const collected = collectSdkRoot(config);
+  const sdkRoot = collected.sdkRoot;
+  let configUpdated = collected.configUpdated;
   ensureDir(sdkRoot);
 
   let tools = detectTools(sdkRoot);
+  const missingBeforeInstall = missingTools(tools);
   let missing = missingTools(tools);
   const installedSteps: string[] = [];
   let avdCreated = false;
@@ -354,21 +499,74 @@ export async function ensureAndroidPrerequisites(
     throw new Error("sdkmanager or avdmanager is not available.");
   }
 
-  acceptSdkLicenses(sdkmanager, sdkRoot, logger);
-  installSdkPackages(sdkmanager, sdkRoot, logger);
-  installedSteps.push("sdk:platform-tools,emulator,platforms;android-34");
+  let javaRuntime = detectBestJavaRuntime();
+  if (!javaRuntime || javaRuntime.major < 17) {
+    if (!autoInstall) {
+      throw new Error("Java 17+ is required for Android command line tools, but was not detected.");
+    }
+    if (process.platform !== "darwin") {
+      throw new Error("Java 17+ is required for Android command line tools.");
+    }
 
-  const currentAvds = listAvdNames(avdmanager, sdkRoot);
-  if (!currentAvds.includes(config.emulator.avdName)) {
-    const image = installOneSystemImage(sdkmanager, sdkRoot, logger);
+    let brew = resolveBrewBinary();
+    if (!brew) {
+      installHomebrew(logger);
+      installedSteps.push("homebrew");
+      brew = resolveBrewBinary();
+    }
+    if (!brew) {
+      throw new Error("Homebrew was not found after installation attempt.");
+    }
+
+    if (installBrewCask(brew, "temurin", logger)) {
+      installedSteps.push("brew:temurin");
+    }
+    javaRuntime = detectBestJavaRuntime();
+  }
+
+  if (!javaRuntime || javaRuntime.major < 17 || !javaRuntime.javaHome) {
+    throw new Error(
+      [
+        "Java 17+ is required for Android command line tools but is still unavailable.",
+        "Please ensure a JDK 17+ is installed and retry onboarding.",
+      ].join(" "),
+    );
+  }
+
+  logger(`Using Java ${javaRuntime.major} for Android SDK tools: ${javaRuntime.javaHome}`);
+  const toolEnv = resolveAndroidToolEnv(sdkRoot, javaRuntime.javaHome);
+  const currentAvdsBefore = listAvdNames(avdmanager, toolEnv);
+  const hasConfiguredAvd = currentAvdsBefore.includes(config.emulator.avdName);
+  const hasAnyAvd = currentAvdsBefore.length > 0;
+  const needsHeavySdkSetup = missingBeforeInstall.length > 0 || !hasAnyAvd;
+
+  if (!needsHeavySdkSetup && hasConfiguredAvd) {
+    logger("Android runtime already ready (tools + configured AVD found). Skipping heavy SDK install.");
+  } else {
+    acceptSdkLicenses(sdkmanager, sdkRoot, logger, toolEnv);
+    installSdkPackages(sdkmanager, sdkRoot, logger, toolEnv);
+    installedSteps.push("sdk:platform-tools,emulator,platforms;android-34");
+  }
+
+  let currentAvds = listAvdNames(avdmanager, toolEnv);
+  if (!currentAvds.includes(config.emulator.avdName) && currentAvds.length > 0) {
+    const fallback = currentAvds[0];
+    logger(`Configured AVD '${config.emulator.avdName}' not found. Reusing existing AVD '${fallback}'.`);
+    config.emulator.avdName = fallback;
+    configUpdated = true;
+  }
+
+  if (currentAvds.length === 0) {
+    const image = installOneSystemImage(sdkmanager, sdkRoot, logger, toolEnv);
     if (image) {
       installedSteps.push(`sdk:${image}`);
-      avdCreated = createAvd(avdmanager, sdkRoot, config.emulator.avdName, image, logger);
+      avdCreated = createAvd(avdmanager, config.emulator.avdName, image, logger, toolEnv);
       if (!avdCreated) {
         throw new Error(`Failed to create AVD '${config.emulator.avdName}'.`);
       }
       installedSteps.push(`avd:${config.emulator.avdName}`);
-    } else if (currentAvds.length === 0) {
+      currentAvds = listAvdNames(avdmanager, toolEnv);
+    } else {
       throw new Error("No AVD exists and no installable system image was found.");
     }
   }

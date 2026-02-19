@@ -63,6 +63,7 @@ On first `onboard`, OpenPocket creates:
 - option prompts use Up/Down arrows + Enter
 - emulator wake-up + manual Gmail login for Play Store
 - Android dependency doctor + auto-install on macOS when required (includes Java 17+ runtime for sdkmanager)
+- existing AVD reuse to avoid repeated heavy system-image/bootstrap downloads on later onboard runs
 
 If you explicitly want a user-local PATH command without npm global install:
 

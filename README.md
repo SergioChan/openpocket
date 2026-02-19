@@ -103,6 +103,7 @@ npm run build
 
 1. If local tools are already installed, dependency installation is skipped.
 2. If tools are missing on macOS, OpenPocket tries automatic installation (Homebrew, Java 17+ runtime, Android SDK packages, and default AVD bootstrap).
+3. If an existing AVD is already present, OpenPocket reuses it and skips heavy system-image bootstrap.
 
 You can skip this step in CI/tests with:
 

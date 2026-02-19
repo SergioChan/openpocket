@@ -43,6 +43,7 @@ Local clone launcher:
 - ensures workspace bootstrap files and directories
 - runs Android dependency doctor (auto-install on macOS when tools are missing)
 - ensures Java 17+ for Android command line tools; auto-installs via Homebrew on macOS if needed
+- reuses existing local AVD when available to avoid heavy repeated image/bootstrap installs
 - runs interactive onboarding wizard (consent/model/API key/emulator login)
 
 ## `install-cli`
