@@ -125,7 +125,7 @@ test("setup wizard configures OpenAI key and records Gmail onboarding state", as
     const cfg = loadConfig();
     const prompter = new FakePrompter({
       confirms: [true, true, true],
-      selects: ["gpt-5.2-codex", "config", "start", "disabled"],
+      selects: ["gpt-5.2-codex", "config", "skip", "keep", "start", "disabled"],
       texts: ["sk-test-openpocket"],
       pauseCount: 1,
     });
@@ -159,7 +159,7 @@ test("setup wizard applies provider key to selected provider only", async () => 
     const cfg = loadConfig();
     const prompter = new FakePrompter({
       confirms: [true, true],
-      selects: ["autoglm-phone", "config", "skip", "disabled"],
+      selects: ["autoglm-phone", "config", "skip", "keep", "skip", "disabled"],
       texts: ["zai-test-key"],
       pauseCount: 0,
     });
@@ -181,7 +181,7 @@ test("setup wizard configures local human-auth ngrok mode", async () => {
     process.env.NGROK_AUTHTOKEN = "ngrok-test-token";
     const prompter = new FakePrompter({
       confirms: [true],
-      selects: ["gpt-5.2-codex", "skip", "skip", "ngrok", "env"],
+      selects: ["gpt-5.2-codex", "skip", "skip", "keep", "skip", "ngrok", "env"],
       texts: [],
       pauseCount: 0,
     });
@@ -204,5 +204,24 @@ test("setup wizard configures local human-auth ngrok mode", async () => {
     assert.equal(savedCfg.humanAuth.tunnel.ngrok.enabled, true);
     assert.equal(savedCfg.humanAuth.tunnel.ngrok.authtoken, "");
     assert.equal(savedCfg.humanAuth.localRelayHost, "127.0.0.1");
+  });
+});
+
+test("setup wizard can configure Telegram token and allowlist in config", async () => {
+  await withTempHome("openpocket-setup-telegram-config-", async () => {
+    const cfg = loadConfig();
+    const prompter = new FakePrompter({
+      confirms: [true, true],
+      selects: ["gpt-5.2-codex", "skip", "config", "set", "skip", "disabled"],
+      texts: ["telegram-test-token", "123456789, 987654321"],
+      pauseCount: 0,
+    });
+    const emulator = new FakeEmulator();
+
+    await runSetupWizard(cfg, { prompter, emulator, skipTtyCheck: true, printHeader: false });
+
+    const savedCfg = JSON.parse(fs.readFileSync(cfg.configPath, "utf-8"));
+    assert.equal(savedCfg.telegram.botToken, "telegram-test-token");
+    assert.deepEqual(savedCfg.telegram.allowedChatIds, [123456789, 987654321]);
   });
 });

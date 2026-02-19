@@ -3,6 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 
 import { AgentRuntime } from "./agent/agent-runtime";
 import { loadConfig, saveConfig } from "./config";
@@ -35,6 +37,7 @@ Usage:
   openpocket [--config <path>] agent [--model <name>] <task>
   openpocket [--config <path>] skills list
   openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
+  openpocket [--config <path>] telegram setup
   openpocket [--config <path>] gateway [start|telegram]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
   openpocket panel start
@@ -49,6 +52,7 @@ Examples:
   openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
   openpocket skills list
   openpocket script run --text "echo hello"
+  openpocket telegram setup
   openpocket gateway start
   openpocket human-auth-relay start --port 8787
   openpocket panel start
@@ -326,6 +330,116 @@ async function runScriptCommand(configPath: string | undefined, args: string[]):
   return result.ok ? 0 : 1;
 }
 
+function parseAllowedChatIds(raw: string): number[] {
+  const parts = raw
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return [];
+  }
+  const values = parts.map((item) => Number(item));
+  if (values.some((value) => !Number.isFinite(value))) {
+    throw new Error("Allowed chat IDs must be numbers.");
+  }
+  return values.map((value) => Math.trunc(value));
+}
+
+async function runTelegramSetupCommand(
+  configPath: string | undefined,
+  args: string[],
+): Promise<number> {
+  const sub = (args[0] ?? "setup").trim();
+  if (sub !== "setup") {
+    throw new Error(`Unknown telegram subcommand: ${sub}. Use: telegram setup`);
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("`telegram setup` requires an interactive terminal (TTY).");
+  }
+
+  const cfg = loadConfig(configPath);
+  const rl = createInterface({ input, output });
+  try {
+    // eslint-disable-next-line no-console
+    console.log("[OpenPocket] Telegram setup");
+    // eslint-disable-next-line no-console
+    console.log("Create your bot in Telegram with @BotFather before continuing.");
+
+    const currentEnv = cfg.telegram.botTokenEnv || "TELEGRAM_BOT_TOKEN";
+    const envNameRaw = await rl.question(
+      `Token environment variable name [${currentEnv}]: `,
+    );
+    const envName = envNameRaw.trim() || currentEnv;
+    cfg.telegram.botTokenEnv = envName;
+    const envToken = process.env[envName]?.trim() ?? "";
+
+    // eslint-disable-next-line no-console
+    console.log("\nChoose token source:");
+    // eslint-disable-next-line no-console
+    console.log(`1) Use env var ${envName}${envToken ? " (detected)" : " (not detected)"}`);
+    // eslint-disable-next-line no-console
+    console.log("2) Save token in local config.json");
+    // eslint-disable-next-line no-console
+    console.log("3) Keep current token settings");
+    const tokenChoiceRaw = await rl.question("Selection [1]: ");
+    const tokenChoice = tokenChoiceRaw.trim() || "1";
+
+    if (tokenChoice === "1") {
+      cfg.telegram.botToken = "";
+      if (!envToken) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[OpenPocket] Warning: ${envName} is not set in this shell. Gateway start will fail until you export it.`,
+        );
+      }
+    } else if (tokenChoice === "2") {
+      const token = (await rl.question("Enter Telegram bot token: ")).trim();
+      if (!token) {
+        throw new Error("Telegram bot token cannot be empty.");
+      }
+      cfg.telegram.botToken = token;
+    } else if (tokenChoice !== "3") {
+      throw new Error("Invalid selection for token source.");
+    }
+
+    const currentAllow =
+      cfg.telegram.allowedChatIds.length > 0
+        ? cfg.telegram.allowedChatIds.join(", ")
+        : "empty (all chats allowed)";
+    // eslint-disable-next-line no-console
+    console.log("\nAllowed chat IDs policy:");
+    // eslint-disable-next-line no-console
+    console.log(`1) Keep current allowlist (${currentAllow})`);
+    // eslint-disable-next-line no-console
+    console.log("2) Allow all chats (clear allowlist)");
+    // eslint-disable-next-line no-console
+    console.log("3) Set allowlist manually");
+    const allowChoiceRaw = await rl.question("Selection [1]: ");
+    const allowChoice = allowChoiceRaw.trim() || "1";
+
+    if (allowChoice === "2") {
+      cfg.telegram.allowedChatIds = [];
+    } else if (allowChoice === "3") {
+      const allowedInput = await rl.question(
+        "Enter allowed chat IDs (comma or space separated): ",
+      );
+      cfg.telegram.allowedChatIds = parseAllowedChatIds(allowedInput);
+    } else if (allowChoice !== "1") {
+      throw new Error("Invalid selection for allowed chat IDs.");
+    }
+
+    saveConfig(cfg);
+    // eslint-disable-next-line no-console
+    console.log("\nTelegram setup saved.");
+    // eslint-disable-next-line no-console
+    console.log("Next: run `openpocket gateway start`.");
+    return 0;
+  } finally {
+    rl.close();
+  }
+}
+
 async function runPanelCommand(configPath: string | undefined, args: string[]): Promise<number> {
   const sub = (args[0] ?? "start").trim();
   if (sub !== "start") {
@@ -502,6 +616,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (command === "gateway") {
     return runGatewayCommand(configPath ?? undefined, rest.slice(1));
+  }
+
+  if (command === "telegram") {
+    return runTelegramSetupCommand(configPath ?? undefined, rest.slice(1));
   }
 
   if (command === "panel") {

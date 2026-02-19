@@ -10,6 +10,7 @@ openpocket [--config <path>] emulator status|start|stop|hide|show|list-avds|scre
 openpocket [--config <path>] agent [--model <name>] <task>
 openpocket [--config <path>] skills list
 openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
+openpocket [--config <path>] telegram setup
 openpocket [--config <path>] gateway [start|telegram]
 openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
 openpocket panel start
@@ -58,6 +59,7 @@ Interactive onboarding wizard flow:
 - presents required user consent (local runtime + cloud model boundary)
 - selects default model profile (GPT, Claude, AutoGLM, etc.)
 - configures provider-specific API key (env or local config.json)
+- configures Telegram bot token and chat allowlist policy
 - option prompts use Up/Down arrows + Enter (no numeric menu input)
 - can start/show emulator and guide manual Gmail login for Play Store
 - configures human-auth bridge mode (`ngrok` / `LAN` / disabled)
@@ -85,6 +87,12 @@ Interactive onboarding wizard flow:
 - executes script via `ScriptExecutor`
 - prints status, run directory, and stdout/stderr
 - exit code follows `result.ok`
+
+## `telegram setup`
+
+- interactive setup for Telegram bot token source (env or config file)
+- optional interactive allowlist update for `telegram.allowedChatIds`
+- requires an interactive terminal (TTY)
 
 ## Telegram
 

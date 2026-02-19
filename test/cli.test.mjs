@@ -169,11 +169,24 @@ test("help output uses onboard as primary command and lists legacy aliases", () 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /install-cli/);
   assert.match(result.stdout, /onboard/);
+  assert.match(result.stdout, /telegram setup/);
   assert.match(result.stdout, /Legacy aliases/);
   assert.match(result.stdout, /\binit\b/);
   assert.match(result.stdout, /\bsetup\b/);
   assert.match(result.stdout, /gateway \[start\|telegram\]/);
   assert.match(result.stdout, /panel start/);
+});
+
+test("telegram setup requires interactive terminal", () => {
+  const home = makeHome("openpocket-ts-telegram-setup-");
+  const init = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const run = runCli(["telegram", "setup"], {
+    OPENPOCKET_HOME: home,
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /interactive terminal/i);
 });
 
 test("gateway start command is accepted (reaches token validation)", () => {

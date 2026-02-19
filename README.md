@@ -173,6 +173,7 @@ Command prefix by install mode:
 ./openpocket emulator status
 ./openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
 ./openpocket script run --text "echo hello"
+./openpocket telegram setup
 ./openpocket skills list
 ./openpocket gateway start
 ./openpocket panel start

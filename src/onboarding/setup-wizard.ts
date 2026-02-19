@@ -43,6 +43,9 @@ interface SetupState {
   emulatorStartedAt?: string;
   gmailLoginConfirmedAt?: string;
   playStoreDetected?: boolean | null;
+  telegramConfiguredAt?: string;
+  telegramTokenSource?: "env" | "config" | "skip";
+  telegramAllowedChatMode?: "keep" | "open" | "set";
   humanAuthEnabledAt?: string;
   humanAuthMode?: "disabled" | "lan" | "ngrok";
   ngrokConfiguredAt?: string;
@@ -225,6 +228,22 @@ function detectPlayStore(emulator: SetupEmulator, preferredDeviceId: string | nu
   } catch {
     return false;
   }
+}
+
+function parseAllowedChatIdsInput(inputText: string): number[] {
+  const chunks = inputText
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (chunks.length === 0) {
+    return [];
+  }
+
+  const values = chunks.map((item) => Number(item));
+  if (values.some((v) => !Number.isFinite(v))) {
+    throw new Error("allowed chat id list contains non-numeric values.");
+  }
+  return values.map((v) => Math.trunc(v));
 }
 
 function makeConsolePrompter(): SetupPrompter {
@@ -579,6 +598,127 @@ async function runVmStep(
   }
 }
 
+async function runTelegramStep(
+  config: OpenPocketConfig,
+  prompter: SetupPrompter,
+  state: SetupState,
+): Promise<void> {
+  const currentTokenEnv = config.telegram.botTokenEnv || "TELEGRAM_BOT_TOKEN";
+  const envToken = process.env[currentTokenEnv]?.trim() ?? "";
+  const hasConfigToken = Boolean(config.telegram.botToken.trim());
+
+  await prompter.note(
+    "Telegram Gateway Setup",
+    [
+      "OpenPocket gateway requires a Telegram bot token.",
+      "Create one with @BotFather if you do not have it yet.",
+      `Current token env: ${currentTokenEnv}`,
+      `Current token in config.json: ${hasConfigToken ? "set" : "empty"}`,
+    ].join("\n"),
+  );
+
+  const tokenChoice = await prompter.select(
+    "Telegram bot token source",
+    [
+      {
+        value: "env",
+        label: `Use environment variable ${currentTokenEnv}`,
+        hint: envToken ? `Detected (length ${envToken.length})` : "Not detected",
+      },
+      {
+        value: "config",
+        label: "Paste token and save to local config.json",
+      },
+      {
+        value: "skip",
+        label: "Skip token setup for now",
+      },
+    ],
+    envToken ? "env" : hasConfigToken ? "skip" : "config",
+  );
+
+  if (tokenChoice === "env") {
+    const envName = await prompter.text(
+      "Environment variable name for Telegram token",
+      currentTokenEnv,
+      (value) => (value.trim() ? null : "Environment variable name cannot be empty."),
+    );
+    config.telegram.botTokenEnv = envName.trim();
+    config.telegram.botToken = "";
+    state.telegramTokenSource = "env";
+    if (!process.env[config.telegram.botTokenEnv]?.trim()) {
+      await prompter.note(
+        "Telegram Setup",
+        `${config.telegram.botTokenEnv} is not set in this shell. Gateway start will fail until it is exported.`,
+      );
+    }
+  } else if (tokenChoice === "config") {
+    const token = await prompter.text(
+      "Enter Telegram bot token",
+      "",
+      (value) => (value.trim() ? null : "Telegram bot token cannot be empty."),
+    );
+    const confirmed = await prompter.confirm(
+      "Confirm writing Telegram bot token to local config.json?",
+      true,
+    );
+    if (confirmed) {
+      config.telegram.botToken = token.trim();
+      state.telegramTokenSource = "config";
+    } else {
+      state.telegramTokenSource = "skip";
+    }
+  } else {
+    state.telegramTokenSource = "skip";
+  }
+
+  const currentAllow = config.telegram.allowedChatIds;
+  const allowedMode = await prompter.select(
+    "Telegram chat allowlist policy",
+    [
+      {
+        value: "keep",
+        label: "Keep current allowlist",
+        hint:
+          currentAllow.length > 0
+            ? currentAllow.join(", ")
+            : "empty -> all chats allowed",
+      },
+      {
+        value: "open",
+        label: "Allow all chats (clear allowlist)",
+      },
+      {
+        value: "set",
+        label: "Set allowlist manually (chat IDs)",
+      },
+    ],
+    "keep",
+  );
+  state.telegramAllowedChatMode = allowedMode;
+
+  if (allowedMode === "open") {
+    config.telegram.allowedChatIds = [];
+  } else if (allowedMode === "set") {
+    const input = await prompter.text(
+      "Enter allowed chat IDs (comma or space separated)",
+      config.telegram.allowedChatIds.join(", "),
+      (value) => {
+        try {
+          parseAllowedChatIdsInput(value);
+          return null;
+        } catch (error) {
+          return (error as Error).message;
+        }
+      },
+    );
+    config.telegram.allowedChatIds = parseAllowedChatIdsInput(input);
+  }
+
+  state.telegramConfiguredAt = nowIso();
+  saveConfig(config);
+}
+
 function detectCommandVersion(command: string): string {
   try {
     const result = spawnSync(command, ["version"], {
@@ -763,6 +903,7 @@ export async function runSetupWizard(
     await runConsentStep(prompter, state);
     const selectedModel = await runModelSelectionStep(config, prompter, state);
     await runApiKeyStep(config, prompter, state, selectedModel);
+    await runTelegramStep(config, prompter, state);
     await runVmStep(config, prompter, state, emulator);
     await runHumanAuthStep(config, prompter, state);
     saveState(config, state);
