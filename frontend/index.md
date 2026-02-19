@@ -6,7 +6,7 @@ titleTemplate: OpenPocket Documentation
 
 hero:
   name: '<img class="op-hero-logo" src="/openpocket-logo.png" alt="OpenPocket logo" />'
-  text: A Second Phone That Never Sleeps.
+  text: An Intelligent Phone That Never Sleeps.
   tagline: OpenPocket runs an always-on agent phone locally, with privacy first.
   image:
     src: /openpocket-grid.svg
