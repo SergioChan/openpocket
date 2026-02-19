@@ -8,7 +8,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
-        showControlPanelWindow()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
