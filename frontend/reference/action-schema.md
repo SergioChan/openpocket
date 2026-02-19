@@ -23,6 +23,26 @@ type AgentAction =
   | { type: "launch_app"; packageName: string; reason?: string }
   | { type: "shell"; command: string; reason?: string }
   | { type: "run_script"; script: string; timeoutSec?: number; reason?: string }
+  | {
+      type: "request_human_auth";
+      capability:
+        | "camera"
+        | "sms"
+        | "2fa"
+        | "location"
+        | "biometric"
+        | "notification"
+        | "contacts"
+        | "calendar"
+        | "files"
+        | "oauth"
+        | "payment"
+        | "permission"
+        | "unknown";
+      instruction: string;
+      timeoutSec?: number;
+      reason?: string;
+    }
   | { type: "wait"; durationMs?: number; reason?: string }
   | { type: "finish"; message: string };
 ```
@@ -38,6 +58,7 @@ When fields are missing/invalid:
 - `launch_app`: `packageName=""`
 - `shell`: `command=""`
 - `run_script`: `script=""`, `timeoutSec=60`
+- `request_human_auth`: `capability="unknown"`, `instruction="Human authorization is required to continue."`, `timeoutSec=300`
 - `wait`: `durationMs=1000`
 - `finish`: `message="Task finished."`
 - unknown type -> `wait` (`durationMs=1000`)
@@ -51,6 +72,7 @@ When fields are missing/invalid:
 - `launch_app`: `adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1`
 - `shell`: executes command tokens after `adb shell`
 - `run_script`: handled by `ScriptExecutor` in `AgentRuntime`
+- `request_human_auth`: pauses task and waits for human approval through `HumanAuthBridge`
 - `wait`: async sleep
 - `finish`: marks successful task completion
 

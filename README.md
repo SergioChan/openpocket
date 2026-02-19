@@ -37,8 +37,8 @@ Near-term roadmap includes remote phone access to the local runtime for human-in
 ## Key Capabilities
 
 - Emulator control: `start`, `stop`, `status`, `list-avds`, `hide`, `show`, `screenshot`
-- Agent actions: `tap`, `swipe`, `type`, `keyevent`, `launch_app`, `shell`, `run_script`, `wait`, `finish`
-- Gateway modes: Telegram polling, chat/task routing, `/stop`, `/cronrun`, `/run`
+- Agent actions: `tap`, `swipe`, `type`, `keyevent`, `launch_app`, `shell`, `run_script`, `request_human_auth`, `wait`, `finish`
+- Gateway modes: Telegram polling, chat/task routing, `/stop`, `/cronrun`, `/run`, `/auth`
 - Runtime services: heartbeat monitoring, cron job execution, signal-aware gateway restarts
 - Script safety: allowlist, deny patterns, timeout, output limits, and run archives
 - Workspace memory: per-task session files + daily memory timeline
@@ -174,6 +174,7 @@ Command prefix by install mode:
 ./openpocket script run --text "echo hello"
 ./openpocket skills list
 ./openpocket gateway start
+./openpocket human-auth-relay start --port 8787
 ./openpocket panel start
 ```
 

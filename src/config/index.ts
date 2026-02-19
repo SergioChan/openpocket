@@ -77,6 +77,15 @@ function defaultConfigObject() {
       tickSec: 10,
       jobsFile: path.join(defaultWorkspaceDir(), "cron", "jobs.json"),
     },
+    humanAuth: {
+      enabled: false,
+      relayBaseUrl: "",
+      publicBaseUrl: "",
+      apiKey: "",
+      apiKeyEnv: "OPENPOCKET_HUMAN_AUTH_KEY",
+      requestTimeoutSec: 300,
+      pollIntervalMs: 2000,
+    },
     models: {
       "gpt-5.2-codex": {
         baseUrl: "https://api.openai.com/v1",
@@ -158,6 +167,7 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
     script_executor: "scriptExecutor",
     heartbeat_config: "heartbeat",
     cron_config: "cron",
+    human_auth: "humanAuth",
   };
 
   for (const [oldKey, newKey] of Object.entries(topLevelMap)) {
@@ -272,6 +282,24 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
     raw.cron = cron;
   }
 
+  const humanAuth = isObject(raw.humanAuth) ? { ...raw.humanAuth } : {};
+  const humanAuthMap: Record<string, string> = {
+    relay_base_url: "relayBaseUrl",
+    public_base_url: "publicBaseUrl",
+    api_key: "apiKey",
+    api_key_env: "apiKeyEnv",
+    request_timeout_sec: "requestTimeoutSec",
+    poll_interval_ms: "pollIntervalMs",
+  };
+  for (const [oldKey, newKey] of Object.entries(humanAuthMap)) {
+    if (oldKey in humanAuth && !(newKey in humanAuth)) {
+      humanAuth[newKey] = humanAuth[oldKey];
+    }
+  }
+  if (Object.keys(humanAuth).length > 0) {
+    raw.humanAuth = humanAuth;
+  }
+
   if (isObject(raw.models)) {
     const convertedModels: Record<string, unknown> = {};
     for (const [modelKey, modelValue] of Object.entries(raw.models)) {
@@ -345,6 +373,7 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
   const scriptExecutor = (merged.scriptExecutor ?? {}) as Record<string, unknown>;
   const heartbeat = (merged.heartbeat ?? {}) as Record<string, unknown>;
   const cron = (merged.cron ?? {}) as Record<string, unknown>;
+  const humanAuth = (merged.humanAuth ?? {}) as Record<string, unknown>;
   const resolvedWorkspaceDir = resolvePath(String(merged.workspaceDir));
   const resolvedStateDir = resolvePath(String(merged.stateDir));
 
@@ -400,6 +429,15 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
       tickSec: Math.max(2, Number(cron.tickSec ?? 10)),
       jobsFile: resolvePath(String(cron.jobsFile ?? path.join(resolvedWorkspaceDir, "cron", "jobs.json"))),
     },
+    humanAuth: {
+      enabled: Boolean(humanAuth.enabled ?? false),
+      relayBaseUrl: String(humanAuth.relayBaseUrl ?? "").trim().replace(/\/+$/, ""),
+      publicBaseUrl: String(humanAuth.publicBaseUrl ?? "").trim().replace(/\/+$/, ""),
+      apiKey: String(humanAuth.apiKey ?? ""),
+      apiKeyEnv: String(humanAuth.apiKeyEnv ?? "OPENPOCKET_HUMAN_AUTH_KEY"),
+      requestTimeoutSec: Math.max(30, Number(humanAuth.requestTimeoutSec ?? 300)),
+      pollIntervalMs: Math.max(500, Number(humanAuth.pollIntervalMs ?? 2000)),
+    },
     models,
     configPath,
   };
@@ -439,6 +477,7 @@ export function saveConfig(config: OpenPocketConfig): void {
     scriptExecutor: config.scriptExecutor,
     heartbeat: config.heartbeat,
     cron: config.cron,
+    humanAuth: config.humanAuth,
     models: config.models,
   };
   fs.writeFileSync(config.configPath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");

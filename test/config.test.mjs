@@ -27,6 +27,8 @@ test("loadConfig creates defaults including returnHomeOnTaskEnd", () => {
   withTempHome("openpocket-config-default-", (home) => {
     const cfg = loadConfig();
     assert.equal(cfg.agent.returnHomeOnTaskEnd, true);
+    assert.equal(cfg.humanAuth.enabled, false);
+    assert.equal(cfg.humanAuth.requestTimeoutSec, 300);
     assert.equal(cfg.heartbeat.enabled, true);
     assert.equal(cfg.cron.enabled, true);
     assert.equal(fs.existsSync(path.join(home, "config.json")), true);
@@ -67,6 +69,12 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
               reasoning_effort: "medium",
             },
           },
+          human_auth: {
+            enabled: true,
+            relay_base_url: "https://relay.example.com",
+            request_timeout_sec: 420,
+            poll_interval_ms: 1500,
+          },
         },
         null,
         2,
@@ -76,11 +84,16 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
 
     const cfg = loadConfig();
     assert.equal(cfg.agent.returnHomeOnTaskEnd, false);
+    assert.equal(cfg.humanAuth.enabled, true);
+    assert.equal(cfg.humanAuth.relayBaseUrl, "https://relay.example.com");
+    assert.equal(cfg.humanAuth.requestTimeoutSec, 420);
 
     saveConfig(cfg);
     const saved = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
     assert.equal(saved.agent.returnHomeOnTaskEnd, false);
     assert.equal(saved.agent.return_home_on_task_end, undefined);
+    assert.equal(saved.humanAuth.relayBaseUrl, "https://relay.example.com");
+    assert.equal(saved.human_auth, undefined);
   });
 });
 

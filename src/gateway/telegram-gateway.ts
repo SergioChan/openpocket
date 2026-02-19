@@ -4,6 +4,7 @@ import type { CronJob, OpenPocketConfig } from "../types";
 import { saveConfig } from "../config";
 import { AgentRuntime } from "../agent/agent-runtime";
 import { EmulatorManager } from "../device/emulator-manager";
+import { HumanAuthBridge } from "../human-auth/bridge";
 import { ChatAssistant } from "./chat-assistant";
 import { CronService, type CronRunResult } from "./cron-service";
 import { HeartbeatRunner } from "./heartbeat-runner";
@@ -15,6 +16,7 @@ export class TelegramGateway {
   private readonly bot: TelegramBot;
   private readonly cron: CronService;
   private readonly heartbeat: HeartbeatRunner;
+  private readonly humanAuth: HumanAuthBridge;
   private chat: ChatAssistant;
   private running = false;
   private stoppedPromise: Promise<void> | null = null;
@@ -45,6 +47,8 @@ export class TelegramGateway {
         },
       },
     });
+
+    this.humanAuth = new HumanAuthBridge(config);
 
     this.heartbeat = new HeartbeatRunner(config, {
       readSnapshot: () => {
@@ -194,6 +198,10 @@ export class TelegramGateway {
           "/clear",
           "/stop",
           "/cronrun <job-id>",
+          "/auth",
+          "/auth pending",
+          "/auth approve <request-id> [note]",
+          "/auth reject <request-id> [note]",
           "/run <task>",
           "Send plain text directly. I will auto-route to chat or task mode. Use /run to force task mode.",
         ].join("\n"),
@@ -315,6 +323,11 @@ export class TelegramGateway {
       return;
     }
 
+    if (text.startsWith("/auth")) {
+      await this.handleAuthCommand(chatId, text);
+      return;
+    }
+
     const decision = await this.chat.decide(chatId, text);
     this.log(
       `decision chat=${chatId} mode=${decision.mode} confidence=${decision.confidence.toFixed(2)} reason=${decision.reason}`,
@@ -394,6 +407,49 @@ export class TelegramGateway {
                 ].join("\n"),
               );
             },
+        chatId === null
+          ? undefined
+          : async (request) => {
+              const timeoutSec = Math.max(30, Math.round(request.timeoutSec));
+              return this.humanAuth.requestAndWait(
+                { chatId, task, request: { ...request, timeoutSec } },
+                async (opened) => {
+                  const lines = [
+                    `Human authorization required (${request.capability}).`,
+                    `Request ID: ${opened.requestId}`,
+                    `Current app: ${request.currentApp}`,
+                    `Instruction: ${request.instruction}`,
+                    `Reason: ${request.reason || "no reason provided"}`,
+                    `Expires at: ${opened.expiresAt}`,
+                    "",
+                    "Fallback manual commands:",
+                    opened.manualApproveCommand,
+                    opened.manualRejectCommand,
+                  ];
+
+                  if (opened.openUrl) {
+                    await this.bot.sendMessage(chatId, lines.join("\n"), {
+                      reply_markup: {
+                        inline_keyboard: [
+                          [
+                            {
+                              text: "Open Human Auth",
+                              url: opened.openUrl,
+                            },
+                          ],
+                        ],
+                      },
+                    });
+                    return;
+                  }
+
+                  await this.bot.sendMessage(
+                    chatId,
+                    `${lines.join("\n")}\n\nWeb link is unavailable. Use manual approve/reject commands.`,
+                  );
+                },
+              );
+            },
       );
 
       this.log(`task done source=${source} chat=${chatId ?? "(none)"} ok=${result.ok} session=${result.sessionPath}`);
@@ -429,5 +485,56 @@ export class TelegramGateway {
         message,
       };
     }
+  }
+
+  private async handleAuthCommand(chatId: number, text: string): Promise<void> {
+    const parts = text.split(/\s+/).filter(Boolean);
+    if (parts.length === 1 || parts[1] === "help") {
+      await this.bot.sendMessage(
+        chatId,
+        [
+          "Human auth commands:",
+          "/auth pending",
+          "/auth approve <request-id> [note]",
+          "/auth reject <request-id> [note]",
+        ].join("\n"),
+      );
+      return;
+    }
+
+    const sub = parts[1];
+    if (sub === "pending") {
+      const pending = this.humanAuth.listPending().filter((item) => item.chatId === chatId);
+      if (pending.length === 0) {
+        await this.bot.sendMessage(chatId, "No pending human-auth requests.");
+        return;
+      }
+      const body = pending
+        .slice(0, 20)
+        .map(
+          (item) =>
+            `- ${item.requestId} capability=${item.capability} app=${item.currentApp} expires=${item.expiresAt}`,
+        )
+        .join("\n");
+      await this.bot.sendMessage(chatId, `Pending human-auth requests (${pending.length}):\n${body}`);
+      return;
+    }
+
+    if (sub === "approve" || sub === "reject") {
+      const requestId = parts[2]?.trim();
+      if (!requestId) {
+        await this.bot.sendMessage(chatId, `Usage: /auth ${sub} <request-id> [note]`);
+        return;
+      }
+      const note = parts.slice(3).join(" ").trim();
+      const ok = this.humanAuth.resolvePending(requestId, sub === "approve", note, `chat:${chatId}`);
+      await this.bot.sendMessage(
+        chatId,
+        ok ? `Request ${requestId} ${sub}d.` : `Pending request not found: ${requestId}`,
+      );
+      return;
+    }
+
+    await this.bot.sendMessage(chatId, "Unknown /auth subcommand. Use /auth help.");
   }
 }

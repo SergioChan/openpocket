@@ -70,6 +70,15 @@ This page is the source-of-truth documentation for current default config values
     "tickSec": 10,
     "jobsFile": "<absolute OPENPOCKET_HOME>/workspace/cron/jobs.json"
   },
+  "humanAuth": {
+    "enabled": false,
+    "relayBaseUrl": "",
+    "publicBaseUrl": "",
+    "apiKey": "",
+    "apiKeyEnv": "OPENPOCKET_HUMAN_AUTH_KEY",
+    "requestTimeoutSec": 300,
+    "pollIntervalMs": 2000
+  },
   "models": {
     "gpt-5.2-codex": {
       "baseUrl": "https://api.openai.com/v1",
@@ -136,6 +145,8 @@ Notes:
 - `heartbeat.everySec` is clamped to at least `5`.
 - `heartbeat.stuckTaskWarnSec` is clamped to at least `30`.
 - `cron.tickSec` is clamped to at least `2`.
+- `humanAuth.requestTimeoutSec` is clamped to at least `30`.
+- `humanAuth.pollIntervalMs` is clamped to at least `500`.
 - `allowedChatIds` is coerced to numeric array with non-finite values removed.
 - model `reasoningEffort` accepts only `low|medium|high|xhigh`, else `null`.
 - model `temperature` is `null` if absent/invalid.
@@ -165,6 +176,7 @@ Examples:
 - `max_steps` -> `maxSteps`
 - `heartbeat_config` -> `heartbeat`
 - `cron_config` -> `cron`
+- `human_auth` -> `humanAuth`
 - `allowed_commands` -> `allowedCommands`
 - `base_url` -> `baseUrl`
 - `reasoning_effort` -> `reasoningEffort`

@@ -37,6 +37,25 @@ test("normalizeAction sets defaults for run_script and finish", () => {
   assert.equal(finish.message, "Task finished.");
 });
 
+test("normalizeAction supports request_human_auth with defaults", () => {
+  const request = normalizeAction({
+    type: "request_human_auth",
+    capability: "camera",
+    instruction: "Please capture a photo to continue.",
+  });
+  assert.equal(request.type, "request_human_auth");
+  assert.equal(request.capability, "camera");
+  assert.equal(request.timeoutSec, 300);
+
+  const fallback = normalizeAction({
+    type: "request_human_auth",
+    capability: "not-supported",
+  });
+  assert.equal(fallback.type, "request_human_auth");
+  assert.equal(fallback.capability, "unknown");
+  assert.match(fallback.instruction, /Human authorization is required/);
+});
+
 test("normalizeAction falls back for unknown action", () => {
   const out = normalizeAction({ type: "unknown_x" });
   assert.equal(out.type, "wait");

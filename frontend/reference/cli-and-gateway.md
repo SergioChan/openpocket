@@ -11,6 +11,7 @@ openpocket [--config <path>] agent [--model <name>] <task>
 openpocket [--config <path>] skills list
 openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
 openpocket [--config <path>] gateway [start|telegram]
+openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
 openpocket panel start
 ```
 
@@ -100,6 +101,10 @@ Supported commands:
 - `/clear`
 - `/stop`
 - `/cronrun <job-id>`
+- `/auth`
+- `/auth pending`
+- `/auth approve <request-id> [note]`
+- `/auth reject <request-id> [note]`
 - `/run <task>`
 
 Plain text behavior:
@@ -124,3 +129,9 @@ Before sending model/task content back to chat:
 - collapse whitespace and truncate
 
 This keeps user-facing chat concise and avoids exposing local filesystem details.
+
+## `human-auth-relay`
+
+- runs a lightweight web relay for real-device authorization handoff
+- receives human-auth requests from gateway and returns one-time approval links
+- provides polling APIs so task runtime can resume after approve/reject

@@ -48,6 +48,8 @@ This makes human-agent handoff practical for real app workflows.
 - `HeartbeatRunner`: emits liveness snapshots and stuck-task warnings.
 - `CronService`: triggers scheduled tasks from `workspace/cron/jobs.json`.
 - `runGatewayLoop`: robust long-running gateway loop with graceful restart/stop behavior.
+- `HumanAuthBridge`: blocks task flow on `request_human_auth` and waits for human approval.
+- `HumanAuthRelayServer`: serves one-time approval web links and polling APIs for unblock flows.
 
 ## Task Flow
 
@@ -83,4 +85,4 @@ This keeps runtime compatibility across providers with partial endpoint support.
 
 Planned next step:
 
-- remote connection from user phone to the local runtime for human-in-the-loop controls (pause/resume/approve/retry)
+- richer remote phone controls beyond auth approvals (pause/resume/approve/retry)

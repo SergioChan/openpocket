@@ -63,6 +63,15 @@
     "tickSec": 10,
     "jobsFile": "~/.openpocket/workspace/cron/jobs.json"
   },
+  "humanAuth": {
+    "enabled": false,
+    "relayBaseUrl": "",
+    "publicBaseUrl": "",
+    "apiKey": "",
+    "apiKeyEnv": "OPENPOCKET_HUMAN_AUTH_KEY",
+    "requestTimeoutSec": 300,
+    "pollIntervalMs": 2000
+  },
   "models": {
     "gpt-5.2-codex": {
       "baseUrl": "https://api.openai.com/v1",

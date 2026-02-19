@@ -1,4 +1,4 @@
-import type { AgentAction } from "../types";
+import type { AgentAction, HumanAuthCapability } from "../types";
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -8,6 +8,22 @@ function toNumber(value: unknown, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
+
+const HUMAN_AUTH_CAPABILITIES = new Set([
+  "camera",
+  "sms",
+  "2fa",
+  "location",
+  "biometric",
+  "notification",
+  "contacts",
+  "calendar",
+  "files",
+  "oauth",
+  "payment",
+  "permission",
+  "unknown",
+]);
 
 export function normalizeAction(input: unknown): AgentAction {
   if (!isObject(input)) {
@@ -74,6 +90,21 @@ export function normalizeAction(input: unknown): AgentAction {
       type,
       script: String(input.script ?? ""),
       timeoutSec: toNumber(input.timeoutSec, 60),
+      reason: input.reason ? String(input.reason) : undefined,
+    };
+  }
+
+  if (type === "request_human_auth") {
+    const capabilityRaw = String(input.capability ?? "unknown").trim().toLowerCase();
+    return {
+      type,
+      capability: HUMAN_AUTH_CAPABILITIES.has(capabilityRaw)
+        ? (capabilityRaw as HumanAuthCapability)
+        : "unknown",
+      instruction: String(
+        input.instruction ?? input.reason ?? "Human authorization is required to continue.",
+      ),
+      timeoutSec: toNumber(input.timeoutSec, 300),
       reason: input.reason ? String(input.reason) : undefined,
     };
   }

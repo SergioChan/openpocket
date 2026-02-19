@@ -1,8 +1,16 @@
-import type { AgentProgressUpdate, AgentRunResult, OpenPocketConfig, SkillInfo } from "../types";
+import type {
+  AgentProgressUpdate,
+  AgentRunResult,
+  HumanAuthDecision,
+  HumanAuthRequest,
+  OpenPocketConfig,
+  SkillInfo,
+} from "../types";
 import { getModelProfile, resolveApiKey } from "../config";
 import { WorkspaceStore } from "../memory/workspace";
 import { ScreenshotStore } from "../memory/screenshot-store";
 import { sleep } from "../utils/time";
+import { nowIso } from "../utils/paths";
 import { AdbRuntime } from "../device/adb-runtime";
 import { EmulatorManager } from "../device/emulator-manager";
 import { AutoArtifactBuilder, type StepTrace } from "../skills/auto-artifact-builder";
@@ -104,6 +112,7 @@ export class AgentRuntime {
     task: string,
     modelName?: string,
     onProgress?: (update: AgentProgressUpdate) => Promise<void> | void,
+    onHumanAuth?: (request: HumanAuthRequest) => Promise<HumanAuthDecision> | HumanAuthDecision,
   ): Promise<AgentRunResult> {
     if (this.busy) {
       return {
@@ -218,6 +227,122 @@ export class AgentRuntime {
             message: finishMessage,
             sessionPath: session.path,
           };
+        }
+
+        if (output.action.type === "request_human_auth") {
+          const timeoutSec = Math.max(
+            30,
+            Math.round(output.action.timeoutSec ?? this.config.humanAuth.requestTimeoutSec),
+          );
+
+          if (!onHumanAuth) {
+            const message = `Human authorization required (${output.action.capability}), but no human auth handler is configured.`;
+            const stepResult = screenshotPath
+              ? `${message}\nlocal_screenshot=${screenshotPath}`
+              : message;
+            this.workspace.appendStep(
+              session,
+              step,
+              output.thought,
+              JSON.stringify(output.action, null, 2),
+              stepResult,
+            );
+            traces.push({
+              step,
+              action: output.action,
+              result: stepResult,
+              thought: output.thought,
+              currentApp: snapshot.currentApp,
+            });
+            this.workspace.finalizeSession(session, false, message);
+            this.workspace.appendDailyMemory(profileKey, task, false, message);
+            return {
+              ok: false,
+              message,
+              sessionPath: session.path,
+            };
+          }
+
+          let decision: HumanAuthDecision;
+          try {
+            decision = await onHumanAuth({
+              sessionId: session.id,
+              sessionPath: session.path,
+              task,
+              step,
+              capability: output.action.capability,
+              instruction: output.action.instruction,
+              reason: output.action.reason ?? output.thought,
+              timeoutSec,
+              currentApp: snapshot.currentApp,
+              screenshotPath,
+            });
+          } catch (error) {
+            decision = {
+              requestId: "local-error",
+              approved: false,
+              status: "rejected",
+              message: `Human auth bridge error: ${(error as Error).message}`,
+              decidedAt: nowIso(),
+              artifactPath: null,
+            };
+          }
+
+          const decisionLine = `Human auth ${decision.status} request_id=${decision.requestId} message=${decision.message}`;
+          const stepResultBase = decision.artifactPath
+            ? `${decisionLine}\nhuman_artifact=${decision.artifactPath}`
+            : decisionLine;
+          const stepResult = screenshotPath
+            ? `${stepResultBase}\nlocal_screenshot=${screenshotPath}`
+            : stepResultBase;
+
+          this.workspace.appendStep(
+            session,
+            step,
+            output.thought,
+            JSON.stringify(output.action, null, 2),
+            stepResult,
+          );
+          traces.push({
+            step,
+            action: output.action,
+            result: stepResult,
+            thought: output.thought,
+            currentApp: snapshot.currentApp,
+          });
+          history.push(
+            `step ${step}: app=${snapshot.currentApp} action=request_human_auth decision=${decision.status} message=${decision.message}`,
+          );
+
+          if (onProgress && step % this.config.agent.progressReportInterval === 0) {
+            try {
+              await onProgress({
+                step,
+                maxSteps: this.config.agent.maxSteps,
+                currentApp: snapshot.currentApp,
+                actionType: output.action.type,
+                message: decisionLine,
+                thought: output.thought,
+                screenshotPath,
+              });
+            } catch {
+              // Keep task execution unaffected when progress callback fails.
+            }
+          }
+
+          if (!decision.approved) {
+            const message = `Human authorization ${decision.status}: ${decision.message}`;
+            this.workspace.finalizeSession(session, false, message);
+            this.workspace.appendDailyMemory(profileKey, task, false, message);
+            return {
+              ok: false,
+              message,
+              sessionPath: session.path,
+            };
+          }
+
+          await sleep(Math.min(this.config.agent.loopDelayMs, 1200));
+          continue;
         }
 
         let executionResult = "";

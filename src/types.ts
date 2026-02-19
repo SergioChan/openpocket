@@ -48,6 +48,53 @@ export interface CronConfig {
   jobsFile: string;
 }
 
+export interface HumanAuthConfig {
+  enabled: boolean;
+  relayBaseUrl: string;
+  publicBaseUrl: string;
+  apiKey: string;
+  apiKeyEnv: string;
+  requestTimeoutSec: number;
+  pollIntervalMs: number;
+}
+
+export type HumanAuthCapability =
+  | "camera"
+  | "sms"
+  | "2fa"
+  | "location"
+  | "biometric"
+  | "notification"
+  | "contacts"
+  | "calendar"
+  | "files"
+  | "oauth"
+  | "payment"
+  | "permission"
+  | "unknown";
+
+export interface HumanAuthRequest {
+  sessionId: string;
+  sessionPath: string;
+  task: string;
+  step: number;
+  capability: HumanAuthCapability;
+  instruction: string;
+  reason: string;
+  timeoutSec: number;
+  currentApp: string;
+  screenshotPath: string | null;
+}
+
+export interface HumanAuthDecision {
+  requestId: string;
+  approved: boolean;
+  status: "approved" | "rejected" | "timeout";
+  message: string;
+  decidedAt: string;
+  artifactPath: string | null;
+}
+
 export interface ModelProfile {
   baseUrl: string;
   model: string;
@@ -70,6 +117,7 @@ export interface OpenPocketConfig {
   scriptExecutor: ScriptExecutorConfig;
   heartbeat: HeartbeatConfig;
   cron: CronConfig;
+  humanAuth: HumanAuthConfig;
   models: Record<string, ModelProfile>;
   configPath: string;
 }
@@ -105,6 +153,13 @@ export type AgentAction =
   | { type: "launch_app"; packageName: string; reason?: string }
   | { type: "shell"; command: string; reason?: string }
   | { type: "run_script"; script: string; timeoutSec?: number; reason?: string }
+  | {
+      type: "request_human_auth";
+      capability: HumanAuthCapability;
+      instruction: string;
+      timeoutSec?: number;
+      reason?: string;
+    }
   | { type: "wait"; durationMs?: number; reason?: string }
   | { type: "finish"; message: string };
 

@@ -9,6 +9,7 @@ import { loadConfig, saveConfig } from "./config";
 import { EmulatorManager } from "./device/emulator-manager";
 import { TelegramGateway } from "./gateway/telegram-gateway";
 import { runGatewayLoop } from "./gateway/run-loop";
+import { HumanAuthRelayServer } from "./human-auth/relay-server";
 import { SkillLoader } from "./skills/skill-loader";
 import { ScriptExecutor } from "./tools/script-executor";
 import { runSetupWizard } from "./onboarding/setup-wizard";
@@ -35,6 +36,7 @@ Usage:
   openpocket [--config <path>] skills list
   openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
   openpocket [--config <path>] gateway [start|telegram]
+  openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
   openpocket panel start
 
 Legacy aliases (deprecated):
@@ -48,6 +50,7 @@ Examples:
   openpocket skills list
   openpocket script run --text "echo hello"
   openpocket gateway start
+  openpocket human-auth-relay start --port 8787
   openpocket panel start
 `);
 }
@@ -393,6 +396,63 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
   return 0;
 }
 
+async function runHumanAuthRelayCommand(
+  configPath: string | undefined,
+  args: string[],
+): Promise<number> {
+  const sub = (args[0] ?? "start").trim();
+  if (sub !== "start") {
+    throw new Error(`Unknown human-auth-relay subcommand: ${sub}. Use: human-auth-relay start`);
+  }
+
+  const { value: host, rest: afterHost } = takeOption(args.slice(1), "--host");
+  const { value: portRaw, rest: afterPort } = takeOption(afterHost, "--port");
+  const { value: publicBaseUrl, rest: afterPublicBaseUrl } = takeOption(
+    afterPort,
+    "--public-base-url",
+  );
+  const { value: apiKey, rest: afterApiKey } = takeOption(afterPublicBaseUrl, "--api-key");
+  const { value: stateFile, rest } = takeOption(afterApiKey, "--state-file");
+
+  if (rest.length > 0) {
+    throw new Error(`Unexpected arguments: ${rest.join(" ")}`);
+  }
+
+  const cfg = loadConfig(configPath);
+  const parsedPort = Number(portRaw ?? "8787");
+  const port = Number.isFinite(parsedPort) ? Math.max(1, Math.min(65535, Math.round(parsedPort))) : 8787;
+
+  const relay = new HumanAuthRelayServer({
+    host: (host ?? "0.0.0.0").trim(),
+    port,
+    publicBaseUrl: (publicBaseUrl ?? cfg.humanAuth.publicBaseUrl ?? "").trim(),
+    apiKey: (apiKey ?? cfg.humanAuth.apiKey ?? "").trim(),
+    apiKeyEnv: cfg.humanAuth.apiKeyEnv,
+    stateFile:
+      stateFile?.trim() ||
+      path.join(cfg.stateDir, "human-auth-relay", "requests.json"),
+  });
+
+  await relay.start();
+  // eslint-disable-next-line no-console
+  console.log(`[OpenPocket][human-auth-relay] started at ${relay.address || `http://${host ?? "0.0.0.0"}:${port}`}`);
+  // eslint-disable-next-line no-console
+  console.log("[OpenPocket][human-auth-relay] press Ctrl+C to stop");
+
+  await new Promise<void>((resolve) => {
+    const onSignal = (): void => {
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
+      resolve();
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+  });
+
+  await relay.stop();
+  return 0;
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const { value: configPath, rest } = takeOption(argv, "--config");
 
@@ -443,6 +503,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (command === "panel") {
     return runPanelCommand(configPath ?? undefined, rest.slice(1));
+  }
+
+  if (command === "human-auth-relay") {
+    return runHumanAuthRelayCommand(configPath ?? undefined, rest.slice(1));
   }
 
   if (command === "skills") {

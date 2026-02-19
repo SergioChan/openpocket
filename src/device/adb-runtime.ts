@@ -169,6 +169,9 @@ export class AdbRuntime {
       case "run_script": {
         return "run_script is handled by ScriptExecutor in AgentRuntime.";
       }
+      case "request_human_auth": {
+        return `Human authorization requested: capability=${action.capability}`;
+      }
       case "wait": {
         const durationMs = Math.max(100, Math.round(action.durationMs ?? 1000));
         await sleep(durationMs);
