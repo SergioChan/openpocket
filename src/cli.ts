@@ -346,6 +346,32 @@ function parseAllowedChatIds(raw: string): number[] {
   return values.map((value) => Math.trunc(value));
 }
 
+const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function normalizeEnvVarName(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  if (!ENV_VAR_NAME_RE.test(trimmed)) {
+    return fallback;
+  }
+  return trimmed;
+}
+
+function truncateForTerminal(text: string, maxChars: number): string {
+  if (maxChars <= 0) {
+    return "";
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  if (maxChars <= 3) {
+    return ".".repeat(maxChars);
+  }
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
 type CliSelectOption<T extends string> = {
   value: T;
   label: string;
@@ -379,6 +405,7 @@ async function selectByArrowKeys<T extends string>(
   input.resume();
 
   let renderedLines = 0;
+  const columns = Math.max(60, output.columns ?? 120);
   const render = () => {
     if (renderedLines > 0) {
       readline.moveCursor(output, 0, -renderedLines);
@@ -386,14 +413,15 @@ async function selectByArrowKeys<T extends string>(
     }
     const lines: string[] = [];
     lines.push("");
-    lines.push(message);
+    lines.push(truncateForTerminal(message, columns - 1));
     for (let i = 0; i < options.length; i += 1) {
       const option = options[i];
       const prefix = i === index ? ">" : " ";
       const hint = option.hint ? ` (${option.hint})` : "";
-      lines.push(`  ${prefix} ${option.label}${hint}`);
+      const rawLine = `  ${prefix} ${option.label}${hint}`;
+      lines.push(truncateForTerminal(rawLine, columns - 1));
     }
-    lines.push("Use Up/Down arrows and Enter to select.");
+    lines.push(truncateForTerminal("Use Up/Down arrows and Enter to select.", columns - 1));
     output.write(`${lines.join("\n")}\n`);
     renderedLines = lines.length;
   };
@@ -456,7 +484,16 @@ async function runTelegramSetupCommand(
     // eslint-disable-next-line no-console
     console.log("Create your bot in Telegram with @BotFather before continuing.");
 
-    const currentEnv = cfg.telegram.botTokenEnv || "TELEGRAM_BOT_TOKEN";
+    const fallbackEnv = "TELEGRAM_BOT_TOKEN";
+    const configuredEnv = cfg.telegram.botTokenEnv || fallbackEnv;
+    const currentEnv = normalizeEnvVarName(configuredEnv, fallbackEnv);
+    if (currentEnv !== configuredEnv) {
+      cfg.telegram.botTokenEnv = currentEnv;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[OpenPocket] Invalid botTokenEnv value detected (${configuredEnv}). Reset to ${currentEnv}.`,
+      );
+    }
     const envToken = process.env[currentEnv]?.trim() ?? "";
     const tokenChoice = await selectByArrowKeys(
       rl,

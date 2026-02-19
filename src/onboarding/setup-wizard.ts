@@ -30,6 +30,7 @@ const ANSI_BOLD_CYAN = "\u001b[1;36m";
 const ANSI_BOLD_GREEN = "\u001b[1;32m";
 const ANSI_BOLD_YELLOW = "\u001b[1;33m";
 const ANSI_DIM = "\u001b[2m";
+const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 interface SetupState {
   updatedAt: string;
@@ -246,6 +247,34 @@ function parseAllowedChatIdsInput(inputText: string): number[] {
   return values.map((v) => Math.trunc(v));
 }
 
+function isValidEnvVarName(value: string): boolean {
+  return ENV_VAR_NAME_RE.test(value.trim());
+}
+
+function normalizeEnvVarName(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  if (!isValidEnvVarName(trimmed)) {
+    return fallback;
+  }
+  return trimmed;
+}
+
+function truncateForTerminal(text: string, maxChars: number): string {
+  if (maxChars <= 0) {
+    return "";
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  if (maxChars <= 3) {
+    return ".".repeat(maxChars);
+  }
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
 function makeConsolePrompter(): SetupPrompter {
   const rl = createInterface({ input, output });
   const useColor = shouldUseColor(output);
@@ -280,6 +309,7 @@ function makeConsolePrompter(): SetupPrompter {
     input.resume();
 
     let renderedLines = 0;
+    const columns = Math.max(60, output.columns ?? 120);
     const render = () => {
       if (renderedLines > 0) {
         readline.moveCursor(output, 0, -renderedLines);
@@ -287,16 +317,16 @@ function makeConsolePrompter(): SetupPrompter {
       }
       const lines: string[] = [];
       lines.push("");
-      lines.push(message);
+      lines.push(truncateForTerminal(message, columns - 1));
       for (let i = 0; i < options.length; i += 1) {
         const option = options[i];
         const selected = i === index;
-        const prefix = selected ? colorize(">", ANSI_BOLD_GREEN, useColor) : " ";
-        const label = selected ? colorize(option.label, ANSI_BOLD_GREEN, useColor) : option.label;
         const hint = option.hint ? ` (${option.hint})` : "";
-        lines.push(`  ${prefix} ${label}${hint}`);
+        const rawLine = `  ${selected ? ">" : " "} ${option.label}${hint}`;
+        const clipped = truncateForTerminal(rawLine, columns - 1);
+        lines.push(selected ? colorize(clipped, ANSI_BOLD_GREEN, useColor) : clipped);
       }
-      lines.push("Use Up/Down arrows and Enter to select.");
+      lines.push(truncateForTerminal("Use Up/Down arrows and Enter to select.", columns - 1));
       output.write(`${lines.join("\n")}\n`);
       renderedLines = lines.length;
     };
@@ -603,7 +633,19 @@ async function runTelegramStep(
   prompter: SetupPrompter,
   state: SetupState,
 ): Promise<void> {
-  const currentTokenEnv = config.telegram.botTokenEnv || "TELEGRAM_BOT_TOKEN";
+  const fallbackEnv = "TELEGRAM_BOT_TOKEN";
+  const configuredEnv = config.telegram.botTokenEnv || fallbackEnv;
+  const currentTokenEnv = normalizeEnvVarName(configuredEnv, fallbackEnv);
+  if (currentTokenEnv !== configuredEnv) {
+    config.telegram.botTokenEnv = currentTokenEnv;
+    await prompter.note(
+      "Telegram Setup",
+      [
+        `Current botTokenEnv value is invalid: ${configuredEnv}`,
+        `Reset to default env variable name: ${currentTokenEnv}`,
+      ].join("\n"),
+    );
+  }
   const envToken = process.env[currentTokenEnv]?.trim() ?? "";
   const hasConfigToken = Boolean(config.telegram.botToken.trim());
 

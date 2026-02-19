@@ -225,3 +225,22 @@ test("setup wizard can configure Telegram token and allowlist in config", async 
     assert.deepEqual(savedCfg.telegram.allowedChatIds, [123456789, 987654321]);
   });
 });
+
+test("setup wizard normalizes invalid telegram botTokenEnv name", async () => {
+  await withTempHome("openpocket-setup-telegram-env-normalize-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botTokenEnv = "8368685395:AAH-invalid-token-shape";
+    const prompter = new FakePrompter({
+      confirms: [true],
+      selects: ["gpt-5.2-codex", "skip", "skip", "keep", "skip", "disabled"],
+      texts: [],
+      pauseCount: 0,
+    });
+    const emulator = new FakeEmulator();
+
+    await runSetupWizard(cfg, { prompter, emulator, skipTtyCheck: true, printHeader: false });
+
+    const savedCfg = JSON.parse(fs.readFileSync(cfg.configPath, "utf-8"));
+    assert.equal(savedCfg.telegram.botTokenEnv, "TELEGRAM_BOT_TOKEN");
+  });
+});
