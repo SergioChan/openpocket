@@ -39,6 +39,20 @@ Or from repo root:
 openpocket panel start
 ```
 
+## Package release artifact
+
+```bash
+cd /Users/sergiochan/Documents/GitHub/phone-use-agent/apps/openpocket-menubar
+./scripts/package-release.sh 0.0.1
+```
+
+This creates:
+
+- `apps/openpocket-menubar/dist/release/OpenPocket Control Panel.app`
+- `apps/openpocket-menubar/dist/release/openpocket-panel-macos-v0.0.1.zip`
+
+Tag push `panel-v*` triggers `.github/workflows/panel-release.yml` to publish the zip to GitHub Releases.
+
 ## Notes
 
 - In this environment, Swift builds require `-isysroot` flags because `/usr/local/include/Block.h` conflicts with Apple SDK headers.
