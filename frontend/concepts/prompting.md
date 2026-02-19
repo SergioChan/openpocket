@@ -2,7 +2,7 @@
 
 This page explains how OpenPocket constructs prompts and routes user messages.
 
-## Agent System Prompt
+## System Prompt
 
 `buildSystemPrompt(skillsSummary)` generates an instruction block with:
 
@@ -14,7 +14,7 @@ This page explains how OpenPocket constructs prompts and routes user messages.
 
 Prompt templates are documented in [Prompt Templates](../reference/prompt-templates.md).
 
-## Agent User Prompt
+## User Prompt
 
 Per step, `buildUserPrompt(task, step, snapshot, history)` includes:
 
@@ -26,7 +26,7 @@ Per step, `buildUserPrompt(task, step, snapshot, history)` includes:
 
 The screenshot image itself is attached in model request payload as base64 PNG.
 
-## Action Output Contract
+## Output Contract
 
 Expected output shape:
 
@@ -36,7 +36,7 @@ Expected output shape:
 
 If model output is invalid JSON or has unknown action type, runtime normalizes to safe fallback `wait` action.
 
-## Chat vs Task Routing (Telegram)
+## Telegram Routing
 
 `ChatAssistant.decide(chatId, inputText)` uses:
 
@@ -47,7 +47,7 @@ If model output is invalid JSON or has unknown action type, runtime normalizes t
 When routed to task mode, message is passed to `AgentRuntime.runTask`.
 When routed to chat mode, response is generated conversationally.
 
-## Conversation Memory Window
+## Memory Window
 
 Chat assistant stores in-memory turn history per chat ID:
 

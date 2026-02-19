@@ -125,7 +125,7 @@ Notes:
 - Runtime-generated `config.json` uses absolute paths.
 - `openpocket.config.example.json` keeps `~` for readability, but loader resolves to absolute paths.
 
-## Runtime Normalization Rules
+## Normalization
 
 - `defaultModel` must exist in `models`.
 - `agent.lang` is normalized to `en` (English-only runtime prompts).
@@ -140,12 +140,12 @@ Notes:
 - model `reasoningEffort` accepts only `low|medium|high|xhigh`, else `null`.
 - model `temperature` is `null` if absent/invalid.
 
-## Path Resolution
+## Paths
 
 - values starting with `~` are expanded to user home
 - other paths are resolved to absolute paths
 
-## API Key Resolution
+## API Keys
 
 Per model profile:
 
@@ -155,7 +155,7 @@ Per model profile:
 
 Missing key causes task start failure with a persisted failed session/memory entry.
 
-## Legacy Key Compatibility
+## Legacy Keys
 
 The loader maps legacy snake_case keys (top-level and nested) to camelCase keys before merge.
 

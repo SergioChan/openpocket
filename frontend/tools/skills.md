@@ -2,7 +2,7 @@
 
 OpenPocket skills are markdown documents discovered from configured source directories.
 
-## Source Order and Override Rules
+## Source Order
 
 Loader scan order (highest priority first):
 
@@ -12,13 +12,13 @@ Loader scan order (highest priority first):
 
 If multiple files have the same skill ID, first source wins.
 
-## Discovery Rules
+## Discovery
 
 - recursive scan under each source root
 - include `*.md` files
 - exclude `README.md`
 
-## Parsed Skill Metadata
+## Skill Metadata
 
 From each markdown file:
 
@@ -28,7 +28,7 @@ From each markdown file:
 - `source`: `workspace | local | bundled`
 - `path`: absolute file path
 
-## Prompt Injection Format
+## Injection Format
 
 Runtime injects a summarized list into system prompt:
 
@@ -39,7 +39,7 @@ Runtime injects a summarized list into system prompt:
 
 If no skill exists, summary text is `(no skills loaded)`.
 
-## Workspace Skill Template
+## Workspace Template
 
 ```md
 # Search App
@@ -57,7 +57,7 @@ Use when user asks to open an app by name.
 
 Only title and first non-heading line are parsed structurally; the rest is free-form guidance for future prompt usage.
 
-## Auto-generated Skills
+## Generated Skills
 
 After successful tasks, `AutoArtifactBuilder` may create:
 

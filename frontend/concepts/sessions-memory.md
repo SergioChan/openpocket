@@ -2,7 +2,7 @@
 
 OpenPocket persists execution traces into markdown files under workspace.
 
-## Workspace Bootstrap
+## Bootstrap
 
 On onboard/load (or legacy init), OpenPocket ensures these directories:
 
@@ -22,7 +22,7 @@ And bootstrap files if missing:
 - `HEARTBEAT.md`
 - `MEMORY.md`
 
-## Session File Lifecycle
+## Session Lifecycle
 
 For each task, runtime creates:
 

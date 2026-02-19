@@ -13,7 +13,7 @@ OpenPocket runs automation on a local Android emulator, so tasks do not consume 
 
 You do not need to root or modify your personal phone to use OpenPocket.
 
-## Option A: npm package (no source checkout required)
+## npm Install
 
 ```bash
 npm install -g openpocket
@@ -30,7 +30,7 @@ Then start the panel:
 openpocket panel start
 ```
 
-## Option B: local clone (no global install)
+## Source Install
 
 ```bash
 git clone git@github.com:SergioChan/openpocket.git
@@ -73,7 +73,7 @@ If you explicitly want a user-local PATH command without npm global install:
 
 Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
-## Required Environment Variables
+## Env Vars
 
 ```bash
 export OPENAI_API_KEY="<your_key>"
@@ -89,7 +89,7 @@ export OPENPOCKET_HOME="$HOME/.openpocket"
 export AUTOGLM_API_KEY="<optional>"
 ```
 
-## Verify Local Commands
+## Command Check
 
 ```bash
 openpocket config-show
@@ -100,7 +100,7 @@ openpocket skills list
 openpocket script run --text "echo hello"
 ```
 
-## Run One Agent Task
+## Run a Task
 
 ```bash
 openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
@@ -125,7 +125,7 @@ Planned next step:
 
 - connect from user phone to the local runtime for remote human-in-the-loop control
 
-## Run Telegram Gateway
+## Telegram Gateway
 
 ```bash
 openpocket gateway start

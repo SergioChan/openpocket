@@ -7,7 +7,7 @@ OpenPocket supports controlled script execution through `run_script` action and 
 - agent action: `{"type":"run_script","script":"...","timeoutSec":60}`
 - CLI: `openpocket script run --text "..."` or `--file <path>`
 
-## Validation Pipeline
+## Validation
 
 `ScriptExecutor.validateScript` checks:
 
@@ -29,7 +29,7 @@ Built-in blocked patterns include:
 - `dd if=`
 - `rm -rf /`
 
-## Allowlist Command Check
+## Allowlist Check
 
 - script is split by line
 - line comments are stripped
@@ -52,11 +52,11 @@ Each run stores artifacts under:
 - `workspace/scripts/runs/run-<runId>/stderr.log`
 - `workspace/scripts/runs/run-<runId>/result.json`
 
-## Result Object
+## Result
 
 See full schema in [Session and Memory Formats](../reference/session-memory-formats.md).
 
-## Auto-generated Scripts
+## Generated Scripts
 
 After successful tasks, `AutoArtifactBuilder` may create replay scripts at:
 

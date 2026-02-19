@@ -1,6 +1,6 @@
 # CLI and Gateway Reference
 
-## CLI Command Surface
+## CLI Commands
 
 ```text
 openpocket [--config <path>] install-cli
@@ -27,7 +27,7 @@ Local clone launcher:
 ./openpocket <command>
 ```
 
-## `panel start` (macOS)
+## `panel start`
 
 - startup order:
 - first tries installed panel app in `/Applications` and `~/Applications`
@@ -61,13 +61,13 @@ Interactive onboarding wizard flow:
 - can start/show emulator and guide manual Gmail login for Play Store
 - writes onboarding state to `state/onboarding.json`
 
-## Legacy Alias: `init`
+## Legacy: `init`
 
 - deprecated compatibility alias
 - in interactive terminals: behaves like `onboard`
 - in non-interactive terminals: runs bootstrap only (config + workspace + env doctor), without prompts
 
-## Legacy Alias: `setup`
+## Legacy: `setup`
 
 - deprecated compatibility alias
 - behaves like `onboard`
@@ -84,7 +84,7 @@ Interactive onboarding wizard flow:
 - prints status, run directory, and stdout/stderr
 - exit code follows `result.ok`
 
-## Telegram Commands
+## Telegram
 
 Supported commands:
 
@@ -115,7 +115,7 @@ Gateway runtime behavior:
 - heartbeat runner logs health snapshots on interval
 - cron service executes due jobs from `workspace/cron/jobs.json`
 
-## Telegram Output Sanitization
+## Telegram Output
 
 Before sending model/task content back to chat:
 

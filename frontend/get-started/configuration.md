@@ -2,7 +2,7 @@
 
 OpenPocket loads config from JSON, merges with defaults, normalizes legacy keys, and writes a resolved runtime structure.
 
-## Config File Location
+## File Location
 
 Resolution order:
 
@@ -12,7 +12,7 @@ Resolution order:
 
 `OPENPOCKET_HOME` defaults to `~/.openpocket`.
 
-## Load Pipeline
+## Load Order
 
 At startup, config handling does the following:
 
@@ -24,7 +24,7 @@ At startup, config handling does the following:
 6. Ensure required directories exist.
 7. Bootstrap workspace files if missing.
 
-## API Key Resolution
+## API Keys
 
 For each model profile:
 
@@ -32,7 +32,7 @@ For each model profile:
 - Else use env var from `models.<name>.apiKeyEnv`.
 - Else treat key as missing and fail task early.
 
-## Legacy Key Compatibility
+## Legacy Keys
 
 The loader accepts old keys and maps them automatically, including:
 
@@ -42,7 +42,7 @@ The loader accepts old keys and maps them automatically, including:
 
 After `onboard` (or legacy `init`), saved config uses camelCase keys.
 
-## Validation and Clamps
+## Validation
 
 Normalization currently enforces:
 
@@ -56,6 +56,6 @@ Normalization currently enforces:
 
 If `defaultModel` does not exist in `models`, startup throws an error.
 
-## Full Defaults
+## Defaults
 
 See [Config Defaults](../reference/config-defaults.md) for the exact default JSON and field-by-field reference.

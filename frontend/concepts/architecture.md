@@ -2,7 +2,7 @@
 
 OpenPocket is a local-first phone-use runtime centered on a local Android emulator.
 
-## Runtime Topology
+## Topology
 
 ```text
 User (CLI / Telegram / Panel)
@@ -20,7 +20,7 @@ ModelClient AdbRuntime SkillLoader ScriptExecutor
  LLM APIs   Android Emulator (local adb target)
 ```
 
-## Why Emulator-First Matters
+## Why Local Emulator
 
 - automation does not consume runtime resources on the user’s main phone
 - execution remains local instead of running on a hosted cloud phone service
@@ -35,7 +35,7 @@ OpenPocket supports two complementary control paths on the same runtime:
 
 This makes human-agent handoff practical for real app workflows.
 
-## Main Components
+## Components
 
 - `AgentRuntime`: orchestrates task loop, step execution, and session/memory persistence.
 - `ModelClient`: builds multimodal prompts, calls model endpoints, parses normalized actions.
@@ -49,7 +49,7 @@ This makes human-agent handoff practical for real app workflows.
 - `CronService`: triggers scheduled tasks from `workspace/cron/jobs.json`.
 - `runGatewayLoop`: robust long-running gateway loop with graceful restart/stop behavior.
 
-## Task Lifecycle
+## Task Flow
 
 1. Create a session markdown file.
 2. Resolve model profile and credentials.
@@ -64,7 +64,7 @@ This makes human-agent handoff practical for real app workflows.
 5. Finalize session and append one daily memory entry.
 6. Optionally return emulator to home screen.
 
-## Model Endpoint Fallback
+## Model Fallback
 
 OpenPocket attempts provider endpoints in fallback order:
 
@@ -73,13 +73,13 @@ OpenPocket attempts provider endpoints in fallback order:
 
 This keeps runtime compatibility across providers with partial endpoint support.
 
-## Persistence Model
+## Persistence
 
 - runtime state is stored under `OPENPOCKET_HOME`
 - task execution is auditable through session/memory/script artifacts
 - screenshot storage uses configured retention limits
 
-## Near-Term Architecture Extension
+## Near-Term Extensions
 
 Planned next step:
 

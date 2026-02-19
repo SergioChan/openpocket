@@ -95,6 +95,41 @@ h6 {
   font-weight: 300;
 }
 
+.VPSidebar .VPSidebarItem.level-1 > .item > .link > .text,
+.VPSidebar .VPSidebarItem.level-1 > .item > .text {
+  color: var(--vp-c-text-2);
+  font-weight: 450;
+}
+
+.VPSidebar .VPSidebarItem.level-2 > .item > .link > .text,
+.VPSidebar .VPSidebarItem.level-2 > .item > .text,
+.VPSidebar .VPSidebarItem.level-3 > .item > .link > .text,
+.VPSidebar .VPSidebarItem.level-3 > .item > .text,
+.VPSidebar .VPSidebarItem.level-4 > .item > .link > .text,
+.VPSidebar .VPSidebarItem.level-4 > .item > .text,
+.VPSidebar .VPSidebarItem.level-5 > .item > .link > .text,
+.VPSidebar .VPSidebarItem.level-5 > .item > .text {
+  color: var(--vp-c-text-3);
+  font-weight: 360;
+}
+
+.VPSidebar .VPSidebarItem.level-2.is-active > .item .link > .text,
+.VPSidebar .VPSidebarItem.level-3.is-active > .item .link > .text,
+.VPSidebar .VPSidebarItem.level-4.is-active > .item .link > .text,
+.VPSidebar .VPSidebarItem.level-5.is-active > .item .link > .text {
+  color: var(--vp-c-brand-1);
+}
+
+.VPDocAsideOutline .VPDocOutlineItem.nested .outline-link {
+  color: var(--vp-c-text-3);
+  font-size: 13px;
+}
+
+.VPDocAsideOutline .VPDocOutlineItem.nested .outline-link.active,
+.VPDocAsideOutline .VPDocOutlineItem.nested .outline-link:hover {
+  color: var(--vp-c-text-2);
+}
+
 .op-hero-install {
   margin-top: 18px;
   display: inline-flex;

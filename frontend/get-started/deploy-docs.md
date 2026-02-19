@@ -18,7 +18,7 @@ This repository also includes:
 
 Vercel deployment uses docs base `/`, so no extra base setting is required.
 
-## Local Preview
+## Preview
 
 Run docs locally before deploying:
 

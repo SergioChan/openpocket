@@ -2,7 +2,7 @@
 
 This runbook focuses on day-to-day operation of the current runtime.
 
-## Daily Start Sequence
+## Daily Start
 
 1. Ensure Android emulator dependencies are available.
 2. Verify config and environment variables.
@@ -22,7 +22,7 @@ openpocket gateway start
 
 If the launcher is not in PATH yet, use `node dist/cli.js <command>`.
 
-## Task Monitoring
+## Monitoring
 
 - gateway terminal logs show accepted task, step progress, and final status
 - heartbeat logs are printed periodically and appended to `state/heartbeat.log`
@@ -40,7 +40,7 @@ If the launcher is not in PATH yet, use `node dist/cli.js <command>`.
 - screenshots: bounded by `screenshots.maxCount`
 - sessions/memory/scripts: retained until manually cleaned
 
-## Model Switch Procedure
+## Model Switch
 
 Use Telegram `/model <name>` or edit `defaultModel` in config.
 
@@ -50,7 +50,7 @@ When changing model, verify:
 - API key or env var is valid
 - model supports required capabilities for your task
 
-## Script Execution Governance
+## Script Safety
 
 - keep allowlist narrow in production
 - disable script executor globally when not needed (`scriptExecutor.enabled=false`)

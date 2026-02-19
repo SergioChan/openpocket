@@ -2,7 +2,7 @@
 
 OpenPocket runtime uses `OPENPOCKET_HOME` (default `~/.openpocket`).
 
-## Runtime Home Tree
+## Runtime Tree
 
 ```text
 ~/.openpocket/
@@ -48,7 +48,7 @@ OpenPocket runtime uses `OPENPOCKET_HOME` (default `~/.openpocket`).
       jobs.json
 ```
 
-## Repository Code Layout
+## Repo Layout
 
 ```text
 src/
@@ -63,7 +63,7 @@ src/
   cli.ts       # command entrypoint
 ```
 
-## Skill Source Directories
+## Skill Sources
 
 At runtime, skills are loaded from:
 

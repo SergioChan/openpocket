@@ -11,7 +11,7 @@ All pages in this folder document implemented behavior in the current TypeScript
 For the native macOS menu bar app, see:
 - [OpenPocket Menu Bar App](../apps/openpocket-menubar/README.md)
 
-## Product Direction
+## Direction
 
 OpenPocket is a local emulator-first phone-use agent aimed at real consumer scenarios, not only developer workflows.
 
@@ -21,7 +21,7 @@ OpenPocket is a local emulator-first phone-use agent aimed at real consumer scen
 - dual control model: direct human control + agent control
 - upcoming remote phone control for human-in-the-loop interaction
 
-## Documentation Hubs
+## Doc Hubs
 
 | Hub | Purpose | Entry |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ OpenPocket is a local emulator-first phone-use agent aimed at real consumer scen
 | Reference | Precise schemas, defaults, formats, and commands | [Config Defaults](./reference/config-defaults.md) |
 | Ops | Day-2 runbook and troubleshooting | [Runbook](./ops/runbook.md) |
 
-## Most Requested Specs
+## Popular Specs
 
 - Product blueprint: [Project Blueprint](./concepts/project-blueprint.md)
 - Prompt templates: [Prompt Templates](./reference/prompt-templates.md)
@@ -41,7 +41,7 @@ OpenPocket is a local emulator-first phone-use agent aimed at real consumer scen
 - Script format and execution rules: [Scripts](./tools/scripts.md)
 - CLI and Telegram commands: [CLI and Gateway](./reference/cli-and-gateway.md)
 
-## Documentation Scope Policy
+## Scope Policy
 
 - Document implemented behavior first, and clearly mark roadmap items as planned.
 - Mark fallback behavior and normalization rules explicitly.

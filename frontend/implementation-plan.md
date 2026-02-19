@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-18
 
-## Current Delivery Status
+## Status
 
 Implemented in the current runtime:
 
@@ -15,33 +15,33 @@ Implemented in the current runtime:
 - Controlled script execution with allowlist, timeout, and run artifacts
 - Unit tests for key runtime contracts
 
-## Next Focus Areas
+## Next Focus
 
-### Phase A: Observability and Reliability
+### Phase A
 
 - step retry policy and action-level timeout strategy
 - structured JSONL runtime logs
 - configurable progress report frequency by channel
 
-### Phase B: Tooling and Skill Maturity
+### Phase B
 
 - stronger skill metadata conventions
 - script policy profiles for different environments
 - richer artifact generation quality controls
 
-### Phase C: Session and Control UX
+### Phase C
 
 - session browsing and resume controls
 - queue-based task scheduling
 - stronger interruption and recovery semantics
 
-### Phase D: Release Readiness
+### Phase D
 
 - broader integration test coverage
 - release packaging and upgrade path docs
 - contributor workflow hardening
 
-## Acceptance Baseline
+## Acceptance
 
 - Local emulator can be reused with persistent app account state.
 - Telegram can start tasks, report progress, and stop tasks reliably.

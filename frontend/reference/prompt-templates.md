@@ -2,7 +2,7 @@
 
 This page documents the exact runtime prompt templates used by `src/agent/prompts.ts`.
 
-## System Prompt Template (EN)
+## System Prompt (EN)
 
 ```text
 You are OpenPocket, an Android automation agent.
@@ -24,7 +24,7 @@ Available skills:
 <skillsSummary>
 ```
 
-## User Prompt Template
+## User Prompt
 
 ```text
 Task: <task>
@@ -45,11 +45,11 @@ Recent execution history:
 Return one JSON object with thought and action.
 ```
 
-## Multimodal Attachment
+## Multimodal
 
 Task loop requests attach screenshot as base64 PNG image in model payload.
 
-## Output Parsing and Safety Fallback
+## Parsing and Fallback
 
 - Runtime extracts first JSON object from plain text or fenced code output.
 - Invalid JSON => fallback action:

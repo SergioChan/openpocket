@@ -13,9 +13,9 @@ The target is not only developer productivity. The core focus is everyday life s
 - social and messaging workflows
 - repetitive in-app routines
 
-## Core Product Principles
+## Core Principles
 
-### 1. Local Emulator First
+### Local Emulator
 
 OpenPocket runs tasks on a local Android emulator instead of the user’s physical phone.
 
@@ -25,7 +25,7 @@ Benefits:
 - execution state and permissions stay local to the user’s computer
 - no mandatory cloud-hosted phone infrastructure
 
-### 2. Local Data Boundary
+### Local Data
 
 OpenPocket is not a cloud execution farm.
 
@@ -33,7 +33,7 @@ OpenPocket is not a cloud execution farm.
 - workspace artifacts remain local (`sessions`, `memory`, `scripts`, screenshots)
 - model calls are explicit and configurable; users choose model provider and endpoint
 
-### 3. Dual Control Modes
+### Dual Control
 
 OpenPocket is designed for both autonomous and manual interaction:
 
@@ -42,7 +42,7 @@ OpenPocket is designed for both autonomous and manual interaction:
 
 This enables practical handoff between human and agent in one runtime.
 
-### 4. Human-in-the-Loop by Default
+### Human-in-the-Loop
 
 OpenPocket should always allow users to intervene, inspect, and continue.
 
@@ -58,14 +58,14 @@ Near-term roadmap:
 - phone-side controls for pause/resume/approve/retry flows
 - richer human-in-the-loop checkpoints during agent execution
 
-## Product Experience Layers
+## Experience Layers
 
 1. **Runtime Layer**: local emulator + `adb` + task loop + persistence.
 2. **Control Layer**: CLI, Telegram gateway, and native panel.
 3. **Trust Layer**: local storage, auditable sessions, script guardrails, controlled execution.
 4. **Collaboration Layer**: human and agent can share control over the same mobile runtime.
 
-## Representative User Scenarios
+## User Scenarios
 
 ### Shopping
 
@@ -82,12 +82,12 @@ Near-term roadmap:
 - draft-assist and interaction setup in social apps
 - structured review before sending or posting
 
-## What OpenPocket Is Not
+## Non-Goals
 
 - not a browser-only desktop automation tool
 - not limited to coding and office productivity tasks
 - not a cloud-only remote device service
 
-## Blueprint Summary
+## Summary
 
 OpenPocket is evolving into a practical personal phone-use system: local, controllable, auditable, and oriented toward real consumer app workflows.
