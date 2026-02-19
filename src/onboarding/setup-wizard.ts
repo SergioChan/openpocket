@@ -14,11 +14,11 @@ import { EmulatorManager } from "../device/emulator-manager";
 const pkgJson = require("../../package.json") as { version: string; license: string };
 
 const OPENPOCKET_ASCII = [
-  "  ___   ____  _____ _   _ ____   ___   ____ _  _______ _____ _____",
-  " / _ \\ / ___|| ____| \\ | |  _ \\ / _ \\ / ___| |/ / ____|_   _| ____|",
-  "| | | | |  _ |  _| |  \\| | |_) | | | | |   | ' /|  _|   | | |  _|  ",
-  "| |_| | |_| || |___| |\\  |  __/| |_| | |___| . \\| |___  | | | |___ ",
-  " \\___/ \\____||_____|_| \\_|_|    \\___/ \\____|_|\\_\\_____| |_| |_____|",
+  "  OOOOO  PPPP   EEEEE  N   N  PPPP    OOOOO   CCCCC  K   K  EEEEE  TTTTT",
+  " O     O P   P  E      NN  N  P   P  O     O C       K  K   E        T  ",
+  " O     O PPPP   EEEE   N N N  PPPP   O     O C       KKK    EEEE     T  ",
+  " O     O P      E      N  NN  P      O     O C       K  K   E        T  ",
+  "  OOOOO  P      EEEEE  N   N  P       OOOOO   CCCCC  K   K  EEEEE    T  ",
 ];
 
 const SETUP_WIZARD_ASCII = [
