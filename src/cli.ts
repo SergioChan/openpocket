@@ -250,7 +250,7 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       const cfg = loadConfig(configPath);
       const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
       const hasToken = Boolean(cfg.telegram.botToken.trim() || process.env[envName]?.trim());
-      const totalSteps = 5;
+      const totalSteps = 6;
 
       printStartupHeader(cfg);
       printStartupStep(1, totalSteps, "Load config", "ok");
@@ -277,12 +277,20 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
         printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
       }
 
-      printStartupStep(4, totalSteps, "Initialize gateway runtime", "starting");
+      if (process.platform === "darwin") {
+        printStartupStep(4, totalSteps, "Ensure panel is running", "starting");
+        await runPanelCommand(configPath, ["start"]);
+        printStartupStep(4, totalSteps, "Ensure panel is running", "ok");
+      } else {
+        printStartupStep(4, totalSteps, "Ensure panel is running", "skipped (macOS only)");
+      }
+
+      printStartupStep(5, totalSteps, "Initialize gateway runtime", "starting");
       const gateway = new TelegramGateway(cfg);
-      printStartupStep(4, totalSteps, "Initialize gateway runtime", "ok");
-      printStartupStep(5, totalSteps, "Start services", "starting");
+      printStartupStep(5, totalSteps, "Initialize gateway runtime", "ok");
+      printStartupStep(6, totalSteps, "Start services", "starting");
       await gateway.start();
-      printStartupStep(5, totalSteps, "Start services", "ok");
+      printStartupStep(6, totalSteps, "Start services", "ok");
       // eslint-disable-next-line no-console
       console.log("[OpenPocket][gateway-start] Gateway is running. Press Ctrl+C to stop.");
       return {
