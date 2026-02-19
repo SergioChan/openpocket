@@ -201,20 +201,91 @@ function detectBestJavaRuntime(): JavaRuntimeInfo | null {
     return null;
   }
 
+  // Prefer JDK 17–21 which are well-tested with Android SDK tools.
+  // Newer JDKs (22+) may break avdmanager/sdkmanager due to stricter
+  // module access restrictions (JNA, etc.).
+  const preferred = infos
+    .filter((i) => i.major >= 17 && i.major <= 21)
+    .sort((a, b) => b.major - a.major);
+  if (preferred.length > 0) {
+    return preferred[0];
+  }
+
+  // Fall back to the highest available version ≥ 17.
   infos.sort((a, b) => b.major - a.major);
   return infos[0];
 }
 
+function sdkRootScore(sdkRoot: string): number {
+  // Score an SDK root by how complete it is.
+  // Higher score = more useful (has tools, system images, platforms, etc.).
+  let score = 0;
+  const checks = [
+    path.join(sdkRoot, "platform-tools", "adb"),
+    path.join(sdkRoot, "emulator", "emulator"),
+    path.join(sdkRoot, "cmdline-tools"),
+    path.join(sdkRoot, "platforms"),
+    path.join(sdkRoot, "system-images"),
+  ];
+  for (const p of checks) {
+    if (fs.existsSync(p)) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
 function collectSdkRoot(config: OpenPocketConfig): { sdkRoot: string; configUpdated: boolean } {
+  // Gather all candidate SDK roots and pick the most complete one.
+  const candidates: string[] = [];
+
   const configured = config.emulator.androidSdkRoot.trim();
   if (configured) {
-    return { sdkRoot: path.resolve(configured), configUpdated: false };
+    candidates.push(path.resolve(configured));
   }
 
   const envRoot = process.env.ANDROID_SDK_ROOT?.trim() || process.env.ANDROID_HOME?.trim() || "";
-  const sdkRoot = envRoot ? path.resolve(envRoot) : path.join(os.homedir(), "Library", "Android", "sdk");
-  config.emulator.androidSdkRoot = sdkRoot;
-  return { sdkRoot, configUpdated: true };
+  if (envRoot) {
+    candidates.push(path.resolve(envRoot));
+  }
+
+  // Well-known Android Studio SDK locations on macOS / Linux.
+  candidates.push(path.join(os.homedir(), "Library", "Android", "sdk"));
+  candidates.push(path.join(os.homedir(), "Android", "Sdk"));
+
+  // Deduplicate and score each candidate.
+  const seen = new Set<string>();
+  let bestRoot = "";
+  let bestScore = -1;
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    const score = sdkRootScore(candidate);
+    if (score > bestScore) {
+      bestScore = score;
+      bestRoot = candidate;
+    }
+  }
+
+  // If no candidate scored, fall back to the first existing one or default.
+  if (!bestRoot) {
+    bestRoot = configured
+      ? path.resolve(configured)
+      : envRoot
+        ? path.resolve(envRoot)
+        : path.join(os.homedir(), "Library", "Android", "sdk");
+  }
+
+  const configUpdated = bestRoot !== configured;
+  if (configUpdated) {
+    config.emulator.androidSdkRoot = bestRoot;
+  }
+  return { sdkRoot: bestRoot, configUpdated };
 }
 
 function detectTools(sdkRoot: string): ToolPaths {
@@ -254,6 +325,13 @@ function detectTools(sdkRoot: string): ToolPaths {
 function missingTools(toolPaths: ToolPaths): ToolName[] {
   const required: ToolName[] = ["adb", "emulator", "sdkmanager", "avdmanager"];
   return required.filter((name) => !toolPaths[name]);
+}
+
+function missingEssentialTools(toolPaths: ToolPaths): ToolName[] {
+  // Only adb and emulator are strictly required at runtime.
+  // sdkmanager/avdmanager are only needed when creating new AVDs.
+  const essential: ToolName[] = ["adb", "emulator"];
+  return essential.filter((name) => !toolPaths[name]);
 }
 
 function resolveBrewBinary(): string | null {
@@ -363,14 +441,32 @@ function installSdkPackages(
   }
 }
 
-function installOneSystemImage(
-  sdkmanager: string,
-  sdkRoot: string,
-  logger: (line: string) => void,
-  toolEnv: NodeJS.ProcessEnv,
-): string | null {
-  const archTag = process.arch === "arm64" ? "arm64-v8a" : "x86_64";
-  const candidates = Array.from(
+function detectHostArm64(): boolean {
+  if (process.arch === "arm64") {
+    return true;
+  }
+  // On macOS, process.arch may report "x64" when running under Rosetta 2.
+  // Use sysctl to detect actual hardware architecture.
+  if (process.platform === "darwin") {
+    try {
+      const result = spawnSync("sysctl", ["-n", "hw.optional.arm64"], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 3000,
+      });
+      if (result.stdout?.trim() === "1") {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return false;
+}
+
+function systemImageCandidates(): string[] {
+  const archTag = detectHostArm64() ? "arm64-v8a" : "x86_64";
+  return Array.from(
     new Set([
       `system-images;android-34;google_apis_playstore;${archTag}`,
       "system-images;android-34;google_apis_playstore;x86_64",
@@ -379,7 +475,47 @@ function installOneSystemImage(
       "system-images;android-34;google_apis;arm64-v8a",
     ]),
   );
+}
 
+function findExistingSystemImage(sdkRoot: string, logger: (line: string) => void): string | null {
+  // Check if any system image already exists locally (e.g. installed via Android Studio).
+  // Also scan the well-known Android Studio SDK location in case sdkRoot differs.
+  const androidStudioSdk = path.join(os.homedir(), "Library", "Android", "sdk");
+  const sdkRootsToCheck = Array.from(new Set([sdkRoot, androidStudioSdk].filter((p) => fs.existsSync(p))));
+  const candidates = systemImageCandidates();
+
+  for (const pkg of candidates) {
+    // Package name format: system-images;android-XX;variant;arch
+    // Translates to: <sdk>/system-images/android-XX/variant/arch/
+    const parts = pkg.split(";");
+    if (parts.length !== 4) {
+      continue;
+    }
+    const relPath = path.join(parts[0], parts[1], parts[2], parts[3]);
+    for (const root of sdkRootsToCheck) {
+      const fullPath = path.join(root, relPath);
+      if (fs.existsSync(fullPath) && fs.existsSync(path.join(fullPath, "system.img"))) {
+        logger(`Found existing system image locally: ${pkg} (at ${root})`);
+        return pkg;
+      }
+    }
+  }
+  return null;
+}
+
+function installOneSystemImage(
+  sdkmanager: string,
+  sdkRoot: string,
+  logger: (line: string) => void,
+  toolEnv: NodeJS.ProcessEnv,
+): string | null {
+  // First check if a system image already exists locally (skip slow download).
+  const existing = findExistingSystemImage(sdkRoot, logger);
+  if (existing) {
+    return existing;
+  }
+
+  const candidates = systemImageCandidates();
   for (const pkg of candidates) {
     logger(`Trying system image: ${pkg}`);
     const res = run(sdkmanager, [`--sdk_root=${sdkRoot}`, pkg], { inherit: true, env: toolEnv });
@@ -394,18 +530,55 @@ function installOneSystemImage(
 }
 
 function listAvdNames(avdmanager: string, toolEnv: NodeJS.ProcessEnv): string[] {
+  const names = new Set<string>();
+
+  // Method 1: avdmanager list avd (only returns fully valid AVDs).
   const result = run(avdmanager, ["list", "avd"], { env: toolEnv });
-  if (!result.ok) {
-    return [];
+  if (result.ok) {
+    const regex = /^Name:\s*(.+)$/gm;
+    let match: RegExpExecArray | null = regex.exec(result.stdout);
+    while (match) {
+      names.add(match[1].trim());
+      match = regex.exec(result.stdout);
+    }
   }
-  const names: string[] = [];
-  const regex = /^Name:\s*(.+)$/gm;
-  let match: RegExpExecArray | null = regex.exec(result.stdout);
-  while (match) {
-    names.push(match[1].trim());
-    match = regex.exec(result.stdout);
+
+  // Method 2: Scan ~/.android/avd/ directory directly.
+  // This finds AVDs created by Android Studio that avdmanager might reject
+  // due to SDK root mismatch (e.g. "Missing system image" when the image
+  // exists under a different SDK path).
+  const avdDir = path.join(os.homedir(), ".android", "avd");
+  if (fs.existsSync(avdDir)) {
+    for (const entry of fs.readdirSync(avdDir)) {
+      if (!entry.endsWith(".ini")) {
+        continue;
+      }
+      // The .ini file contains a line like "path=<avd_dir>" and the AVD name
+      // is derived from the filename: "Medium_Phone_API_36.1.ini" → name in the file.
+      const iniPath = path.join(avdDir, entry);
+      try {
+        const content = fs.readFileSync(iniPath, "utf-8");
+        const avdPath = content.match(/^path\s*=\s*(.+)$/m)?.[1]?.trim();
+        if (avdPath && fs.existsSync(avdPath)) {
+          // Use the AvdId from config.ini if available, otherwise derive from filename.
+          const configIni = path.join(avdPath, "config.ini");
+          if (fs.existsSync(configIni)) {
+            const configContent = fs.readFileSync(configIni, "utf-8");
+            const avdId = configContent.match(/^AvdId\s*=\s*(.+)$/m)?.[1]?.trim();
+            if (avdId) {
+              names.add(avdId);
+            } else {
+              names.add(entry.replace(/\.ini$/, ""));
+            }
+          }
+        }
+      } catch {
+        // skip unreadable ini files
+      }
+    }
   }
-  return names;
+
+  return Array.from(names);
 }
 
 function createAvd(
@@ -422,7 +595,8 @@ function createAvd(
     { env: toolEnv, input: "no\n" },
   );
   if (!result.ok) {
-    logger("Failed to create AVD automatically.");
+    const detail = [result.stdout, result.stderr, result.error].filter(Boolean).join("\n").trim();
+    logger(`Failed to create AVD automatically.${detail ? `\n${detail}` : ""}`);
     return false;
   }
   return true;
@@ -451,20 +625,23 @@ export async function ensureAndroidPrerequisites(
   const sdkRoot = collected.sdkRoot;
   let configUpdated = collected.configUpdated;
   ensureDir(sdkRoot);
+  logger(`Android SDK root: ${sdkRoot}`);
 
   let tools = detectTools(sdkRoot);
-  const missingBeforeInstall = missingTools(tools);
-  let missing = missingTools(tools);
   const installedSteps: string[] = [];
   let avdCreated = false;
 
-  if (missing.length > 0) {
+  // --- Phase 1: Ensure essential tools (adb + emulator) exist ---
+  let essentialMissing = missingEssentialTools(tools);
+  let allMissing = missingTools(tools);
+
+  if (essentialMissing.length > 0) {
     if (!autoInstall) {
-      throw new Error(`Missing Android prerequisites: ${missing.join(", ")}`);
+      throw new Error(`Missing Android prerequisites: ${essentialMissing.join(", ")}`);
     }
     if (process.platform !== "darwin") {
       throw new Error(
-        `Missing Android prerequisites on ${process.platform}: ${missing.join(", ")}. Auto-install currently supports macOS only.`,
+        `Missing Android prerequisites on ${process.platform}: ${essentialMissing.join(", ")}. Auto-install currently supports macOS only.`,
       );
     }
 
@@ -486,11 +663,49 @@ export async function ensureAndroidPrerequisites(
     }
 
     tools = detectTools(sdkRoot);
-    missing = missingTools(tools);
+    essentialMissing = missingEssentialTools(tools);
+    allMissing = missingTools(tools);
   }
 
-  if (missing.length > 0) {
-    throw new Error(`Missing Android prerequisites after installation: ${missing.join(", ")}`);
+  if (essentialMissing.length > 0) {
+    throw new Error(`Missing essential Android tools after installation: ${essentialMissing.join(", ")}`);
+  }
+
+  // --- Phase 2: Early AVD check (scan ~/.android/avd/ directly, no Java needed) ---
+  // This catches AVDs created by Android Studio even before we set up Java / avdmanager.
+  const earlyAvds = listAvdNames(
+    tools.avdmanager ?? "avdmanager",
+    { ...process.env, ANDROID_SDK_ROOT: sdkRoot, ANDROID_HOME: sdkRoot },
+  );
+  const hasAnyAvdEarly = earlyAvds.length > 0;
+
+  if (hasAnyAvdEarly) {
+    // Reuse an existing AVD — no need for heavy SDK setup.
+    if (!earlyAvds.includes(config.emulator.avdName)) {
+      const fallback = earlyAvds[0];
+      logger(`Configured AVD '${config.emulator.avdName}' not found. Reusing existing AVD '${fallback}'.`);
+      config.emulator.avdName = fallback;
+      configUpdated = true;
+    }
+    logger(`Using existing AVD '${config.emulator.avdName}'. Skipping heavy SDK install.`);
+
+    tools = detectTools(sdkRoot);
+    return {
+      skipped: false,
+      configUpdated,
+      sdkRoot,
+      toolPaths: tools,
+      installedSteps,
+      avdCreated: false,
+    };
+  }
+
+  // --- Phase 3: No AVD found — need Java + sdkmanager + avdmanager to create one ---
+  if (allMissing.length > 0) {
+    throw new Error(
+      `No existing AVD found and missing tools to create one: ${allMissing.join(", ")}. ` +
+      "Install Android Studio or run sdkmanager to set up an AVD.",
+    );
   }
 
   const sdkmanager = tools.sdkmanager;
@@ -535,18 +750,11 @@ export async function ensureAndroidPrerequisites(
 
   logger(`Using Java ${javaRuntime.major} for Android SDK tools: ${javaRuntime.javaHome}`);
   const toolEnv = resolveAndroidToolEnv(sdkRoot, javaRuntime.javaHome);
-  const currentAvdsBefore = listAvdNames(avdmanager, toolEnv);
-  const hasConfiguredAvd = currentAvdsBefore.includes(config.emulator.avdName);
-  const hasAnyAvd = currentAvdsBefore.length > 0;
-  const needsHeavySdkSetup = missingBeforeInstall.length > 0 || !hasAnyAvd;
 
-  if (!needsHeavySdkSetup && hasConfiguredAvd) {
-    logger("Android runtime already ready (tools + configured AVD found). Skipping heavy SDK install.");
-  } else {
-    acceptSdkLicenses(sdkmanager, sdkRoot, logger, toolEnv);
-    installSdkPackages(sdkmanager, sdkRoot, logger, toolEnv);
-    installedSteps.push("sdk:platform-tools,emulator,platforms;android-34");
-  }
+  // --- Phase 4: Install SDK packages and create AVD ---
+  acceptSdkLicenses(sdkmanager, sdkRoot, logger, toolEnv);
+  installSdkPackages(sdkmanager, sdkRoot, logger, toolEnv);
+  installedSteps.push("sdk:platform-tools,emulator,platforms;android-34");
 
   let currentAvds = listAvdNames(avdmanager, toolEnv);
   if (!currentAvds.includes(config.emulator.avdName) && currentAvds.length > 0) {
