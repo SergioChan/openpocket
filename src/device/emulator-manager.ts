@@ -280,8 +280,16 @@ export class EmulatorManager {
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i];
       if (line.length > 0) {
-        const encoded = this.encodeAdbInputText(line);
-        this.adb(["-s", deviceId, "shell", "input", "text", encoded]);
+        if (this.hasNonAscii(line)) {
+          this.inputByClipboardPaste(deviceId, line);
+        } else {
+          const encoded = this.encodeAdbInputText(line);
+          try {
+            this.adb(["-s", deviceId, "shell", "input", "text", encoded]);
+          } catch {
+            this.inputByClipboardPaste(deviceId, line);
+          }
+        }
       }
       if (i < lines.length - 1) {
         this.adb(["-s", deviceId, "shell", "input", "keyevent", "KEYCODE_ENTER"]);
@@ -289,6 +297,15 @@ export class EmulatorManager {
     }
 
     return `Text input sent to ${deviceId}.`;
+  }
+
+  private hasNonAscii(text: string): boolean {
+    return /[^\x00-\x7F]/.test(text);
+  }
+
+  private inputByClipboardPaste(deviceId: string, text: string): void {
+    this.adb(["-s", deviceId, "shell", "cmd", "clipboard", "set", "text", text]);
+    this.adb(["-s", deviceId, "shell", "input", "keyevent", "KEYCODE_PASTE"]);
   }
 
   private resolveOnlineDevice(preferredDeviceId?: string): string {
