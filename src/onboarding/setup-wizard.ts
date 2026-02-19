@@ -14,17 +14,24 @@ import { EmulatorManager } from "../device/emulator-manager";
 const pkgJson = require("../../package.json") as { version: string; license: string };
 
 const OPENPOCKET_ASCII = [
-  "  ____  _____  ______ _   _ ____   ___   ____ _  _______ _____ ",
-  " / __ \\|  __ \\|  ____| \\ | |  _ \\ / _ \\ / ___| |/ / ____|_   _|",
-  "| |  | | |__) | |__  |  \\| | |_) | | | | |   | ' /|  _|   | |  ",
-  "| |  | |  ___/|  __| | |\\  |  __/| |_| | |___| . \\| |___  | |  ",
-  "| |__| | |    | |____| | \\ | |    \\___/ \\____|_|\\_\\_____| |_|  ",
-  " \\____/|_|    |______|_|  \\_|_|                                  ",
-  "",
-  "                       ╔══════════════════╗                      ",
-  "                       ║   SETUP WIZARD   ║                      ",
-  "                       ╚══════════════════╝                      ",
+  "  ___   ____  _____ _   _ ____   ___   ____ _  _______ _____ _____",
+  " / _ \\ / ___|| ____| \\ | |  _ \\ / _ \\ / ___| |/ / ____|_   _| ____|",
+  "| | | | |  _ |  _| |  \\| | |_) | | | | |   | ' /|  _|   | | |  _|  ",
+  "| |_| | |_| || |___| |\\  |  __/| |_| | |___| . \\| |___  | | | |___ ",
+  " \\___/ \\____||_____|_| \\_|_|    \\___/ \\____|_|\\_\\_____| |_| |_____|",
 ];
+
+const SETUP_WIZARD_ASCII = [
+  "                    +----------------------+",
+  "                    |     SETUP WIZARD     |",
+  "                    +----------------------+",
+];
+
+const ANSI_RESET = "\u001b[0m";
+const ANSI_BOLD_CYAN = "\u001b[1;36m";
+const ANSI_BOLD_GREEN = "\u001b[1;32m";
+const ANSI_BOLD_YELLOW = "\u001b[1;33m";
+const ANSI_DIM = "\u001b[2m";
 
 interface SetupState {
   updatedAt: string;
@@ -74,17 +81,40 @@ export type RunSetupOptions = {
   printHeader?: boolean;
 };
 
+function shouldUseColor(stream: NodeJS.WriteStream = output): boolean {
+  if (!stream.isTTY) {
+    return false;
+  }
+  if (process.env.NO_COLOR !== undefined) {
+    return false;
+  }
+  if (process.env.FORCE_COLOR?.trim() === "0") {
+    return false;
+  }
+  return true;
+}
+
+function colorize(text: string, ansiCode: string, enabled: boolean): string {
+  if (!enabled) {
+    return text;
+  }
+  return `${ansiCode}${text}${ANSI_RESET}`;
+}
+
 function printHeader(): void {
+  const useColor = shouldUseColor(output);
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   const meta = [
-    `  Version: ${pkgJson.version}  |  Author: Sergio  |  License: ${pkgJson.license}`,
-    `  ${timestamp}`,
+    colorize(`  Version: ${pkgJson.version}  |  Author: Sergio  |  License: ${pkgJson.license}`, ANSI_DIM, useColor),
+    colorize(`  ${timestamp}`, ANSI_DIM, useColor),
     "",
   ];
+  const header = OPENPOCKET_ASCII.map((line) => colorize(line, ANSI_BOLD_CYAN, useColor));
+  const wizard = SETUP_WIZARD_ASCII.map((line) => colorize(line, ANSI_BOLD_YELLOW, useColor));
   // eslint-disable-next-line no-console
-  console.log([...OPENPOCKET_ASCII, ...meta].join("\n"));
+  console.log([...header, "", ...wizard, "", ...meta].join("\n"));
 }
 
 function onboardingStatePath(config: OpenPocketConfig): string {
@@ -195,6 +225,7 @@ function detectPlayStore(emulator: SetupEmulator, preferredDeviceId: string | nu
 
 function makeConsolePrompter(): SetupPrompter {
   const rl = createInterface({ input, output });
+  const useColor = shouldUseColor(output);
 
   async function ask(message: string): Promise<string> {
     return rl.question(message);
@@ -236,9 +267,11 @@ function makeConsolePrompter(): SetupPrompter {
       lines.push(message);
       for (let i = 0; i < options.length; i += 1) {
         const option = options[i];
-        const prefix = i === index ? ">" : " ";
+        const selected = i === index;
+        const prefix = selected ? colorize(">", ANSI_BOLD_GREEN, useColor) : " ";
+        const label = selected ? colorize(option.label, ANSI_BOLD_GREEN, useColor) : option.label;
         const hint = option.hint ? ` (${option.hint})` : "";
-        lines.push(`  ${prefix} ${option.label}${hint}`);
+        lines.push(`  ${prefix} ${label}${hint}`);
       }
       lines.push("Use Up/Down arrows and Enter to select.");
       output.write(`${lines.join("\n")}\n`);
@@ -285,11 +318,11 @@ function makeConsolePrompter(): SetupPrompter {
   return {
     intro: async (title: string) => {
       // eslint-disable-next-line no-console
-      console.log(`[OpenPocket] ${title}`);
+      console.log(colorize(`[OpenPocket] ${title}`, ANSI_BOLD_GREEN, useColor));
     },
     note: async (title: string, body: string) => {
       // eslint-disable-next-line no-console
-      console.log(`\n[${title}]`);
+      console.log(`\n${colorize(`[${title}]`, ANSI_BOLD_CYAN, useColor)}`);
       // eslint-disable-next-line no-console
       console.log(body);
     },
