@@ -290,20 +290,6 @@ h6 {
   color: #27535c;
 }
 
-.op-doc-cta {
-  margin-top: 4px;
-  width: fit-content;
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #ffffff;
-  background: linear-gradient(140deg, #0a9396, #006d77);
-  box-shadow: 0 8px 16px rgba(0, 95, 115, 0.26);
-}
-
 .dark .op-home-section {
   background: linear-gradient(180deg, rgba(18, 35, 42, 0.92), rgba(16, 40, 46, 0.9));
   border: 1px solid rgba(60, 194, 190, 0.2);
@@ -347,6 +333,17 @@ h6 {
 
 .dark .op-doc-copy {
   color: #b6d4da;
+}
+
+.VPFooter .message,
+.VPFooter .copyright {
+  font-size: 0.82rem;
+  font-weight: 300;
+}
+
+.VPFooter .message a {
+  font-weight: 400;
+  text-decoration: none;
 }
 
 @keyframes op-fade-up {

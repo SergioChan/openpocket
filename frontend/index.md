@@ -86,43 +86,36 @@ flowchart LR
       <span class="op-doc-chip">Start</span>
       <strong>Get Started</strong>
       <span class="op-doc-copy">Install and run OpenPocket quickly.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
     <a class="op-doc-link" :href="withBase('/concepts/project-blueprint')">
       <span class="op-doc-chip">Vision</span>
       <strong>Project Blueprint</strong>
       <span class="op-doc-copy">Product direction and user scenarios.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
     <a class="op-doc-link" :href="withBase('/concepts/')">
       <span class="op-doc-chip">System</span>
       <strong>Concepts</strong>
       <span class="op-doc-copy">Architecture and core runtime model.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
     <a class="op-doc-link" :href="withBase('/tools/')">
       <span class="op-doc-chip">Build</span>
       <strong>Tools</strong>
       <span class="op-doc-copy">Skills and scripts for automation.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
     <a class="op-doc-link" :href="withBase('/reference/')">
       <span class="op-doc-chip">Specs</span>
       <strong>Reference</strong>
       <span class="op-doc-copy">Defaults, schemas, and commands.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
     <a class="op-doc-link" :href="withBase('/ops/')">
       <span class="op-doc-chip">Operate</span>
       <strong>Ops</strong>
       <span class="op-doc-copy">Runbook and troubleshooting guidance.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
     <a class="op-doc-link" :href="withBase('/hubs')">
       <span class="op-doc-chip">Overview</span>
       <strong>Doc Hubs</strong>
       <span class="op-doc-copy">Browse the full documentation structure.</span>
-      <span class="op-doc-cta">Read More</span>
     </a>
   </div>
 </section>

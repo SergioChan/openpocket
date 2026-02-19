@@ -26,6 +26,9 @@ export default withMermaid(defineConfig({
       { text: "Runbook", link: "/ops/runbook" },
       { text: "Doc Hubs", link: "/hubs" },
     ],
+    socialLinks: [
+      { icon: "github", link: "https://github.com/SergioChan/openpocket" },
+    ],
     sidebar: [
       {
         text: "Overview",
@@ -102,8 +105,8 @@ export default withMermaid(defineConfig({
       level: [2, 3],
     },
     footer: {
-      message: "OpenPocket documentation is built from implemented runtime behavior.",
-      copyright: "Copyright © OpenPocket Contributors",
+      message: "<a href=\"https://github.com/SergioChan/openpocket\" target=\"_blank\" rel=\"noreferrer\">GitHub Repository</a>",
+      copyright: "MIT License · OpenPocket Contributors",
     },
   },
   markdown: {
