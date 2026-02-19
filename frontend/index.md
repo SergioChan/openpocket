@@ -5,7 +5,7 @@ title: OpenPocket
 titleTemplate: OpenPocket Documentation
 
 hero:
-  name: OpenPocket
+  name: '<img class="op-hero-logo" src="/openpocket-logo.png" alt="OpenPocket logo" />'
   text: Local Emulator Phone-Use Agent
   tagline: Private mobile automation for daily life, running on your own machine.
   image:
