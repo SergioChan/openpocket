@@ -212,13 +212,67 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
     throw new Error(`Unknown gateway subcommand: ${sub}. Use: gateway start`);
   }
 
+  const printStartupHeader = (cfg: ReturnType<typeof loadConfig>): void => {
+    const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
+    const hasConfigToken = cfg.telegram.botToken.trim().length > 0;
+    const hasEnvToken = Boolean(process.env[envName]?.trim());
+    const tokenSource = hasConfigToken
+      ? "config.json"
+      : hasEnvToken
+        ? `env:${envName}`
+        : `missing (${envName})`;
+
+    // eslint-disable-next-line no-console
+    console.log("");
+    // eslint-disable-next-line no-console
+    console.log("[OpenPocket] Gateway startup");
+    // eslint-disable-next-line no-console
+    console.log(`  config: ${cfg.configPath}`);
+    // eslint-disable-next-line no-console
+    console.log(`  project: ${cfg.projectName}`);
+    // eslint-disable-next-line no-console
+    console.log(`  model: ${cfg.defaultModel}`);
+    // eslint-disable-next-line no-console
+    console.log(`  telegram token: ${tokenSource}`);
+    // eslint-disable-next-line no-console
+    console.log(`  human auth: ${cfg.humanAuth.enabled ? "enabled" : "disabled"}`);
+    // eslint-disable-next-line no-console
+    console.log("");
+  };
+
+  const printStartupStep = (step: number, total: number, title: string, detail: string): void => {
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][gateway-start] [${step}/${total}] ${title}: ${detail}`);
+  };
+
   await runGatewayLoop({
     start: async () => {
       const cfg = loadConfig(configPath);
+      const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
+      const hasToken = Boolean(cfg.telegram.botToken.trim() || process.env[envName]?.trim());
+      const totalSteps = 4;
+
+      printStartupHeader(cfg);
+      printStartupStep(1, totalSteps, "Load config", "ok");
+      if (!hasToken) {
+        printStartupStep(2, totalSteps, "Validate Telegram token", "failed");
+        throw new Error(
+          `Telegram bot token is empty. Set config.telegram.botToken or env ${envName}.`,
+        );
+      }
+      printStartupStep(2, totalSteps, "Validate Telegram token", "ok");
+      printStartupStep(3, totalSteps, "Initialize gateway runtime", "starting");
       const gateway = new TelegramGateway(cfg);
+      printStartupStep(3, totalSteps, "Initialize gateway runtime", "ok");
+      printStartupStep(4, totalSteps, "Start services", "starting");
       await gateway.start();
+      printStartupStep(4, totalSteps, "Start services", "ok");
+      // eslint-disable-next-line no-console
+      console.log("[OpenPocket][gateway-start] Gateway is running. Press Ctrl+C to stop.");
       return {
         stop: async (reason?: string) => {
+          // eslint-disable-next-line no-console
+          console.log(`[OpenPocket][gateway-start] Stopping gateway (${reason ?? "run-loop-stop"})`);
           await gateway.stop(reason ?? "run-loop-stop");
         },
       };
