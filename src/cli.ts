@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import * as readline from "node:readline";
@@ -20,6 +21,11 @@ import { installCliShortcut } from "./install/cli-shortcut";
 import { ensureAndroidPrerequisites } from "./environment/android-prerequisites";
 
 const DEFAULT_PANEL_RELEASE_URL = "https://github.com/SergioChan/openpocket/releases/latest";
+
+type GithubReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+};
 
 function printHelp(): void {
   // eslint-disable-next-line no-console
@@ -117,6 +123,176 @@ function openPanelApp(appPath: string): boolean {
 
 function openReleasePage(url: string): void {
   spawnSync("/usr/bin/open", [url], { stdio: "ignore" });
+}
+
+function parseGithubRepoFromReleaseUrl(releaseUrl: string): { owner: string; repo: string } | null {
+  const match = releaseUrl.match(/github\.com\/([^/]+)\/([^/]+)/i);
+  if (!match?.[1] || !match?.[2]) {
+    return null;
+  }
+  return {
+    owner: match[1],
+    repo: match[2].replace(/\.git$/i, ""),
+  };
+}
+
+function fetchLatestGithubReleaseAssets(releaseUrl: string): GithubReleaseAsset[] {
+  const parsed = parseGithubRepoFromReleaseUrl(releaseUrl);
+  if (!parsed) {
+    throw new Error(`Cannot parse GitHub repo from URL: ${releaseUrl}`);
+  }
+
+  const apiUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases/latest`;
+  const response = spawnSync(
+    "/usr/bin/curl",
+    [
+      "-fsSL",
+      "-H",
+      "Accept: application/vnd.github+json",
+      "-H",
+      "User-Agent: openpocket-cli",
+      apiUrl,
+    ],
+    { encoding: "utf-8" },
+  );
+  if ((response.status ?? 1) !== 0) {
+    throw new Error(`Failed to query GitHub releases API: ${response.stderr || "curl exited with error"}`);
+  }
+
+  const parsedJson = JSON.parse(response.stdout) as { assets?: unknown };
+  if (!Array.isArray(parsedJson.assets)) {
+    return [];
+  }
+
+  return parsedJson.assets
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const item = entry as { name?: unknown; browser_download_url?: unknown };
+      const name = typeof item.name === "string" ? item.name : "";
+      const browserDownloadUrl =
+        typeof item.browser_download_url === "string" ? item.browser_download_url : "";
+      if (!name || !browserDownloadUrl) {
+        return null;
+      }
+      return {
+        name,
+        browser_download_url: browserDownloadUrl,
+      } satisfies GithubReleaseAsset;
+    })
+    .filter((asset): asset is GithubReleaseAsset => Boolean(asset));
+}
+
+function pickPanelReleaseAsset(assets: GithubReleaseAsset[]): GithubReleaseAsset | null {
+  const zipAssets = assets.filter((asset) => asset.name.toLowerCase().endsWith(".zip"));
+  if (zipAssets.length === 0) {
+    return null;
+  }
+
+  const scored = zipAssets
+    .map((asset) => {
+      const lower = asset.name.toLowerCase();
+      let score = 0;
+      if (lower.includes("panel") || lower.includes("menubar")) {
+        score += 8;
+      }
+      if (lower.includes("mac") || lower.includes("darwin") || lower.includes("osx")) {
+        score += 5;
+      }
+      if (lower.includes("control")) {
+        score += 2;
+      }
+      if (lower.includes("linux") || lower.includes("windows") || lower.includes("win")) {
+        score -= 10;
+      }
+      return { asset, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  return scored[0]?.asset ?? null;
+}
+
+function findAppBundle(rootDir: string): string | null {
+  if (!fs.existsSync(rootDir)) {
+    return null;
+  }
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const absolute = path.join(current, entry.name);
+      if (entry.name.endsWith(".app")) {
+        return absolute;
+      }
+      stack.push(absolute);
+    }
+  }
+  return null;
+}
+
+function installPanelFromRelease(releaseUrl: string): string {
+  if (process.platform !== "darwin") {
+    throw new Error("Panel auto-install is supported on macOS only.");
+  }
+
+  const assets = fetchLatestGithubReleaseAssets(releaseUrl);
+  const picked = pickPanelReleaseAsset(assets);
+  if (!picked) {
+    throw new Error("No macOS .zip panel asset found in latest release.");
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-panel-install-"));
+  try {
+    const zipPath = path.join(tmpDir, picked.name);
+    const download = spawnSync("/usr/bin/curl", ["-fL", picked.browser_download_url, "-o", zipPath], {
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
+    if ((download.status ?? 1) !== 0) {
+      throw new Error(`Failed to download ${picked.name}: ${download.stderr || "curl exited with error"}`);
+    }
+
+    const unpackDir = path.join(tmpDir, "unpacked");
+    fs.mkdirSync(unpackDir, { recursive: true });
+    const unpack = spawnSync("/usr/bin/ditto", ["-x", "-k", zipPath, unpackDir], {
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
+    if ((unpack.status ?? 1) !== 0) {
+      throw new Error(`Failed to unpack ${picked.name}: ${unpack.stderr || "ditto exited with error"}`);
+    }
+
+    const appBundle = findAppBundle(unpackDir);
+    if (!appBundle) {
+      throw new Error(`No .app bundle found in ${picked.name}`);
+    }
+
+    const home = process.env.HOME?.trim();
+    if (!home) {
+      throw new Error("HOME is not set; cannot install panel app.");
+    }
+    const appsDir = path.join(home, "Applications");
+    fs.mkdirSync(appsDir, { recursive: true });
+    const targetApp = path.join(appsDir, path.basename(appBundle));
+    fs.rmSync(targetApp, { recursive: true, force: true });
+    const copy = spawnSync("/usr/bin/ditto", [appBundle, targetApp], {
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
+    if ((copy.status ?? 1) !== 0) {
+      throw new Error(`Failed to install app bundle: ${copy.stderr || "ditto exited with error"}`);
+    }
+
+    spawnSync("/usr/bin/xattr", ["-dr", "com.apple.quarantine", targetApp], { stdio: "ignore" });
+    return targetApp;
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 function takeOption(args: string[], name: string): { value: string | null; rest: string[] } {
@@ -695,6 +871,22 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
     return 0;
   }
 
+  const releaseUrl = getPanelReleaseUrl();
+  try {
+    // eslint-disable-next-line no-console
+    console.log("OpenPocket panel app is not installed. Installing from GitHub Release...");
+    const installedFromRelease = installPanelFromRelease(releaseUrl);
+    if (!openPanelApp(installedFromRelease)) {
+      throw new Error(`Panel installed but failed to open: ${installedFromRelease}`);
+    }
+    // eslint-disable-next-line no-console
+    console.log(`OpenPocket Control Panel installed and opened: ${installedFromRelease}`);
+    return 0;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][panel] Auto-install failed: ${(error as Error).message}`);
+  }
+
   const panelDir = path.resolve(__dirname, "..", "apps", "openpocket-menubar");
   const buildScript = path.join(panelDir, "scripts", "build.sh");
   const runScript = path.join(panelDir, "scripts", "run.sh");
@@ -734,7 +926,6 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
     return 0;
   }
 
-  const releaseUrl = getPanelReleaseUrl();
   // eslint-disable-next-line no-console
   console.log("OpenPocket panel app is not installed on this Mac.");
   // eslint-disable-next-line no-console
