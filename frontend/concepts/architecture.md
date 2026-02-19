@@ -11,13 +11,13 @@ User (CLI / Telegram / Panel)
 Gateway / Command Router
            |
            v
-AgentRuntime + HeartbeatRunner + CronService
-   |          |          |            |
-   v          v          v            v
-ModelClient AdbRuntime SkillLoader ScriptExecutor
-    |          |
-    v          v
- LLM APIs   Android Emulator (local adb target)
+AgentRuntime + HeartbeatRunner + CronService + HumanAuthBridge
+   |          |          |            |              |
+   v          v          v            v              v
+ModelClient AdbRuntime SkillLoader ScriptExecutor LocalHumanAuthStack
+    |          |                                       |
+    v          v                                       v
+ LLM APIs   Android Emulator (local adb target)   HumanAuthRelay + Optional ngrok tunnel
 ```
 
 ## Why Local Emulator
@@ -50,6 +50,7 @@ This makes human-agent handoff practical for real app workflows.
 - `runGatewayLoop`: robust long-running gateway loop with graceful restart/stop behavior.
 - `HumanAuthBridge`: blocks task flow on `request_human_auth` and waits for human approval.
 - `HumanAuthRelayServer`: serves one-time approval web links and polling APIs for unblock flows.
+- `LocalHumanAuthStack`: auto-starts local relay (and optional ngrok tunnel) when gateway boots.
 
 ## Task Flow
 

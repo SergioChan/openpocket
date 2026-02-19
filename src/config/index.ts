@@ -79,12 +79,27 @@ function defaultConfigObject() {
     },
     humanAuth: {
       enabled: false,
+      useLocalRelay: true,
+      localRelayHost: "127.0.0.1",
+      localRelayPort: 8787,
+      localRelayStateFile: path.join(defaultStateDir(), "human-auth-relay", "requests.json"),
       relayBaseUrl: "",
       publicBaseUrl: "",
       apiKey: "",
       apiKeyEnv: "OPENPOCKET_HUMAN_AUTH_KEY",
       requestTimeoutSec: 300,
       pollIntervalMs: 2000,
+      tunnel: {
+        provider: "none" as const,
+        ngrok: {
+          enabled: false,
+          executable: "ngrok",
+          authtoken: "",
+          authtokenEnv: "NGROK_AUTHTOKEN",
+          apiBaseUrl: "http://127.0.0.1:4040",
+          startupTimeoutSec: 20,
+        },
+      },
     },
     models: {
       "gpt-5.2-codex": {
@@ -284,6 +299,10 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
 
   const humanAuth = isObject(raw.humanAuth) ? { ...raw.humanAuth } : {};
   const humanAuthMap: Record<string, string> = {
+    use_local_relay: "useLocalRelay",
+    local_relay_host: "localRelayHost",
+    local_relay_port: "localRelayPort",
+    local_relay_state_file: "localRelayStateFile",
     relay_base_url: "relayBaseUrl",
     public_base_url: "publicBaseUrl",
     api_key: "apiKey",
@@ -295,6 +314,35 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
     if (oldKey in humanAuth && !(newKey in humanAuth)) {
       humanAuth[newKey] = humanAuth[oldKey];
     }
+  }
+
+  const tunnel = isObject(humanAuth.tunnel) ? { ...humanAuth.tunnel } : {};
+  const tunnelMap: Record<string, string> = {
+    provider_type: "provider",
+  };
+  for (const [oldKey, newKey] of Object.entries(tunnelMap)) {
+    if (oldKey in tunnel && !(newKey in tunnel)) {
+      tunnel[newKey] = tunnel[oldKey];
+    }
+  }
+
+  const ngrok = isObject(tunnel.ngrok) ? { ...tunnel.ngrok } : {};
+  const ngrokMap: Record<string, string> = {
+    auth_token: "authtoken",
+    auth_token_env: "authtokenEnv",
+    api_base_url: "apiBaseUrl",
+    startup_timeout_sec: "startupTimeoutSec",
+  };
+  for (const [oldKey, newKey] of Object.entries(ngrokMap)) {
+    if (oldKey in ngrok && !(newKey in ngrok)) {
+      ngrok[newKey] = ngrok[oldKey];
+    }
+  }
+  if (Object.keys(ngrok).length > 0) {
+    tunnel.ngrok = ngrok;
+  }
+  if (Object.keys(tunnel).length > 0) {
+    humanAuth.tunnel = tunnel;
   }
   if (Object.keys(humanAuth).length > 0) {
     raw.humanAuth = humanAuth;
@@ -374,6 +422,8 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
   const heartbeat = (merged.heartbeat ?? {}) as Record<string, unknown>;
   const cron = (merged.cron ?? {}) as Record<string, unknown>;
   const humanAuth = (merged.humanAuth ?? {}) as Record<string, unknown>;
+  const humanAuthTunnel = isObject(humanAuth.tunnel) ? humanAuth.tunnel : {};
+  const humanAuthNgrok = isObject(humanAuthTunnel.ngrok) ? humanAuthTunnel.ngrok : {};
   const resolvedWorkspaceDir = resolvePath(String(merged.workspaceDir));
   const resolvedStateDir = resolvePath(String(merged.stateDir));
 
@@ -431,12 +481,60 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
     },
     humanAuth: {
       enabled: Boolean(humanAuth.enabled ?? false),
+      useLocalRelay: Boolean(humanAuth.useLocalRelay ?? true),
+      localRelayHost: String(humanAuth.localRelayHost ?? "127.0.0.1").trim() || "127.0.0.1",
+      localRelayPort: (() => {
+        const parsed = Number(humanAuth.localRelayPort ?? 8787);
+        const value = Number.isFinite(parsed) ? parsed : 8787;
+        return Math.max(1, Math.min(65535, Math.round(value)));
+      })(),
+      localRelayStateFile: resolvePath(
+        String(
+          humanAuth.localRelayStateFile ??
+            path.join(resolvedStateDir, "human-auth-relay", "requests.json"),
+        ),
+      ),
       relayBaseUrl: String(humanAuth.relayBaseUrl ?? "").trim().replace(/\/+$/, ""),
       publicBaseUrl: String(humanAuth.publicBaseUrl ?? "").trim().replace(/\/+$/, ""),
       apiKey: String(humanAuth.apiKey ?? ""),
       apiKeyEnv: String(humanAuth.apiKeyEnv ?? "OPENPOCKET_HUMAN_AUTH_KEY"),
       requestTimeoutSec: Math.max(30, Number(humanAuth.requestTimeoutSec ?? 300)),
       pollIntervalMs: Math.max(500, Number(humanAuth.pollIntervalMs ?? 2000)),
+      tunnel: {
+        provider:
+          humanAuthTunnel.provider === "ngrok" || humanAuthTunnel.provider === "none"
+            ? humanAuthTunnel.provider
+            : Boolean(humanAuthNgrok.enabled)
+              ? "ngrok"
+              : "none",
+        ngrok: {
+          enabled: Boolean(humanAuthNgrok.enabled ?? false),
+          executable:
+            String(
+              humanAuthNgrok.executable ??
+                defaultConfigObject().humanAuth.tunnel.ngrok.executable,
+            ).trim() || "ngrok",
+          authtoken: String(humanAuthNgrok.authtoken ?? ""),
+          authtokenEnv:
+            String(
+              humanAuthNgrok.authtokenEnv ??
+                defaultConfigObject().humanAuth.tunnel.ngrok.authtokenEnv,
+            ).trim() || "NGROK_AUTHTOKEN",
+          apiBaseUrl:
+            String(
+              humanAuthNgrok.apiBaseUrl ??
+                defaultConfigObject().humanAuth.tunnel.ngrok.apiBaseUrl,
+            ).trim().replace(/\/+$/, "") || "http://127.0.0.1:4040",
+          startupTimeoutSec: (() => {
+            const raw = Number(
+              humanAuthNgrok.startupTimeoutSec ??
+                defaultConfigObject().humanAuth.tunnel.ngrok.startupTimeoutSec,
+            );
+            const value = Number.isFinite(raw) ? raw : 20;
+            return Math.max(3, Math.round(value));
+          })(),
+        },
+      },
     },
     models,
     configPath,

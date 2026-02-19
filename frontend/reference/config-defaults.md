@@ -72,12 +72,27 @@ This page is the source-of-truth documentation for current default config values
   },
   "humanAuth": {
     "enabled": false,
+    "useLocalRelay": true,
+    "localRelayHost": "127.0.0.1",
+    "localRelayPort": 8787,
+    "localRelayStateFile": "<absolute OPENPOCKET_HOME>/state/human-auth-relay/requests.json",
     "relayBaseUrl": "",
     "publicBaseUrl": "",
     "apiKey": "",
     "apiKeyEnv": "OPENPOCKET_HUMAN_AUTH_KEY",
     "requestTimeoutSec": 300,
-    "pollIntervalMs": 2000
+    "pollIntervalMs": 2000,
+    "tunnel": {
+      "provider": "none",
+      "ngrok": {
+        "enabled": false,
+        "executable": "ngrok",
+        "authtoken": "",
+        "authtokenEnv": "NGROK_AUTHTOKEN",
+        "apiBaseUrl": "http://127.0.0.1:4040",
+        "startupTimeoutSec": 20
+      }
+    }
   },
   "models": {
     "gpt-5.2-codex": {
@@ -145,8 +160,11 @@ Notes:
 - `heartbeat.everySec` is clamped to at least `5`.
 - `heartbeat.stuckTaskWarnSec` is clamped to at least `30`.
 - `cron.tickSec` is clamped to at least `2`.
+- `humanAuth.localRelayPort` is clamped to `1..65535`.
 - `humanAuth.requestTimeoutSec` is clamped to at least `30`.
 - `humanAuth.pollIntervalMs` is clamped to at least `500`.
+- `humanAuth.tunnel.provider` accepts only `none|ngrok`.
+- `humanAuth.tunnel.ngrok.startupTimeoutSec` is clamped to at least `3`.
 - `allowedChatIds` is coerced to numeric array with non-finite values removed.
 - model `reasoningEffort` accepts only `low|medium|high|xhigh`, else `null`.
 - model `temperature` is `null` if absent/invalid.

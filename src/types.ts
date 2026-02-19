@@ -48,14 +48,31 @@ export interface CronConfig {
   jobsFile: string;
 }
 
+export interface HumanAuthTunnelNgrokConfig {
+  enabled: boolean;
+  executable: string;
+  authtoken: string;
+  authtokenEnv: string;
+  apiBaseUrl: string;
+  startupTimeoutSec: number;
+}
+
 export interface HumanAuthConfig {
   enabled: boolean;
+  useLocalRelay: boolean;
+  localRelayHost: string;
+  localRelayPort: number;
+  localRelayStateFile: string;
   relayBaseUrl: string;
   publicBaseUrl: string;
   apiKey: string;
   apiKeyEnv: string;
   requestTimeoutSec: number;
   pollIntervalMs: number;
+  tunnel: {
+    provider: "none" | "ngrok";
+    ngrok: HumanAuthTunnelNgrokConfig;
+  };
 }
 
 export type HumanAuthCapability =

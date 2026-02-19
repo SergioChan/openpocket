@@ -45,7 +45,7 @@ Local clone launcher:
 - runs Android dependency doctor (auto-install on macOS when tools are missing)
 - ensures Java 17+ for Android command line tools; auto-installs via Homebrew on macOS if needed
 - reuses existing local AVD when available to avoid heavy repeated image/bootstrap installs
-- runs interactive onboarding wizard (consent/model/API key/emulator login)
+- runs interactive onboarding wizard (consent/model/API key/emulator login/human-auth tunnel mode)
 
 ## `install-cli`
 
@@ -60,6 +60,7 @@ Interactive onboarding wizard flow:
 - configures provider-specific API key (env or local config.json)
 - option prompts use Up/Down arrows + Enter (no numeric menu input)
 - can start/show emulator and guide manual Gmail login for Play Store
+- configures human-auth bridge mode (`ngrok` / `LAN` / disabled)
 - writes onboarding state to `state/onboarding.json`
 
 ## Legacy: `init`
@@ -119,6 +120,8 @@ Gateway runtime behavior:
 - `SIGUSR1` restarts gateway in-process
 - heartbeat runner logs health snapshots on interval
 - cron service executes due jobs from `workspace/cron/jobs.json`
+- if `humanAuth.enabled=true` and `useLocalRelay=true`, gateway auto-starts local relay
+- if `humanAuth.tunnel.provider=ngrok` and `ngrok.enabled=true`, gateway also auto-starts ngrok tunnel
 
 ## Telegram Output
 
@@ -135,3 +138,4 @@ This keeps user-facing chat concise and avoids exposing local filesystem details
 - runs a lightweight web relay for real-device authorization handoff
 - receives human-auth requests from gateway and returns one-time approval links
 - provides polling APIs so task runtime can resume after approve/reject
+- optional standalone mode for debugging (normal flow does not require manual start)

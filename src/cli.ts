@@ -419,18 +419,21 @@ async function runHumanAuthRelayCommand(
   }
 
   const cfg = loadConfig(configPath);
-  const parsedPort = Number(portRaw ?? "8787");
-  const port = Number.isFinite(parsedPort) ? Math.max(1, Math.min(65535, Math.round(parsedPort))) : 8787;
+  const parsedPort = Number(portRaw ?? String(cfg.humanAuth.localRelayPort));
+  const defaultPort = cfg.humanAuth.localRelayPort;
+  const port = Number.isFinite(parsedPort)
+    ? Math.max(1, Math.min(65535, Math.round(parsedPort)))
+    : defaultPort;
 
   const relay = new HumanAuthRelayServer({
-    host: (host ?? "0.0.0.0").trim(),
+    host: (host ?? cfg.humanAuth.localRelayHost ?? "0.0.0.0").trim(),
     port,
     publicBaseUrl: (publicBaseUrl ?? cfg.humanAuth.publicBaseUrl ?? "").trim(),
     apiKey: (apiKey ?? cfg.humanAuth.apiKey ?? "").trim(),
     apiKeyEnv: cfg.humanAuth.apiKeyEnv,
     stateFile:
       stateFile?.trim() ||
-      path.join(cfg.stateDir, "human-auth-relay", "requests.json"),
+      cfg.humanAuth.localRelayStateFile,
   });
 
   await relay.start();

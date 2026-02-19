@@ -65,12 +65,27 @@
   },
   "humanAuth": {
     "enabled": false,
+    "useLocalRelay": true,
+    "localRelayHost": "127.0.0.1",
+    "localRelayPort": 8787,
+    "localRelayStateFile": "~/.openpocket/state/human-auth-relay/requests.json",
     "relayBaseUrl": "",
     "publicBaseUrl": "",
     "apiKey": "",
     "apiKeyEnv": "OPENPOCKET_HUMAN_AUTH_KEY",
     "requestTimeoutSec": 300,
-    "pollIntervalMs": 2000
+    "pollIntervalMs": 2000,
+    "tunnel": {
+      "provider": "none",
+      "ngrok": {
+        "enabled": false,
+        "executable": "ngrok",
+        "authtoken": "",
+        "authtokenEnv": "NGROK_AUTHTOKEN",
+        "apiBaseUrl": "http://127.0.0.1:4040",
+        "startupTimeoutSec": 20
+      }
+    }
   },
   "models": {
     "gpt-5.2-codex": {

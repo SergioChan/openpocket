@@ -28,6 +28,9 @@ test("loadConfig creates defaults including returnHomeOnTaskEnd", () => {
     const cfg = loadConfig();
     assert.equal(cfg.agent.returnHomeOnTaskEnd, true);
     assert.equal(cfg.humanAuth.enabled, false);
+    assert.equal(cfg.humanAuth.useLocalRelay, true);
+    assert.equal(cfg.humanAuth.localRelayPort, 8787);
+    assert.equal(cfg.humanAuth.tunnel.provider, "none");
     assert.equal(cfg.humanAuth.requestTimeoutSec, 300);
     assert.equal(cfg.heartbeat.enabled, true);
     assert.equal(cfg.cron.enabled, true);
@@ -71,9 +74,20 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
           },
           human_auth: {
             enabled: true,
+            use_local_relay: true,
+            local_relay_host: "127.0.0.1",
+            local_relay_port: 9898,
             relay_base_url: "https://relay.example.com",
             request_timeout_sec: 420,
             poll_interval_ms: 1500,
+            tunnel: {
+              provider_type: "ngrok",
+              ngrok: {
+                enabled: true,
+                auth_token_env: "NGROK_AUTHTOKEN",
+                startup_timeout_sec: 33,
+              },
+            },
           },
         },
         null,
@@ -86,13 +100,20 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
     assert.equal(cfg.agent.returnHomeOnTaskEnd, false);
     assert.equal(cfg.humanAuth.enabled, true);
     assert.equal(cfg.humanAuth.relayBaseUrl, "https://relay.example.com");
+    assert.equal(cfg.humanAuth.localRelayPort, 9898);
     assert.equal(cfg.humanAuth.requestTimeoutSec, 420);
+    assert.equal(cfg.humanAuth.tunnel.provider, "ngrok");
+    assert.equal(cfg.humanAuth.tunnel.ngrok.enabled, true);
+    assert.equal(cfg.humanAuth.tunnel.ngrok.authtokenEnv, "NGROK_AUTHTOKEN");
+    assert.equal(cfg.humanAuth.tunnel.ngrok.startupTimeoutSec, 33);
 
     saveConfig(cfg);
     const saved = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
     assert.equal(saved.agent.returnHomeOnTaskEnd, false);
     assert.equal(saved.agent.return_home_on_task_end, undefined);
     assert.equal(saved.humanAuth.relayBaseUrl, "https://relay.example.com");
+    assert.equal(saved.humanAuth.localRelayPort, 9898);
+    assert.equal(saved.humanAuth.tunnel.provider, "ngrok");
     assert.equal(saved.human_auth, undefined);
   });
 });

@@ -5,6 +5,7 @@ import { saveConfig } from "../config";
 import { AgentRuntime } from "../agent/agent-runtime";
 import { EmulatorManager } from "../device/emulator-manager";
 import { HumanAuthBridge } from "../human-auth/bridge";
+import { LocalHumanAuthStack } from "../human-auth/local-stack";
 import { ChatAssistant } from "./chat-assistant";
 import { CronService, type CronRunResult } from "./cron-service";
 import { HeartbeatRunner } from "./heartbeat-runner";
@@ -17,6 +18,8 @@ export class TelegramGateway {
   private readonly cron: CronService;
   private readonly heartbeat: HeartbeatRunner;
   private readonly humanAuth: HumanAuthBridge;
+  private readonly localHumanAuthStack: LocalHumanAuthStack;
+  private localHumanAuthActive = false;
   private chat: ChatAssistant;
   private running = false;
   private stoppedPromise: Promise<void> | null = null;
@@ -49,6 +52,7 @@ export class TelegramGateway {
     });
 
     this.humanAuth = new HumanAuthBridge(config);
+    this.localHumanAuthStack = new LocalHumanAuthStack(config, (line) => this.log(line));
 
     this.heartbeat = new HeartbeatRunner(config, {
       readSnapshot: () => {
@@ -111,6 +115,22 @@ export class TelegramGateway {
 
     this.bot.on("message", this.handleMessage);
     this.bot.on("polling_error", this.handlePollingError);
+
+    if (this.config.humanAuth.enabled && this.config.humanAuth.useLocalRelay) {
+      try {
+        const started = await this.localHumanAuthStack.start();
+        this.config.humanAuth.relayBaseUrl = started.relayBaseUrl;
+        this.config.humanAuth.publicBaseUrl = started.publicBaseUrl;
+        this.localHumanAuthActive = true;
+        this.log(
+          `human-auth local stack ready relay=${started.relayBaseUrl} public=${started.publicBaseUrl}`,
+        );
+      } catch (error) {
+        this.localHumanAuthActive = false;
+        this.log(`human-auth local stack failed: ${(error as Error).message}`);
+      }
+    }
+
     this.heartbeat.start();
     this.cron.start();
     this.log("telegram polling started");
@@ -126,6 +146,10 @@ export class TelegramGateway {
     this.bot.removeListener("polling_error", this.handlePollingError);
     this.heartbeat.stop();
     this.cron.stop();
+    if (this.localHumanAuthActive) {
+      await this.localHumanAuthStack.stop();
+      this.localHumanAuthActive = false;
+    }
     try {
       await this.bot.stopPolling();
     } catch {
@@ -221,6 +245,9 @@ export class TelegramGateway {
           `AVD: ${status.avdName}`,
           `Devices: ${status.devices.length > 0 ? status.devices.join(", ") : "(none)"}`,
           `Booted: ${status.bootedDevices.length > 0 ? status.bootedDevices.join(", ") : "(none)"}`,
+          `Human auth: ${this.config.humanAuth.enabled ? "enabled" : "disabled"}`,
+          `Human auth relay: ${this.config.humanAuth.relayBaseUrl || "(not configured)"}`,
+          `Human auth public: ${this.config.humanAuth.publicBaseUrl || "(not configured)"}`,
         ].join("\n"),
       );
       return;

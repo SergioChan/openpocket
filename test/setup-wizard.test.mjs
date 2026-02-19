@@ -125,7 +125,7 @@ test("setup wizard configures OpenAI key and records Gmail onboarding state", as
     const cfg = loadConfig();
     const prompter = new FakePrompter({
       confirms: [true, true, true],
-      selects: ["gpt-5.2-codex", "config", "start"],
+      selects: ["gpt-5.2-codex", "config", "start", "disabled"],
       texts: ["sk-test-openpocket"],
       pauseCount: 1,
     });
@@ -159,7 +159,7 @@ test("setup wizard applies provider key to selected provider only", async () => 
     const cfg = loadConfig();
     const prompter = new FakePrompter({
       confirms: [true, true],
-      selects: ["autoglm-phone", "config", "skip"],
+      selects: ["autoglm-phone", "config", "skip", "disabled"],
       texts: ["zai-test-key"],
       pauseCount: 0,
     });
@@ -171,5 +171,38 @@ test("setup wizard applies provider key to selected provider only", async () => 
     assert.equal(savedCfg.models["autoglm-phone"].apiKey, "zai-test-key");
     assert.equal(savedCfg.models["gpt-5.2-codex"].apiKey, "");
     assert.equal(savedCfg.models["claude-sonnet-4.6"].apiKey, "");
+  });
+});
+
+test("setup wizard configures local human-auth ngrok mode", async () => {
+  await withTempHome("openpocket-setup-human-auth-ngrok-", async () => {
+    const cfg = loadConfig();
+    const prevToken = process.env.NGROK_AUTHTOKEN;
+    process.env.NGROK_AUTHTOKEN = "ngrok-test-token";
+    const prompter = new FakePrompter({
+      confirms: [true],
+      selects: ["gpt-5.2-codex", "skip", "skip", "ngrok", "env"],
+      texts: [],
+      pauseCount: 0,
+    });
+    const emulator = new FakeEmulator();
+
+    try {
+      await runSetupWizard(cfg, { prompter, emulator, skipTtyCheck: true, printHeader: false });
+    } finally {
+      if (prevToken === undefined) {
+        delete process.env.NGROK_AUTHTOKEN;
+      } else {
+        process.env.NGROK_AUTHTOKEN = prevToken;
+      }
+    }
+
+    const savedCfg = JSON.parse(fs.readFileSync(cfg.configPath, "utf-8"));
+    assert.equal(savedCfg.humanAuth.enabled, true);
+    assert.equal(savedCfg.humanAuth.useLocalRelay, true);
+    assert.equal(savedCfg.humanAuth.tunnel.provider, "ngrok");
+    assert.equal(savedCfg.humanAuth.tunnel.ngrok.enabled, true);
+    assert.equal(savedCfg.humanAuth.tunnel.ngrok.authtoken, "");
+    assert.equal(savedCfg.humanAuth.localRelayHost, "127.0.0.1");
   });
 });

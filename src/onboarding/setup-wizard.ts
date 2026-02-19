@@ -3,6 +3,7 @@ import path from "node:path";
 import * as readline from "node:readline";
 import { createInterface, type Interface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { spawnSync } from "node:child_process";
 
 import type { EmulatorStatus, ModelProfile, OpenPocketConfig } from "../types";
 import { saveConfig } from "../config";
@@ -31,6 +32,9 @@ interface SetupState {
   emulatorStartedAt?: string;
   gmailLoginConfirmedAt?: string;
   playStoreDetected?: boolean | null;
+  humanAuthEnabledAt?: string;
+  humanAuthMode?: "disabled" | "lan" | "ngrok";
+  ngrokConfiguredAt?: string;
 }
 
 type SelectOption<T extends string> = {
@@ -524,6 +528,170 @@ async function runVmStep(
   }
 }
 
+function detectCommandVersion(command: string): string {
+  try {
+    const result = spawnSync(command, ["version"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      timeout: 3000,
+    });
+    const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
+    if ((result.status ?? 1) !== 0) {
+      return "";
+    }
+    return text.split(/\r?\n/)[0] ?? "";
+  } catch {
+    return "";
+  }
+}
+
+async function runHumanAuthStep(
+  config: OpenPocketConfig,
+  prompter: SetupPrompter,
+  state: SetupState,
+): Promise<void> {
+  const mode = await prompter.select(
+    "Real-device authorization bridge mode",
+    [
+      {
+        value: "ngrok",
+        label: "Enable local relay + ngrok tunnel (recommended)",
+      },
+      {
+        value: "lan",
+        label: "Enable local relay only (same Wi-Fi / LAN access)",
+      },
+      {
+        value: "disabled",
+        label: "Disable human-auth bridge for now",
+      },
+    ],
+    config.humanAuth.enabled
+      ? config.humanAuth.tunnel.provider === "ngrok" && config.humanAuth.tunnel.ngrok.enabled
+        ? "ngrok"
+        : "lan"
+      : "disabled",
+  );
+
+  state.humanAuthMode = mode;
+  if (mode === "disabled") {
+    config.humanAuth.enabled = false;
+    saveConfig(config);
+    await prompter.note(
+      "Human Auth Bridge",
+      "Disabled. You can rerun `openpocket onboard` to enable it later.",
+    );
+    return;
+  }
+
+  config.humanAuth.enabled = true;
+  config.humanAuth.useLocalRelay = true;
+  config.humanAuth.relayBaseUrl = "";
+
+  if (mode === "lan") {
+    config.humanAuth.tunnel.provider = "none";
+    config.humanAuth.tunnel.ngrok.enabled = false;
+    config.humanAuth.localRelayHost = "0.0.0.0";
+
+    const publicUrl = await prompter.text(
+      "LAN URL reachable from your phone (e.g., http://192.168.1.25:8787)",
+      config.humanAuth.publicBaseUrl || "",
+      (value) => {
+        const v = value.trim();
+        if (!v) {
+          return "LAN URL cannot be empty in LAN mode.";
+        }
+        if (!/^https?:\/\//i.test(v)) {
+          return "LAN URL must start with http:// or https://";
+        }
+        return null;
+      },
+    );
+    config.humanAuth.publicBaseUrl = publicUrl.trim().replace(/\/+$/, "");
+    state.humanAuthEnabledAt = nowIso();
+    saveConfig(config);
+    await prompter.note(
+      "Human Auth Bridge",
+      [
+        "Enabled in LAN mode.",
+        `Gateway will auto-start local relay on ${config.humanAuth.localRelayHost}:${config.humanAuth.localRelayPort}.`,
+        `Phone open URL base: ${config.humanAuth.publicBaseUrl}`,
+      ].join("\n"),
+    );
+    return;
+  }
+
+  config.humanAuth.tunnel.provider = "ngrok";
+  config.humanAuth.tunnel.ngrok.enabled = true;
+  config.humanAuth.localRelayHost = "127.0.0.1";
+  config.humanAuth.publicBaseUrl = "";
+
+  const ngrokVersion = detectCommandVersion(config.humanAuth.tunnel.ngrok.executable);
+  await prompter.note(
+    "ngrok Setup",
+    ngrokVersion
+      ? `Detected ${config.humanAuth.tunnel.ngrok.executable}: ${ngrokVersion}`
+      : `Could not run \`${config.humanAuth.tunnel.ngrok.executable} version\`. Install ngrok before gateway start.`,
+  );
+
+  const envName = config.humanAuth.tunnel.ngrok.authtokenEnv || "NGROK_AUTHTOKEN";
+  const envToken = process.env[envName]?.trim() ?? "";
+  const tokenMethod = await prompter.select(
+    "How should OpenPocket read ngrok authtoken?",
+    [
+      {
+        value: "env",
+        label: `Use environment variable ${envName}`,
+        hint: envToken ? `Detected (length ${envToken.length})` : "Not detected",
+      },
+      {
+        value: "config",
+        label: "Paste token and save to local config.json",
+      },
+      {
+        value: "skip",
+        label: "Skip for now",
+      },
+    ],
+    envToken ? "env" : "config",
+  );
+
+  if (tokenMethod === "env") {
+    config.humanAuth.tunnel.ngrok.authtoken = "";
+    if (!envToken) {
+      await prompter.note(
+        "ngrok Setup",
+        `${envName} is not set in the current shell. Gateway may fail to open ngrok tunnel until you export this env.`,
+      );
+    }
+  } else if (tokenMethod === "config") {
+    const token = await prompter.text(
+      "Enter ngrok authtoken",
+      "",
+      (value) => (value.trim() ? null : "Token cannot be empty."),
+    );
+    const confirmed = await prompter.confirm(
+      "Confirm writing ngrok authtoken to local config.json?",
+      true,
+    );
+    if (confirmed) {
+      config.humanAuth.tunnel.ngrok.authtoken = token.trim();
+    }
+  }
+
+  state.humanAuthEnabledAt = nowIso();
+  state.ngrokConfiguredAt = nowIso();
+  saveConfig(config);
+  await prompter.note(
+    "Human Auth Bridge",
+    [
+      "Enabled in ngrok mode.",
+      "Gateway will auto-start local relay and ngrok tunnel.",
+      "No separate relay command is required for normal use.",
+    ].join("\n"),
+  );
+}
+
 export async function runSetupWizard(
   config: OpenPocketConfig,
   options: RunSetupOptions = {},
@@ -545,6 +713,7 @@ export async function runSetupWizard(
     const selectedModel = await runModelSelectionStep(config, prompter, state);
     await runApiKeyStep(config, prompter, state, selectedModel);
     await runVmStep(config, prompter, state, emulator);
+    await runHumanAuthStep(config, prompter, state);
     saveState(config, state);
     await prompter.outro(
       [
@@ -553,6 +722,7 @@ export async function runSetupWizard(
         "Next:",
         "  1) openpocket gateway start",
         "  2) Send a natural-language task directly in Telegram",
+        "  3) If task is blocked by real-device auth, approve via Telegram link on your phone",
       ].join("\n"),
     );
   } finally {
