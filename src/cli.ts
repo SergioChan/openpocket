@@ -430,7 +430,11 @@ async function selectByArrowKeys<T extends string>(
     const cleanup = () => {
       input.removeListener("keypress", onKeypress);
       if (input.setRawMode) {
-        input.setRawMode(previousRaw);
+        try {
+          input.setRawMode(previousRaw);
+        } catch {
+          // Ignore raw mode restore errors.
+        }
       }
       rl.resume();
     };
@@ -438,6 +442,7 @@ async function selectByArrowKeys<T extends string>(
     const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }) => {
       if (key.ctrl && key.name === "c") {
         cleanup();
+        output.write("\n");
         reject(new Error("Setup cancelled by user."));
         return;
       }
@@ -580,6 +585,14 @@ async function runTelegramSetupCommand(
     console.log("Next: run `openpocket gateway start`.");
     return 0;
   } finally {
+    if (input.setRawMode) {
+      try {
+        input.setRawMode(false);
+      } catch {
+        // Ignore raw mode reset errors.
+      }
+    }
+    input.pause();
     rl.close();
   }
 }

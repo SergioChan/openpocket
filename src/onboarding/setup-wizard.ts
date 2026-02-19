@@ -278,6 +278,8 @@ function truncateForTerminal(text: string, maxChars: number): string {
 function makeConsolePrompter(): SetupPrompter {
   const rl = createInterface({ input, output });
   const useColor = shouldUseColor(output);
+  let activeKeypressHandler: ((char: string, key: { name?: string; ctrl?: boolean }) => void) | null = null;
+  let rawModeEnabledBySelect = false;
 
   async function ask(message: string): Promise<string> {
     return rl.question(message);
@@ -333,16 +335,27 @@ function makeConsolePrompter(): SetupPrompter {
 
     return new Promise<T>((resolve, reject) => {
       const cleanup = () => {
-        input.removeListener("keypress", onKeypress);
-        if (input.setRawMode) {
-          input.setRawMode(previousRaw);
+        if (activeKeypressHandler) {
+          input.removeListener("keypress", activeKeypressHandler);
+          activeKeypressHandler = null;
+        } else {
+          input.removeListener("keypress", onKeypress);
         }
+        if (input.setRawMode && rawModeEnabledBySelect) {
+          try {
+            input.setRawMode(previousRaw);
+          } catch {
+            // Ignore raw mode restore errors on shutdown paths.
+          }
+        }
+        rawModeEnabledBySelect = false;
         rl.resume();
       };
 
       const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }) => {
         if (key.ctrl && key.name === "c") {
           cleanup();
+          output.write("\n");
           reject(new Error("Setup cancelled by user."));
           return;
         }
@@ -363,6 +376,8 @@ function makeConsolePrompter(): SetupPrompter {
         }
       };
 
+      activeKeypressHandler = onKeypress;
+      rawModeEnabledBySelect = Boolean(input.setRawMode);
       input.on("keypress", onKeypress);
       render();
     });
@@ -418,6 +433,18 @@ function makeConsolePrompter(): SetupPrompter {
       console.log(`\n${message}`);
     },
     close: async () => {
+      if (activeKeypressHandler) {
+        input.removeListener("keypress", activeKeypressHandler);
+        activeKeypressHandler = null;
+      }
+      if (input.setRawMode) {
+        try {
+          input.setRawMode(false);
+        } catch {
+          // Ignore raw mode reset errors.
+        }
+      }
+      input.pause();
       rl.close();
     },
   };
