@@ -86,68 +86,6 @@ export class ChatAssistant {
     ].join("\n");
   }
 
-  private classifyHeuristics(inputText: string): ChatDecision | null {
-    const text = inputText.trim();
-    const lower = text.toLowerCase();
-    if (!text) {
-      return {
-        mode: "chat",
-        task: "",
-        reply: "I am here. Send any request and I will route it to chat or task mode.",
-        confidence: 1,
-        reason: "empty",
-      };
-    }
-
-    const greetingRe = /^(hi|hello|hey|yo|sup|hola)[!. ]*$/i;
-    if (greetingRe.test(text)) {
-      return {
-        mode: "chat",
-        task: "",
-        reply: "I am here. Share your request and I will decide whether to execute a task.",
-        confidence: 0.98,
-        reason: "greeting",
-      };
-    }
-
-    const obviousTaskRe =
-      /(run|open|launch|search|click|tap|swipe|type|install|download|login|logout|send|go to|start app|execute)/i;
-    if (obviousTaskRe.test(text)) {
-      return {
-        mode: "task",
-        task: text,
-        reply: "",
-        confidence: 0.9,
-        reason: "task_keywords",
-      };
-    }
-
-    const obviousChatRe =
-      /(who are you|what can you do|how to use|why|what|how|who|help me understand|explain)/i;
-    const questionLike = /[?]$/.test(text);
-    if (obviousChatRe.test(text) || questionLike) {
-      return {
-        mode: "chat",
-        task: "",
-        reply: "",
-        confidence: 0.75,
-        reason: "question",
-      };
-    }
-
-    if (lower.split(/\s+/).length <= 2) {
-      return {
-        mode: "chat",
-        task: "",
-        reply: "",
-        confidence: 0.6,
-        reason: "short_text",
-      };
-    }
-
-    return null;
-  }
-
   private recentTurns(chatId: number): ChatTurn[] {
     return (this.history.get(chatId) ?? []).slice(-12);
   }
@@ -399,17 +337,21 @@ export class ChatAssistant {
   }
 
   async decide(chatId: number, inputText: string): Promise<ChatDecision> {
-    const heuristics = this.classifyHeuristics(inputText);
-    if (heuristics && heuristics.confidence >= 0.85) {
-      return heuristics;
+    void chatId;
+    const normalizedInput = inputText.trim();
+    if (!normalizedInput) {
+      return {
+        mode: "chat",
+        task: "",
+        reply: "Please share a request and I will respond.",
+        confidence: 1,
+        reason: "empty_input",
+      };
     }
 
     const profile = getModelProfile(this.config);
     const apiKey = resolveApiKey(profile);
     if (!apiKey) {
-      if (heuristics) {
-        return heuristics;
-      }
       return {
         mode: "chat",
         task: "",
@@ -421,21 +363,20 @@ export class ChatAssistant {
 
     const client = new OpenAI({ apiKey, baseURL: profile.baseUrl });
     try {
-      const decided = await this.classifyWithModel(client, profile.model, profile.maxTokens, inputText);
+      const decided = await this.classifyWithModel(
+        client,
+        profile.model,
+        profile.maxTokens,
+        normalizedInput,
+      );
       if (decided.mode === "task" && !decided.task) {
-        decided.task = inputText;
-      }
-      if (decided.mode === "chat" && !decided.reply && heuristics?.reply) {
-        decided.reply = heuristics.reply;
+        decided.task = normalizedInput;
       }
       return decided;
     } catch {
-      if (heuristics) {
-        return heuristics;
-      }
       return {
         mode: "task",
-        task: inputText,
+        task: normalizedInput,
         reply: "",
         confidence: 0.5,
         reason: "fallback_task",
