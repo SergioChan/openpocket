@@ -495,6 +495,12 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
         const startMessage = await emulator.start(true);
         printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
       }
+      const readyStatus = emulator.status();
+      if (readyStatus.bootedDevices.length === 0) {
+        throw new Error(
+          "Emulator is online but not boot-complete yet. Retry after boot or increase emulator.bootTimeoutSec.",
+        );
+      }
 
       if (process.platform === "darwin") {
         printStartupStep(4, totalSteps, "Ensure panel is running", "starting");

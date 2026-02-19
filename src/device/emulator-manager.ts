@@ -132,10 +132,32 @@ export class EmulatorManager {
     };
   }
 
+  private async waitForBoot(timeoutMs: number): Promise<EmulatorStatus> {
+    const startAt = Date.now();
+    let latest = this.status();
+    while (Date.now() - startAt < timeoutMs) {
+      latest = this.status();
+      if (latest.bootedDevices.length > 0) {
+        return latest;
+      }
+      await sleep(2000);
+    }
+    return this.status();
+  }
+
   async start(headless?: boolean): Promise<string> {
+    const timeoutMs = Math.max(20, this.config.emulator.bootTimeoutSec) * 1000;
     const status = this.status();
     if (status.devices.length > 0) {
-      return `Emulator already running: ${status.devices.join(", ")}`;
+      if (status.bootedDevices.length > 0) {
+        return `Emulator already running: ${status.bootedDevices.join(", ")}`;
+      }
+
+      const waited = await this.waitForBoot(timeoutMs);
+      if (waited.bootedDevices.length > 0) {
+        return `Emulator booted: ${waited.bootedDevices.join(", ")}`;
+      }
+      return `Emulator already running (${status.devices.join(", ")}), but boot is still in progress.`;
     }
 
     const avds = this.listAvds();
@@ -171,18 +193,12 @@ export class EmulatorManager {
       fs.closeSync(fd);
     }
 
-    const timeoutMs = Math.max(20, this.config.emulator.bootTimeoutSec) * 1000;
-    const startAt = Date.now();
-
-    while (Date.now() - startAt < timeoutMs) {
-      const current = this.status();
-      if (current.bootedDevices.length > 0) {
-        const prefix = fallback
-          ? `Configured AVD '${this.config.emulator.avdName}' not found; used '${avdName}'. `
-          : "";
-        return `${prefix}Emulator booted: ${current.bootedDevices.join(", ")}`;
-      }
-      await sleep(2000);
+    const waited = await this.waitForBoot(timeoutMs);
+    if (waited.bootedDevices.length > 0) {
+      const prefix = fallback
+        ? `Configured AVD '${this.config.emulator.avdName}' not found; used '${avdName}'. `
+        : "";
+      return `${prefix}Emulator booted: ${waited.bootedDevices.join(", ")}`;
     }
 
     return "Emulator process started, but boot is still in progress.";
