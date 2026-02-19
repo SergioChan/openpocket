@@ -1,6 +1,6 @@
 # OpenPocket Documentation
 
-This documentation is organized in documentation hubs (inspired by OpenClaw docs information architecture):
+This documentation is organized into documentation hubs with a clear separation of onboarding, concepts, tooling, reference, and operations:
 
 - Start with task-oriented onboarding.
 - Move to concepts and execution model.
