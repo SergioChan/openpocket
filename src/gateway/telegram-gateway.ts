@@ -10,6 +10,25 @@ import { ChatAssistant } from "./chat-assistant";
 import { CronService, type CronRunResult } from "./cron-service";
 import { HeartbeatRunner } from "./heartbeat-runner";
 
+export const TELEGRAM_MENU_COMMANDS: TelegramBot.BotCommand[] = [
+  { command: "help", description: "Show command help" },
+  { command: "status", description: "Show gateway and emulator status" },
+  { command: "model", description: "Show or switch model profile" },
+  { command: "startvm", description: "Start Android emulator" },
+  { command: "stopvm", description: "Stop Android emulator" },
+  { command: "hidevm", description: "Hide emulator window" },
+  { command: "showvm", description: "Show emulator window" },
+  { command: "screen", description: "Capture manual screenshot" },
+  { command: "skills", description: "List loaded skills" },
+  { command: "clear", description: "Clear chat memory only" },
+  { command: "reset", description: "Clear chat memory and stop task" },
+  { command: "stop", description: "Stop current running task" },
+  { command: "restart", description: "Restart gateway process loop" },
+  { command: "cronrun", description: "Trigger cron job by id" },
+  { command: "auth", description: "Human auth helper commands" },
+  { command: "run", description: "Force task mode with text" },
+];
+
 export class TelegramGateway {
   private readonly config: OpenPocketConfig;
   private readonly emulator: EmulatorManager;
@@ -115,6 +134,7 @@ export class TelegramGateway {
 
     this.bot.on("message", this.handleMessage);
     this.bot.on("polling_error", this.handlePollingError);
+    await this.configureBotCommandMenu();
 
     if (this.config.humanAuth.enabled && this.config.humanAuth.useLocalRelay) {
       try {
@@ -187,6 +207,20 @@ export class TelegramGateway {
     }
   };
 
+  private async configureBotCommandMenu(): Promise<void> {
+    try {
+      await this.bot.setMyCommands(TELEGRAM_MENU_COMMANDS);
+      await this.bot.setChatMenuButton({
+        menu_button: {
+          type: "commands",
+        },
+      });
+      this.log(`telegram command menu configured commands=${TELEGRAM_MENU_COMMANDS.length}`);
+    } catch (error) {
+      this.log(`telegram command menu setup failed: ${(error as Error).message}`);
+    }
+  }
+
   private allowed(chatId: number): boolean {
     const allow = this.config.telegram.allowedChatIds;
     if (!allow || allow.length === 0) {
@@ -220,7 +254,9 @@ export class TelegramGateway {
           "/screen",
           "/skills",
           "/clear",
+          "/reset",
           "/stop",
+          "/restart",
           "/cronrun <job-id>",
           "/auth",
           "/auth pending",
@@ -323,9 +359,40 @@ export class TelegramGateway {
       return;
     }
 
+    if (text === "/reset") {
+      this.chat.clear(chatId);
+      const accepted = this.agent.stopCurrentTask();
+      await this.bot.sendMessage(
+        chatId,
+        accepted
+          ? "Conversation memory cleared. Stop requested for the running task."
+          : "Conversation memory cleared. No running task to stop.",
+      );
+      return;
+    }
+
     if (text === "/stop") {
       const accepted = this.agent.stopCurrentTask();
       await this.bot.sendMessage(chatId, accepted ? "Stop requested." : "No running task.");
+      return;
+    }
+
+    if (text === "/restart") {
+      if (process.listenerCount("SIGUSR1") === 0) {
+        await this.bot.sendMessage(
+          chatId,
+          "Restart is unavailable in the current runtime mode (no gateway run-loop signal handler).",
+        );
+        return;
+      }
+      await this.bot.sendMessage(chatId, "Gateway restart requested. Reconnecting...");
+      setTimeout(() => {
+        try {
+          process.kill(process.pid, "SIGUSR1");
+        } catch (error) {
+          this.log(`gateway restart signal failed: ${(error as Error).message}`);
+        }
+      }, 50);
       return;
     }
 

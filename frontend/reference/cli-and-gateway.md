@@ -93,6 +93,7 @@ Interactive onboarding wizard flow:
 - interactive setup for Telegram bot token source (env or config file)
 - optional interactive allowlist update for `telegram.allowedChatIds`
 - requires an interactive terminal (TTY)
+- `gateway start` auto-configures Telegram slash-command menu (`setMyCommands` + menu button)
 
 ## Telegram
 
@@ -108,7 +109,9 @@ Supported commands:
 - `/screen`
 - `/skills`
 - `/clear`
+- `/reset`
 - `/stop`
+- `/restart`
 - `/cronrun <job-id>`
 - `/auth`
 - `/auth pending`

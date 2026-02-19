@@ -38,7 +38,8 @@ Near-term roadmap includes remote phone access to the local runtime for human-in
 
 - Emulator control: `start`, `stop`, `status`, `list-avds`, `hide`, `show`, `screenshot`
 - Agent actions: `tap`, `swipe`, `type`, `keyevent`, `launch_app`, `shell`, `run_script`, `request_human_auth`, `wait`, `finish`
-- Gateway modes: Telegram polling, chat/task routing, `/stop`, `/cronrun`, `/run`, `/auth`
+- Gateway modes: Telegram polling, chat/task routing, `/stop`, `/reset`, `/restart`, `/cronrun`, `/run`, `/auth`
+- Telegram command menu: auto-configured on `gateway start` (`setMyCommands` + menu button)
 - Human-auth connectivity: local self-hosted relay with optional ngrok tunnel auto-start in gateway
 - Runtime services: heartbeat monitoring, cron job execution, signal-aware gateway restarts
 - Script safety: allowlist, deny patterns, timeout, output limits, and run archives
