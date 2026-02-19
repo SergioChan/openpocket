@@ -250,7 +250,7 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       const cfg = loadConfig(configPath);
       const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
       const hasToken = Boolean(cfg.telegram.botToken.trim() || process.env[envName]?.trim());
-      const totalSteps = 4;
+      const totalSteps = 5;
 
       printStartupHeader(cfg);
       printStartupStep(1, totalSteps, "Load config", "ok");
@@ -261,12 +261,28 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
         );
       }
       printStartupStep(2, totalSteps, "Validate Telegram token", "ok");
-      printStartupStep(3, totalSteps, "Initialize gateway runtime", "starting");
+
+      const emulator = new EmulatorManager(cfg);
+      const emulatorStatus = emulator.status();
+      if (emulatorStatus.bootedDevices.length > 0) {
+        printStartupStep(
+          3,
+          totalSteps,
+          "Ensure emulator is running",
+          `ok (${emulatorStatus.bootedDevices.join(", ")})`,
+        );
+      } else {
+        printStartupStep(3, totalSteps, "Ensure emulator is running", "starting");
+        const startMessage = await emulator.start();
+        printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
+      }
+
+      printStartupStep(4, totalSteps, "Initialize gateway runtime", "starting");
       const gateway = new TelegramGateway(cfg);
-      printStartupStep(3, totalSteps, "Initialize gateway runtime", "ok");
-      printStartupStep(4, totalSteps, "Start services", "starting");
+      printStartupStep(4, totalSteps, "Initialize gateway runtime", "ok");
+      printStartupStep(5, totalSteps, "Start services", "starting");
       await gateway.start();
-      printStartupStep(4, totalSteps, "Start services", "ok");
+      printStartupStep(5, totalSteps, "Start services", "ok");
       // eslint-disable-next-line no-console
       console.log("[OpenPocket][gateway-start] Gateway is running. Press Ctrl+C to stop.");
       return {
