@@ -238,11 +238,15 @@ function findAppBundle(rootDir: string): string | null {
   return null;
 }
 
-function installPanelFromRelease(releaseUrl: string): string {
+function installPanelFromRelease(
+  releaseUrl: string,
+  log?: (line: string) => void,
+): string {
   if (process.platform !== "darwin") {
     throw new Error("Panel auto-install is supported on macOS only.");
   }
 
+  log?.("1/4 Pull panel package from GitHub release");
   const assets = fetchLatestGithubReleaseAssets(releaseUrl);
   const picked = pickPanelReleaseAsset(assets);
   if (!picked) {
@@ -260,6 +264,7 @@ function installPanelFromRelease(releaseUrl: string): string {
       throw new Error(`Failed to download ${picked.name}: ${download.stderr || "curl exited with error"}`);
     }
 
+    log?.("2/4 Unpack panel ZIP");
     const unpackDir = path.join(tmpDir, "unpacked");
     fs.mkdirSync(unpackDir, { recursive: true });
     const unpack = spawnSync("/usr/bin/ditto", ["-x", "-k", zipPath, unpackDir], {
@@ -279,6 +284,7 @@ function installPanelFromRelease(releaseUrl: string): string {
     if (!home) {
       throw new Error("HOME is not set; cannot install panel app.");
     }
+    log?.("3/4 Install panel app bundle");
     const appsDir = path.join(home, "Applications");
     fs.mkdirSync(appsDir, { recursive: true });
     const targetApp = path.join(appsDir, path.basename(appBundle));
@@ -292,7 +298,15 @@ function installPanelFromRelease(releaseUrl: string): string {
     }
 
     spawnSync("/usr/bin/xattr", ["-dr", "com.apple.quarantine", targetApp], { stdio: "ignore" });
-    return targetApp;
+    log?.("4/4 Verify panel installation");
+    if (!fs.existsSync(targetApp)) {
+      throw new Error(`Panel install verification failed: ${targetApp} not found.`);
+    }
+    const installed = resolveInstalledPanelApp();
+    if (!installed) {
+      throw new Error("Panel install verification failed: app bundle is not discoverable.");
+    }
+    return installed;
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -921,67 +935,17 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
   }
 
   const releaseUrl = getPanelReleaseUrl();
-  try {
+  // eslint-disable-next-line no-console
+  console.log("OpenPocket panel is required and not installed. Installing from GitHub Release...");
+  const installedFromRelease = installPanelFromRelease(releaseUrl, (line) => {
     // eslint-disable-next-line no-console
-    console.log("OpenPocket panel app is not installed. Installing from GitHub Release...");
-    const installedFromRelease = installPanelFromRelease(releaseUrl);
-    if (!openPanelApp(installedFromRelease)) {
-      throw new Error(`Panel installed but failed to open: ${installedFromRelease}`);
-    }
-    // eslint-disable-next-line no-console
-    console.log(`OpenPocket Control Panel installed and opened: ${installedFromRelease}`);
-    return 0;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][panel] Auto-install failed: ${(error as Error).message}`);
+    console.log(`[OpenPocket][panel-install] ${line}`);
+  });
+  if (!openPanelApp(installedFromRelease)) {
+    throw new Error(`Panel installed but failed to open: ${installedFromRelease}`);
   }
-
-  const panelDir = path.resolve(__dirname, "..", "apps", "openpocket-menubar");
-  const buildScript = path.join(panelDir, "scripts", "build.sh");
-  const runScript = path.join(panelDir, "scripts", "run.sh");
-  const hasBundledSource = fs.existsSync(runScript) && fs.existsSync(buildScript);
-
-  if (hasBundledSource) {
-    const buildResult = spawnSync("/usr/bin/env", ["bash", buildScript], {
-      stdio: "inherit",
-      cwd: panelDir,
-    });
-    if (buildResult.error) {
-      throw buildResult.error;
-    }
-    if ((buildResult.status ?? 1) !== 0) {
-      return buildResult.status ?? 1;
-    }
-
-    const appBinary = path.join(panelDir, ".build", "debug", "OpenPocketMenuBar");
-    if (!fs.existsSync(appBinary)) {
-      throw new Error(`Built menu bar app not found: ${appBinary}`);
-    }
-
-    const env = { ...process.env };
-    if (configPath?.trim()) {
-      env.OPENPOCKET_CONFIG_PATH = path.resolve(configPath.trim());
-    }
-
-    const child = spawn(appBinary, [], {
-      cwd: panelDir,
-      detached: true,
-      stdio: "ignore",
-      env,
-    });
-    child.unref();
-    // eslint-disable-next-line no-console
-    console.log(`OpenPocket Control Panel started (pid=${child.pid ?? "unknown"}).`);
-    return 0;
-  }
-
   // eslint-disable-next-line no-console
-  console.log("OpenPocket panel app is not installed on this Mac.");
-  // eslint-disable-next-line no-console
-  console.log(`Opening download page: ${releaseUrl}`);
-  openReleasePage(releaseUrl);
-  // eslint-disable-next-line no-console
-  console.log("Install the macOS PKG from Releases, then run: openpocket panel start");
+  console.log(`OpenPocket Control Panel installed and opened: ${installedFromRelease}`);
   return 0;
 }
 
