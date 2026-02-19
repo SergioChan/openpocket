@@ -3,7 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { createInterface } from "node:readline/promises";
+import * as readline from "node:readline";
+import { createInterface, type Interface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import { AgentRuntime } from "./agent/agent-runtime";
@@ -345,6 +346,95 @@ function parseAllowedChatIds(raw: string): number[] {
   return values.map((value) => Math.trunc(value));
 }
 
+type CliSelectOption<T extends string> = {
+  value: T;
+  label: string;
+  hint?: string;
+};
+
+async function selectByArrowKeys<T extends string>(
+  rl: Interface,
+  message: string,
+  options: CliSelectOption<T>[],
+  initialValue?: T,
+): Promise<T> {
+  if (options.length === 0) {
+    throw new Error("Select prompt requires at least one option.");
+  }
+  const initialIndex =
+    initialValue !== undefined ? Math.max(0, options.findIndex((opt) => opt.value === initialValue)) : 0;
+  let index = initialIndex >= 0 && initialIndex < options.length ? initialIndex : 0;
+
+  if (!input.isTTY || !output.isTTY) {
+    return options[index].value;
+  }
+
+  rl.pause();
+  readline.emitKeypressEvents(input);
+
+  const previousRaw = Boolean((input as NodeJS.ReadStream).isRaw);
+  if (input.setRawMode) {
+    input.setRawMode(true);
+  }
+  input.resume();
+
+  let renderedLines = 0;
+  const render = () => {
+    if (renderedLines > 0) {
+      readline.moveCursor(output, 0, -renderedLines);
+      readline.clearScreenDown(output);
+    }
+    const lines: string[] = [];
+    lines.push("");
+    lines.push(message);
+    for (let i = 0; i < options.length; i += 1) {
+      const option = options[i];
+      const prefix = i === index ? ">" : " ";
+      const hint = option.hint ? ` (${option.hint})` : "";
+      lines.push(`  ${prefix} ${option.label}${hint}`);
+    }
+    lines.push("Use Up/Down arrows and Enter to select.");
+    output.write(`${lines.join("\n")}\n`);
+    renderedLines = lines.length;
+  };
+
+  return new Promise<T>((resolve, reject) => {
+    const cleanup = () => {
+      input.removeListener("keypress", onKeypress);
+      if (input.setRawMode) {
+        input.setRawMode(previousRaw);
+      }
+      rl.resume();
+    };
+
+    const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }) => {
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        reject(new Error("Setup cancelled by user."));
+        return;
+      }
+      if (key.name === "up") {
+        index = (index - 1 + options.length) % options.length;
+        render();
+        return;
+      }
+      if (key.name === "down") {
+        index = (index + 1) % options.length;
+        render();
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        cleanup();
+        output.write("\n");
+        resolve(options[index].value);
+      }
+    };
+
+    input.on("keypress", onKeypress);
+    render();
+  });
+}
+
 async function runTelegramSetupCommand(
   configPath: string | undefined,
   args: string[],
@@ -367,66 +457,83 @@ async function runTelegramSetupCommand(
     console.log("Create your bot in Telegram with @BotFather before continuing.");
 
     const currentEnv = cfg.telegram.botTokenEnv || "TELEGRAM_BOT_TOKEN";
-    const envNameRaw = await rl.question(
-      `Token environment variable name [${currentEnv}]: `,
+    const envToken = process.env[currentEnv]?.trim() ?? "";
+    const tokenChoice = await selectByArrowKeys(
+      rl,
+      "Telegram bot token source",
+      [
+        {
+          value: "env",
+          label: `Use environment variable (${currentEnv})`,
+          hint: envToken ? `detected, length ${envToken.length}` : "not detected",
+        },
+        {
+          value: "config",
+          label: "Save token in local config.json",
+        },
+        {
+          value: "keep",
+          label: "Keep current token settings",
+          hint: cfg.telegram.botToken.trim() ? "config token exists" : "no config token",
+        },
+      ],
+      "env",
     );
-    const envName = envNameRaw.trim() || currentEnv;
-    cfg.telegram.botTokenEnv = envName;
-    const envToken = process.env[envName]?.trim() ?? "";
 
-    // eslint-disable-next-line no-console
-    console.log("\nChoose token source:");
-    // eslint-disable-next-line no-console
-    console.log(`1) Use env var ${envName}${envToken ? " (detected)" : " (not detected)"}`);
-    // eslint-disable-next-line no-console
-    console.log("2) Save token in local config.json");
-    // eslint-disable-next-line no-console
-    console.log("3) Keep current token settings");
-    const tokenChoiceRaw = await rl.question("Selection [1]: ");
-    const tokenChoice = tokenChoiceRaw.trim() || "1";
-
-    if (tokenChoice === "1") {
+    if (tokenChoice === "env") {
+      const envNameRaw = await rl.question(
+        `Environment variable name for Telegram token [${currentEnv}]: `,
+      );
+      const envName = envNameRaw.trim() || currentEnv;
+      cfg.telegram.botTokenEnv = envName;
       cfg.telegram.botToken = "";
-      if (!envToken) {
+      const selectedEnvToken = process.env[envName]?.trim() ?? "";
+      if (!selectedEnvToken) {
         // eslint-disable-next-line no-console
         console.log(
           `[OpenPocket] Warning: ${envName} is not set in this shell. Gateway start will fail until you export it.`,
         );
       }
-    } else if (tokenChoice === "2") {
+    } else if (tokenChoice === "config") {
       const token = (await rl.question("Enter Telegram bot token: ")).trim();
       if (!token) {
         throw new Error("Telegram bot token cannot be empty.");
       }
       cfg.telegram.botToken = token;
-    } else if (tokenChoice !== "3") {
-      throw new Error("Invalid selection for token source.");
     }
 
     const currentAllow =
       cfg.telegram.allowedChatIds.length > 0
         ? cfg.telegram.allowedChatIds.join(", ")
         : "empty (all chats allowed)";
-    // eslint-disable-next-line no-console
-    console.log("\nAllowed chat IDs policy:");
-    // eslint-disable-next-line no-console
-    console.log(`1) Keep current allowlist (${currentAllow})`);
-    // eslint-disable-next-line no-console
-    console.log("2) Allow all chats (clear allowlist)");
-    // eslint-disable-next-line no-console
-    console.log("3) Set allowlist manually");
-    const allowChoiceRaw = await rl.question("Selection [1]: ");
-    const allowChoice = allowChoiceRaw.trim() || "1";
+    const allowChoice = await selectByArrowKeys(
+      rl,
+      "Telegram chat allowlist policy",
+      [
+        {
+          value: "keep",
+          label: "Keep current allowlist",
+          hint: currentAllow,
+        },
+        {
+          value: "open",
+          label: "Allow all chats (clear allowlist)",
+        },
+        {
+          value: "set",
+          label: "Set allowlist manually (chat IDs)",
+        },
+      ],
+      "keep",
+    );
 
-    if (allowChoice === "2") {
+    if (allowChoice === "open") {
       cfg.telegram.allowedChatIds = [];
-    } else if (allowChoice === "3") {
+    } else if (allowChoice === "set") {
       const allowedInput = await rl.question(
         "Enter allowed chat IDs (comma or space separated): ",
       );
       cfg.telegram.allowedChatIds = parseAllowedChatIds(allowedInput);
-    } else if (allowChoice !== "1") {
-      throw new Error("Invalid selection for allowed chat IDs.");
     }
 
     saveConfig(cfg);
