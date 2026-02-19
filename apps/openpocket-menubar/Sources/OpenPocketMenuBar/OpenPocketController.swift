@@ -20,6 +20,8 @@ final class OpenPocketController: ObservableObject {
     @Published var emulatorPreviewImage: NSImage?
     @Published var emulatorPreviewStatusText: String = "No preview captured yet."
     @Published var emulatorPreviewAutoRefresh: Bool = false
+    @Published var emulatorInputText: String = ""
+    @Published var emulatorControlStatusText: String = ""
     @Published var selectedPromptFile: PromptFileEntry?
     @Published var promptEditorText: String = ""
     @Published var promptEditorDirty: Bool = false
@@ -615,6 +617,58 @@ final class OpenPocketController: ObservableObject {
                 let formatter = DateFormatter()
                 formatter.dateFormat = "HH:mm:ss"
                 self.emulatorPreviewStatusText = "Updated at \(formatter.string(from: Date()))"
+            }
+        }
+    }
+
+    func sendEmulatorTap(x: Int, y: Int) {
+        emulatorControlStatusText = "Sending tap (\(x), \(y))..."
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = self.bridge.runCommand(
+                workingDir: self.repoRoot,
+                args: ["emulator", "tap", "--x", String(x), "--y", String(y)],
+                timeoutSec: 20
+            )
+
+            DispatchQueue.main.async {
+                if result.ok {
+                    self.emulatorControlStatusText = "Tap sent at (\(x), \(y))."
+                    self.refreshEmulatorPreview()
+                } else {
+                    self.emulatorControlStatusText = "Tap failed."
+                    if !result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.appendLog("[tap] \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                }
+            }
+        }
+    }
+
+    func sendEmulatorTextInput() {
+        let raw = emulatorInputText
+        if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            emulatorControlStatusText = "Input text is empty."
+            return
+        }
+
+        emulatorControlStatusText = "Sending text input..."
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = self.bridge.runCommand(
+                workingDir: self.repoRoot,
+                args: ["emulator", "type", "--text", raw],
+                timeoutSec: 25
+            )
+
+            DispatchQueue.main.async {
+                if result.ok {
+                    self.emulatorControlStatusText = "Text input sent."
+                    self.refreshEmulatorPreview()
+                } else {
+                    self.emulatorControlStatusText = "Text input failed."
+                    if !result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.appendLog("[type] \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                }
             }
         }
     }

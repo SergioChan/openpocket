@@ -224,15 +224,7 @@ export class EmulatorManager {
   }
 
   captureScreenshot(outputPath?: string, preferredDeviceId?: string): string {
-    const devices = this.emulatorDevices();
-    if (devices.length === 0) {
-      throw new Error("No running emulator found.");
-    }
-
-    const deviceId = preferredDeviceId ?? devices[0];
-    if (!devices.includes(deviceId)) {
-      throw new Error(`Device '${deviceId}' is not online. Online devices: ${devices.join(", ")}`);
-    }
+    const deviceId = this.resolveOnlineDevice(preferredDeviceId);
 
     const targetPath = outputPath
       ? path.resolve(outputPath)
@@ -246,19 +238,68 @@ export class EmulatorManager {
   }
 
   captureScreenshotBuffer(preferredDeviceId?: string): { deviceId: string; data: Buffer } {
-    const devices = this.emulatorDevices();
-    if (devices.length === 0) {
-      throw new Error("No running emulator found.");
-    }
-
-    const deviceId = preferredDeviceId ?? devices[0];
-    if (!devices.includes(deviceId)) {
-      throw new Error(`Device '${deviceId}' is not online. Online devices: ${devices.join(", ")}`);
-    }
+    const deviceId = this.resolveOnlineDevice(preferredDeviceId);
 
     const data = this.captureScreenshotPngBuffer(deviceId);
 
     return { deviceId, data };
+  }
+
+  tap(x: number, y: number, preferredDeviceId?: string): string {
+    const deviceId = this.resolveOnlineDevice(preferredDeviceId);
+    const tx = Math.max(0, Math.round(x));
+    const ty = Math.max(0, Math.round(y));
+    this.adb(["-s", deviceId, "shell", "input", "tap", String(tx), String(ty)]);
+    return `Tap sent to ${deviceId} at (${tx}, ${ty}).`;
+  }
+
+  typeText(text: string, preferredDeviceId?: string): string {
+    const deviceId = this.resolveOnlineDevice(preferredDeviceId);
+    const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (!normalized.trim()) {
+      throw new Error("Text input is empty.");
+    }
+
+    const lines = normalized.split("\n");
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (line.length > 0) {
+        const encoded = this.encodeAdbInputText(line);
+        this.adb(["-s", deviceId, "shell", "input", "text", encoded]);
+      }
+      if (i < lines.length - 1) {
+        this.adb(["-s", deviceId, "shell", "input", "keyevent", "KEYCODE_ENTER"]);
+      }
+    }
+
+    return `Text input sent to ${deviceId}.`;
+  }
+
+  private resolveOnlineDevice(preferredDeviceId?: string): string {
+    const devices = this.emulatorDevices();
+    if (devices.length === 0) {
+      throw new Error("No running emulator found.");
+    }
+    const deviceId = preferredDeviceId ?? devices[0];
+    if (!devices.includes(deviceId)) {
+      throw new Error(`Device '${deviceId}' is not online. Online devices: ${devices.join(", ")}`);
+    }
+    return deviceId;
+  }
+
+  private encodeAdbInputText(text: string): string {
+    return text
+      .replace(/\\/g, "\\\\")
+      .replace(/ /g, "%s")
+      .replace(/"/g, '\\"')
+      .replace(/'/g, "\\'")
+      .replace(/&/g, "\\&")
+      .replace(/\|/g, "\\|")
+      .replace(/</g, "\\<")
+      .replace(/>/g, "\\>")
+      .replace(/\(/g, "\\(")
+      .replace(/\)/g, "\\)")
+      .replace(/;/g, "\\;");
   }
 
   private captureScreenshotPngBuffer(deviceId: string): Buffer {

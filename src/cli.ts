@@ -41,6 +41,8 @@ Usage:
   openpocket [--config <path>] emulator show
   openpocket [--config <path>] emulator list-avds
   openpocket [--config <path>] emulator screenshot [--out <path>]
+  openpocket [--config <path>] emulator tap --x <int> --y <int> [--device <id>]
+  openpocket [--config <path>] emulator type --text <text> [--device <id>]
   openpocket [--config <path>] agent [--model <name>] <task>
   openpocket [--config <path>] skills list
   openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
@@ -56,6 +58,7 @@ Legacy aliases (deprecated):
 Examples:
   openpocket onboard
   openpocket emulator start
+  openpocket emulator tap --x 120 --y 300
   openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
   openpocket skills list
   openpocket script run --text "echo hello"
@@ -356,9 +359,45 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
     return 0;
   }
   if (sub === "screenshot") {
-    const { value: outPath } = takeOption(args.slice(1), "--out");
+    const { value: outPath, rest: afterOut } = takeOption(args.slice(1), "--out");
+    const { value: deviceId, rest } = takeOption(afterOut, "--device");
+    if (rest.length > 0) {
+      throw new Error(`Unexpected arguments: ${rest.join(" ")}`);
+    }
     // eslint-disable-next-line no-console
-    console.log(emulator.captureScreenshot(outPath ?? undefined));
+    console.log(emulator.captureScreenshot(outPath ?? undefined, deviceId ?? undefined));
+    return 0;
+  }
+  if (sub === "tap") {
+    const { value: xRaw, rest: afterX } = takeOption(args.slice(1), "--x");
+    const { value: yRaw, rest: afterY } = takeOption(afterX, "--y");
+    const { value: deviceId, rest } = takeOption(afterY, "--device");
+    if (rest.length > 0) {
+      throw new Error(`Unexpected arguments: ${rest.join(" ")}`);
+    }
+    if (xRaw === null || yRaw === null) {
+      throw new Error("Usage: openpocket emulator tap --x <int> --y <int> [--device <id>]");
+    }
+    const x = Number(xRaw);
+    const y = Number(yRaw);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error("Tap coordinates must be numbers.");
+    }
+    // eslint-disable-next-line no-console
+    console.log(emulator.tap(Math.round(x), Math.round(y), deviceId ?? undefined));
+    return 0;
+  }
+  if (sub === "type") {
+    const { value: text, rest: afterText } = takeOption(args.slice(1), "--text");
+    const { value: deviceId, rest } = takeOption(afterText, "--device");
+    if (rest.length > 0) {
+      throw new Error(`Unexpected arguments: ${rest.join(" ")}`);
+    }
+    if (text === null) {
+      throw new Error("Usage: openpocket emulator type --text <text> [--device <id>]");
+    }
+    // eslint-disable-next-line no-console
+    console.log(emulator.typeText(text, deviceId ?? undefined));
     return 0;
   }
 

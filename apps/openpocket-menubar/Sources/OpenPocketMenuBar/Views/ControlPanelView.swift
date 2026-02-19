@@ -211,15 +211,54 @@ private struct RuntimeTabView: View {
                                 .foregroundStyle(.secondary)
                         }
 
+                        HStack(spacing: 8) {
+                            TextField("Type text to active input field", text: $controller.emulatorInputText)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Send Text") {
+                                controller.sendEmulatorTextInput()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        if !controller.emulatorControlStatusText.isEmpty {
+                            Text(controller.emulatorControlStatusText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+
                         ZStack {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(Color.black.opacity(0.88))
 
                             if let image = controller.emulatorPreviewImage {
-                                Image(nsImage: image)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .padding(10)
+                                GeometryReader { geometry in
+                                    Image(nsImage: image)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: geometry.size.width, height: geometry.size.height)
+                                        .contentShape(Rectangle())
+                                        .gesture(
+                                            DragGesture(minimumDistance: 0)
+                                                .onEnded { value in
+                                                    handlePreviewTap(
+                                                        location: value.location,
+                                                        containerSize: geometry.size,
+                                                        imageSize: image.size
+                                                    )
+                                                }
+                                        )
+                                        .overlay(alignment: .topLeading) {
+                                            Text("Click preview to tap emulator")
+                                                .font(.system(size: 11, weight: .medium))
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.black.opacity(0.55))
+                                                .foregroundStyle(.white)
+                                                .clipShape(Capsule())
+                                                .padding(10)
+                                        }
+                                }
+                                .padding(10)
                             } else {
                                 Text("Preview unavailable. Start emulator and click Refresh Preview.")
                                     .foregroundStyle(.white.opacity(0.82))
@@ -282,6 +321,42 @@ private struct RuntimeTabView: View {
                 controller.refreshEmulatorPreview()
             }
         }
+    }
+
+    private func handlePreviewTap(location: CGPoint, containerSize: CGSize, imageSize: CGSize) {
+        guard let mapped = mapPreviewPoint(location: location, containerSize: containerSize, imageSize: imageSize) else {
+            return
+        }
+        controller.sendEmulatorTap(x: mapped.0, y: mapped.1)
+    }
+
+    private func mapPreviewPoint(
+        location: CGPoint,
+        containerSize: CGSize,
+        imageSize: CGSize
+    ) -> (Int, Int)? {
+        guard imageSize.width > 1, imageSize.height > 1,
+              containerSize.width > 1, containerSize.height > 1 else {
+            return nil
+        }
+
+        let scale = min(containerSize.width / imageSize.width, containerSize.height / imageSize.height)
+        let renderWidth = imageSize.width * scale
+        let renderHeight = imageSize.height * scale
+        let offsetX = (containerSize.width - renderWidth) / 2
+        let offsetY = (containerSize.height - renderHeight) / 2
+
+        let localX = location.x - offsetX
+        let localY = location.y - offsetY
+        if localX < 0 || localY < 0 || localX > renderWidth || localY > renderHeight {
+            return nil
+        }
+
+        let normalizedX = localX / renderWidth
+        let normalizedY = localY / renderHeight
+        let targetX = Int((normalizedX * imageSize.width).rounded())
+        let targetY = Int((normalizedY * imageSize.height).rounded())
+        return (max(0, targetX), max(0, targetY))
     }
 }
 
