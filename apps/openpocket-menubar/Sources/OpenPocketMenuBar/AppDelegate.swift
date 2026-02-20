@@ -5,26 +5,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = OpenPocketController()
     private var statusItem: NSStatusItem?
     private var controlPanelWindow: NSWindow?
+    private var statusItemRepairTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
+        scheduleStatusItemRepair()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        statusItemRepairTimer?.invalidate()
+        statusItemRepairTimer = nil
         controller.stopGateway(managedOnly: true)
     }
 
     private func buildStatusItem() {
+        if let existing = statusItem {
+            NSStatusBar.system.removeStatusItem(existing)
+            statusItem = nil
+        }
+
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let primary = NSImage(systemSymbolName: "iphone.gen3.radiowaves.left.and.right", accessibilityDescription: "OpenPocket")
         let fallback = NSImage(systemSymbolName: "iphone", accessibilityDescription: "OpenPocket")
         if let image = primary ?? fallback {
             image.isTemplate = true
             item.button?.image = image
-        } else {
-            item.button?.title = "OD"
         }
+        item.button?.title = "OP"
+        item.button?.imagePosition = .imageLeading
+        item.button?.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         item.button?.toolTip = "OpenPocket"
+        item.isVisible = true
 
         let menu = NSMenu()
 
@@ -49,6 +60,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         item.menu = menu
         statusItem = item
+    }
+
+    private func scheduleStatusItemRepair() {
+        statusItemRepairTimer?.invalidate()
+        statusItemRepairTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.ensureStatusItemVisible()
+        }
+    }
+
+    private func ensureStatusItemVisible() {
+        guard let item = statusItem else {
+            buildStatusItem()
+            return
+        }
+        if item.button == nil {
+            buildStatusItem()
+            return
+        }
+        item.isVisible = true
     }
 
     @objc private func openControlPanel() {
