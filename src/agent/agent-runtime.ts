@@ -6,7 +6,7 @@ import type {
   OpenPocketConfig,
   SkillInfo,
 } from "../types";
-import { getModelProfile, resolveApiKey } from "../config";
+import { getModelProfile, resolveModelAuth } from "../config";
 import { WorkspaceStore } from "../memory/workspace";
 import { ScreenshotStore } from "../memory/screenshot-store";
 import { sleep } from "../utils/time";
@@ -133,9 +133,12 @@ export class AgentRuntime {
     const session = this.workspace.createSession(task, profileKey, profile.model);
 
     try {
-      const apiKey = resolveApiKey(profile);
-      if (!apiKey) {
-        const message = `Missing API key for model '${profile.model}'. Set env ${profile.apiKeyEnv} or config.models.${profileKey}.apiKey`;
+      const auth = resolveModelAuth(profile);
+      if (!auth) {
+        const codexHint = profile.model.toLowerCase().includes("codex")
+          ? " or login via Codex CLI (`~/.codex/auth.json`)"
+          : "";
+        const message = `Missing API key for model '${profile.model}'. Set env ${profile.apiKeyEnv} or config.models.${profileKey}.apiKey${codexHint}`;
         this.workspace.finalizeSession(session, false, message);
         this.workspace.appendDailyMemory(profileKey, task, false, message);
         return {
@@ -145,7 +148,10 @@ export class AgentRuntime {
         };
       }
 
-      const model = new ModelClient(profile, apiKey);
+      const model = new ModelClient(profile, auth.apiKey, {
+        baseUrl: auth.baseUrl,
+        preferredMode: auth.preferredMode,
+      });
       const history: string[] = [];
       const traces: StepTrace[] = [];
       const skillsSummary = this.skillLoader.summaryText();

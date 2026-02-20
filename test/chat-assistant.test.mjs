@@ -9,6 +9,21 @@ const require = createRequire(import.meta.url);
 const { loadConfig } = require("../dist/config/index.js");
 const { ChatAssistant } = require("../dist/gateway/chat-assistant.js");
 
+function withTempCodexHome(prefix, fn) {
+  const prev = process.env.CODEX_HOME;
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  process.env.CODEX_HOME = codexHome;
+  try {
+    return fn(codexHome);
+  } finally {
+    if (prev === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = prev;
+    }
+  }
+}
+
 function createAssistant(options = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-chat-"));
   const prev = process.env.OPENPOCKET_HOME;
@@ -62,15 +77,47 @@ test("ChatAssistant decide keeps model task result", async () => {
 });
 
 test("ChatAssistant decide reports missing API key without heuristics", async () => {
-  const assistant = createAssistant();
-  const out = await assistant.decide(3, "hi");
-  assert.equal(out.mode, "chat");
-  assert.equal(out.reason, "no_api_key");
-  assert.match(out.reply, /API key.*not configured/i);
+  await withTempCodexHome("openpocket-codex-empty-", async () => {
+    const assistant = createAssistant();
+    const out = await assistant.decide(3, "hi");
+    assert.equal(out.mode, "chat");
+    assert.equal(out.reason, "no_api_key");
+    assert.match(out.reply, /API key.*not configured/i);
+  });
 });
 
 test("ChatAssistant reply handles missing API key gracefully", async () => {
-  const assistant = createAssistant();
-  const out = await assistant.reply(4, "who are you");
-  assert.match(out, /API key.*not configured/i);
+  await withTempCodexHome("openpocket-codex-empty-", async () => {
+    const assistant = createAssistant();
+    const out = await assistant.reply(4, "who are you");
+    assert.match(out, /API key.*not configured/i);
+  });
+});
+
+test("ChatAssistant decide uses Codex CLI credentials fallback", async () => {
+  await withTempCodexHome("openpocket-codex-auth-", async (codexHome) => {
+    fs.writeFileSync(
+      path.join(codexHome, "auth.json"),
+      JSON.stringify({
+        tokens: {
+          access_token: "codex-access-token",
+          refresh_token: "codex-refresh-token",
+        },
+      }),
+      "utf-8",
+    );
+
+    const assistant = createAssistant();
+    assistant.classifyWithModel = async () => ({
+      mode: "chat",
+      task: "",
+      reply: "",
+      confidence: 0.9,
+      reason: "model_classify",
+    });
+
+    const out = await assistant.decide(5, "hello from codex auth fallback");
+    assert.equal(out.mode, "chat");
+    assert.equal(out.reason, "model_classify");
+  });
 });

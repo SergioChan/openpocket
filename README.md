@@ -308,6 +308,12 @@ export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
 export OPENPOCKET_HOME="$HOME/.openpocket"
 ```
 
+For Codex subscription auth (no `OPENAI_API_KEY`), OpenPocket can reuse Codex CLI credentials for codex models:
+
+- login once with the `codex` CLI
+- OpenPocket reads `$CODEX_HOME/auth.json` (or `~/.codex/auth.json`)
+- on macOS, it also checks the `Codex Auth` keychain entry first
+
 ## CLI Surface
 
 Command prefix by install mode:

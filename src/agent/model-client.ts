@@ -129,9 +129,19 @@ export class ModelClient {
   private readonly profile: ModelProfile;
   private modeHint: "chat" | "responses" | "completions" = "chat";
 
-  constructor(profile: ModelProfile, apiKey: string) {
+  constructor(
+    profile: ModelProfile,
+    apiKey: string,
+    options?: {
+      baseUrl?: string;
+      preferredMode?: "chat" | "responses" | "completions";
+    },
+  ) {
     this.profile = profile;
-    this.client = new OpenAI({ apiKey, baseURL: profile.baseUrl });
+    this.client = new OpenAI({ apiKey, baseURL: options?.baseUrl ?? profile.baseUrl });
+    if (options?.preferredMode) {
+      this.modeHint = options.preferredMode;
+    }
   }
 
   private buildChatRequest(params: {

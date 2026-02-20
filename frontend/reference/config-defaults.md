@@ -180,7 +180,8 @@ Per model profile:
 
 1. use `apiKey` when non-empty
 2. else use env var from `apiKeyEnv`
-3. else key is missing
+3. else for OpenAI codex models, try Codex CLI credentials (`$CODEX_HOME/auth.json` or `~/.codex/auth.json`; macOS keychain `Codex Auth` first)
+4. else key is missing
 
 Missing key causes task start failure with a persisted failed session/memory entry.
 

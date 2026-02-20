@@ -30,6 +30,7 @@ For each model profile:
 
 - Use `models.<name>.apiKey` if non-empty.
 - Else use env var from `models.<name>.apiKeyEnv`.
+- Else, for OpenAI codex models, try Codex CLI credentials (`$CODEX_HOME/auth.json` or `~/.codex/auth.json`; macOS keychain `Codex Auth` is checked first).
 - Else treat key as missing and fail task early.
 
 For human-auth relay:
