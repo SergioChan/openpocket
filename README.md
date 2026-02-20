@@ -250,7 +250,6 @@ npm test
 
 ## Contributing
 
-- Keep code, docs, comments, and tests in English.
 - Prefer behavior-driven changes with matching tests.
 - Document new runtime capabilities under `/frontend` in the relevant hub.
 
