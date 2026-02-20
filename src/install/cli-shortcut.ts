@@ -44,6 +44,17 @@ function defaultCliPath(): string {
   return path.resolve(__dirname, "..", "cli.js");
 }
 
+function defaultShellRcPaths(homeDir: string): string[] {
+  const candidates = [
+    path.join(homeDir, ".zshrc"),
+    path.join(homeDir, ".zprofile"),
+    path.join(homeDir, ".bash_profile"),
+    path.join(homeDir, ".bashrc"),
+    path.join(homeDir, ".profile"),
+  ];
+  return Array.from(new Set(candidates));
+}
+
 export function installCliShortcut(
   options: InstallCliShortcutOptions = {},
 ): InstallCliShortcutResult {
@@ -64,8 +75,7 @@ export function installCliShortcut(
   fs.chmodSync(commandPath, 0o755);
 
   const exportLine = 'export PATH="$HOME/.local/bin:$PATH"';
-  const shellRcPaths =
-    options.shellRcPaths ?? [path.join(homeDir, ".zshrc"), path.join(homeDir, ".bashrc")];
+  const shellRcPaths = options.shellRcPaths ?? defaultShellRcPaths(homeDir);
   const shellRcUpdated: string[] = [];
   for (const rcPath of shellRcPaths) {
     try {

@@ -141,7 +141,7 @@ function openPanelApp(appPath: string, launchArgs: string[] = []): boolean {
     return true;
   }
 
-  const openArgs = ["-g", appPath];
+  const openArgs = [appPath];
   if (launchArgs.length > 0) {
     openArgs.push("--args", ...launchArgs);
   }
@@ -504,12 +504,25 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
   await runGatewayLoop({
     start: async () => {
       const cfg = loadConfig(configPath);
+      const shortcut = installCliShortcut();
       const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
       const hasToken = Boolean(cfg.telegram.botToken.trim() || process.env[envName]?.trim());
       const totalSteps = 6;
 
       printStartupHeader(cfg);
       printStartupStep(1, totalSteps, "Load config", "ok");
+      if (shortcut.shellRcUpdated.length > 0 || !shortcut.binDirAlreadyInPath) {
+        // eslint-disable-next-line no-console
+        console.log(`[OpenPocket][gateway-start] CLI launcher ensured: ${shortcut.commandPath}`);
+        if (shortcut.shellRcUpdated.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[OpenPocket][gateway-start] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
+        }
+        // eslint-disable-next-line no-console
+        console.log(
+          "[OpenPocket][gateway-start] Reload shell profile (or open a new terminal) before using `openpocket` without `./`.",
+        );
+      }
       if (!hasToken) {
         printStartupStep(2, totalSteps, "Validate Telegram token", "failed");
         throw new Error(
@@ -619,9 +632,7 @@ function installCliShortcutOnFirstOnboard(cfg: ReturnType<typeof loadConfig>): v
   }
   if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
     // eslint-disable-next-line no-console
-    console.log(
-      "[OpenPocket][onboard] Restart shell (or `source ~/.zshrc` / `source ~/.bashrc`) to use `openpocket` directly.",
-    );
+    console.log("[OpenPocket][onboard] Reload shell profile (or open a new terminal) to use `openpocket` directly.");
   }
 }
 
@@ -642,7 +653,7 @@ async function runInstallCliCommand(): Promise<number> {
   }
   if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
     // eslint-disable-next-line no-console
-    console.log("Restart shell (or `source ~/.zshrc` / `source ~/.bashrc`) to use `openpocket` directly.");
+    console.log("Reload shell profile (or open a new terminal) to use `openpocket` directly.");
   }
   return 0;
 }
