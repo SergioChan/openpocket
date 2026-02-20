@@ -285,6 +285,10 @@ function makeConsolePrompter(): SetupPrompter {
     return rl.question(message);
   }
 
+  function sectionHeader(title: string): string {
+    return `\n${colorize("===", ANSI_DIM, useColor)} ${colorize(title, ANSI_BOLD_CYAN, useColor)} ${colorize("===", ANSI_DIM, useColor)}`;
+  }
+
   async function selectByArrowKeys<T extends string>(
     message: string,
     options: SelectOption<T>[],
@@ -319,16 +323,17 @@ function makeConsolePrompter(): SetupPrompter {
       }
       const lines: string[] = [];
       lines.push("");
-      lines.push(truncateForTerminal(message, columns - 1));
+      lines.push(colorize(truncateForTerminal(`[SELECT] ${message}`, columns - 1), ANSI_BOLD_CYAN, useColor));
       for (let i = 0; i < options.length; i += 1) {
         const option = options[i];
         const selected = i === index;
+        const prefix = selected ? ">>" : "  ";
         const hint = option.hint ? ` (${option.hint})` : "";
-        const rawLine = `  ${selected ? ">" : " "} ${option.label}${hint}`;
+        const rawLine = `  ${prefix} ${option.label}${hint}`;
         const clipped = truncateForTerminal(rawLine, columns - 1);
         lines.push(selected ? colorize(clipped, ANSI_BOLD_GREEN, useColor) : clipped);
       }
-      lines.push(truncateForTerminal("Use Up/Down arrows and Enter to select.", columns - 1));
+      lines.push(colorize("[INPUT] Use Up/Down arrows, then Enter.", ANSI_BOLD_YELLOW, useColor));
       output.write(`${lines.join("\n")}\n`);
       renderedLines = lines.length;
     };
@@ -386,19 +391,38 @@ function makeConsolePrompter(): SetupPrompter {
   return {
     intro: async (title: string) => {
       // eslint-disable-next-line no-console
-      console.log(colorize(`[OpenPocket] ${title}`, ANSI_BOLD_GREEN, useColor));
+      console.log(`${colorize("[OpenPocket]", ANSI_BOLD_GREEN, useColor)} ${title}`);
+      // eslint-disable-next-line no-console
+      console.log(
+        [
+          "",
+          "Steps:",
+          "  1) Consent",
+          "  2) Model selection",
+          "  3) API key setup",
+          "  4) Emulator + Play Store check",
+        ].join("\n"),
+      );
     },
     note: async (title: string, body: string) => {
+      const normalized = body
+        .split("\n")
+        .map((line) => (line.trim() ? `  ${line}` : ""))
+        .join("\n");
       // eslint-disable-next-line no-console
-      console.log(`\n${colorize(`[${title}]`, ANSI_BOLD_CYAN, useColor)}`);
+      console.log(sectionHeader(title));
       // eslint-disable-next-line no-console
-      console.log(body);
+      console.log(normalized);
     },
     select: async (message, options, initialValue) => selectByArrowKeys(message, options, initialValue),
     confirm: async (message, initialValue = false) => {
       const defaultHint = initialValue ? "Y/n" : "y/N";
       while (true) {
-        const raw = (await ask(`${message} [${defaultHint}]: `)).trim().toLowerCase();
+        const raw = (
+          await ask(`\n${colorize("[INPUT]", ANSI_BOLD_YELLOW, useColor)} ${message} [${defaultHint}]: `)
+        )
+          .trim()
+          .toLowerCase();
         if (!raw) {
           return initialValue;
         }
@@ -415,7 +439,7 @@ function makeConsolePrompter(): SetupPrompter {
     text: async (message, initialValue, validate) => {
       while (true) {
         const initSuffix = initialValue ? ` [${initialValue}]` : "";
-        const raw = (await ask(`${message}${initSuffix}: `)).trim();
+        const raw = (await ask(`\n${colorize("[INPUT]", ANSI_BOLD_YELLOW, useColor)} ${message}${initSuffix}: `)).trim();
         const finalValue = raw || initialValue || "";
         const err = validate ? validate(finalValue) : null;
         if (!err) {
@@ -426,7 +450,7 @@ function makeConsolePrompter(): SetupPrompter {
       }
     },
     pause: async (message) => {
-      await ask(`${message}\nPress Enter to continue...`);
+      await ask(`\n${message}\n${colorize("[INPUT]", ANSI_BOLD_YELLOW, useColor)} Press Enter to continue...`);
     },
     outro: async (message: string) => {
       // eslint-disable-next-line no-console
@@ -463,7 +487,7 @@ async function runConsentStep(prompter: SetupPrompter, state: SetupState): Promi
   );
 
   const accepted = await prompter.confirm(
-    "I have read and accept the terms above, and allow OpenPocket to run local automation.",
+    "Accept terms and continue?",
     false,
   );
   if (!accepted) {
