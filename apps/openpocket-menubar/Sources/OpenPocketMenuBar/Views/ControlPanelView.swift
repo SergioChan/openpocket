@@ -243,7 +243,9 @@ private struct RuntimeTabView: View {
                                                     handlePreviewTap(
                                                         location: value.location,
                                                         containerSize: geometry.size,
-                                                        imageSize: image.size
+                                                        imageSize: controller.emulatorPreviewPixelSize == .zero
+                                                            ? image.size
+                                                            : controller.emulatorPreviewPixelSize
                                                     )
                                                 }
                                         )

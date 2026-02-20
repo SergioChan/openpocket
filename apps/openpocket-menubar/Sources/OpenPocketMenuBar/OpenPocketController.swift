@@ -18,6 +18,7 @@ final class OpenPocketController: ObservableObject {
     @Published var gatewayRunning: Bool = false
     @Published var emulatorStatusText: String = "Unknown"
     @Published var emulatorPreviewImage: NSImage?
+    @Published var emulatorPreviewPixelSize: CGSize = .zero
     @Published var emulatorPreviewStatusText: String = "No preview captured yet."
     @Published var emulatorPreviewAutoRefresh: Bool = false
     @Published var emulatorInputText: String = ""
@@ -610,10 +611,20 @@ final class OpenPocketController: ObservableObject {
                 guard self.fm.fileExists(atPath: previewPath.path),
                       let image = NSImage(contentsOf: previewPath) else {
                     self.emulatorPreviewStatusText = "Preview image is unavailable."
+                    self.emulatorPreviewPixelSize = .zero
                     return
                 }
 
                 self.emulatorPreviewImage = image
+                if let data = try? Data(contentsOf: previewPath),
+                   let bitmap = NSBitmapImageRep(data: data) {
+                    self.emulatorPreviewPixelSize = CGSize(
+                        width: CGFloat(bitmap.pixelsWide),
+                        height: CGFloat(bitmap.pixelsHigh)
+                    )
+                } else {
+                    self.emulatorPreviewPixelSize = image.size
+                }
                 let formatter = DateFormatter()
                 formatter.dateFormat = "HH:mm:ss"
                 self.emulatorPreviewStatusText = "Updated at \(formatter.string(from: Date()))"
