@@ -5,45 +5,92 @@
 [![Runtime](https://img.shields.io/badge/runtime-Local--emulator--first-0f172a.svg)](#architecture)
 [![Docs](https://img.shields.io/badge/docs-VitePress-0a9396.svg)](./frontend/index.md)
 
-OpenPocket is a local emulator-first phone-use agent runtime for Android automation.
+An Intelligent Phone That Never Sleeps.  
+OpenPocket runs an always-on agent phone locally, with privacy first.
 
-It combines a practical CLI, a Telegram gateway, model-driven planning, and adb-based action execution with auditable persistence:
+## Quick Start
 
-`Telegram / CLI -> Gateway -> Agent Runtime -> Model Client -> adb -> Android Emulator`
+### 1. Prerequisites
 
-## Why OpenPocket
+- Node.js 20+
+- Android SDK Emulator + platform-tools (`adb`)
+- At least one Android AVD
+- API key for your selected model profile
+- Telegram bot token (for gateway mode)
 
-- **No main-phone resource usage**: tasks run on a local emulator, not on your physical phone.
-- **Local execution boundary**: device control stays local through adb instead of a hosted cloud phone service.
-- **Auditable runs**: sessions, daily memory, screenshots, and script artifacts are persisted.
-- **Dual control modes**: direct local emulator control and agent-driven control in one runtime.
-- **Provider flexibility**: model endpoint fallback and profile-based config.
-- **Operator-friendly**: setup wizard, heartbeat, cron scheduler, and controlled run-loop.
-- **macOS control panel**: optional native menu bar app for operational control.
+### 2. Install
 
-## Who It Is For
+#### Option A: npm package (recommended for end users)
 
-OpenPocket targets both developers and everyday users who need repeatable mobile task execution.
+```bash
+npm install -g openpocket
+openpocket onboard
+openpocket gateway start
+```
 
-Representative scenarios:
+#### Option B: source clone (recommended for contributors)
 
-- shopping workflows
-- entertainment app routines
-- social interaction support
-- recurring mobile actions that benefit from automation
+```bash
+git clone git@github.com:SergioChan/openpocket.git
+cd openpocket
+npm install
+npm run build
+./openpocket onboard
+./openpocket gateway start
+```
 
-Near-term roadmap includes remote phone access to the local runtime for human-in-the-loop control.
+### 3. What `onboard` configures
+
+The onboarding wizard is interactive and persists progress to:
+
+- `~/.openpocket/state/onboarding.json`
+
+It walks through:
+
+1. User consent for local runtime and data boundaries.
+2. Model profile selection and API key source (env or local config).
+3. Telegram setup (token source and chat allowlist policy).
+4. Emulator startup and manual Play Store/Gmail verification.
+5. Human-auth bridge mode:
+   - disabled
+   - local LAN relay
+   - local relay + ngrok tunnel (remote approval link)
+
+### 4. Run your first task
+
+```bash
+openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
+```
+
+Or send plain text directly to your Telegram bot after `gateway start`.
 
 ## Key Capabilities
 
-- Emulator control: `start`, `stop`, `status`, `list-avds`, `hide`, `show`, `screenshot`
-- Agent actions: `tap`, `swipe`, `type`, `keyevent`, `launch_app`, `shell`, `run_script`, `request_human_auth`, `wait`, `finish`
-- Gateway modes: Telegram polling, chat/task routing, `/stop`, `/reset`, `/restart`, `/cronrun`, `/run`, `/auth`
-- Telegram command menu: auto-configured on `gateway start` (`setMyCommands` + menu button)
-- Human-auth connectivity: local self-hosted relay with optional ngrok tunnel auto-start in gateway
-- Runtime services: heartbeat monitoring, cron job execution, signal-aware gateway restarts
-- Script safety: allowlist, deny patterns, timeout, output limits, and run archives
-- Workspace memory: per-task session files + daily memory timeline
+- **Local emulator-first runtime**: execution stays on your machine via adb, not a hosted cloud phone.
+- **Always-on agent loop**: model-driven planning + action execution over Android UI primitives.
+- **Remote authorization proxy (human-auth relay)**:
+  - agent can emit `request_human_auth` when blocked by real-device checks
+  - gateway sends one-time approval link and manual fallback commands
+  - local relay can auto-start with optional ngrok tunnel
+- **Dual control modes**: direct user control and agent control on the same emulator runtime.
+- **Production-style gateway operations**: Telegram command menu bootstrap, heartbeat, cron jobs, restart loop, safe stop.
+- **Script safety controls**: allowlist + deny patterns + timeout + output caps + run artifacts.
+- **Auditable persistence**: task sessions, daily memory, screenshots, and script archives.
+
+## Product Scenarios
+
+OpenPocket is built for both developers and everyday users.
+
+Typical scenarios include:
+
+- shopping flows across mobile apps
+- entertainment routines and repetitive app navigation
+- social task assistance with human-in-the-loop approvals
+- recurring mobile actions that benefit from automation and traceability
+
+## Runtime Flow
+
+`Telegram / CLI -> Gateway -> Agent Runtime -> Model Client -> adb -> Android Emulator`
 
 ## Architecture
 
@@ -59,83 +106,8 @@ flowchart LR
   W --> SS["sessions/*.md"]
   W --> MM["memory/YYYY-MM-DD.md"]
   W --> RR["scripts/runs/*"]
-  RP["User Phone (Upcoming Remote Control)"] -.-> G
+  RP["User Phone (Human Auth Link)"] -.-> G
 ```
-
-## Quick Start
-
-### 1. Prerequisites
-
-- Node.js 20+
-- Android SDK emulator + platform-tools (`adb`)
-- At least one Android AVD
-- Model API key (for your selected model profile)
-- Telegram bot token (if using gateway)
-
-### 2. Option A: Use the npm package (no source code required)
-
-```bash
-npm install -g openpocket
-openpocket onboard
-```
-
-If you use the native macOS panel, install the release package from:
-
-- [OpenPocket Releases](https://github.com/SergioChan/openpocket/releases)
-
-Then start the panel:
-
-```bash
-openpocket panel start
-```
-
-### 3. Option B: Use a local source clone (for contributors)
-
-```bash
-git clone git@github.com:SergioChan/openpocket.git
-cd openpocket
-npm install
-npm run build
-./openpocket onboard
-```
-
-`./openpocket` runs `dist/cli.js` when present and falls back to `tsx src/cli.ts` in local dev installs.
-
-`openpocket onboard` automatically verifies Android runtime dependencies:
-
-1. If local tools are already installed, dependency installation is skipped.
-2. If tools are missing on macOS, OpenPocket tries automatic installation (Homebrew, Java 17+ runtime, Android SDK packages, and default AVD bootstrap).
-3. If an existing AVD is already present, OpenPocket reuses it and skips heavy system-image bootstrap.
-
-You can skip this step in CI/tests with:
-
-```bash
-export OPENPOCKET_SKIP_ENV_SETUP=1
-```
-
-### 4. Start runtime
-
-For npm package install:
-
-```bash
-openpocket emulator start
-openpocket gateway start
-```
-
-For local source clone:
-
-```bash
-./openpocket emulator start
-./openpocket gateway start
-```
-
-### 5. Optional: install a user-local command
-
-```bash
-./openpocket install-cli
-```
-
-This installs `~/.local/bin/openpocket` and updates shell rc files when needed.
 
 ## Configuration
 
@@ -154,6 +126,8 @@ export OPENAI_API_KEY="<your_openai_key>"
 export OPENROUTER_API_KEY="<your_openrouter_key>"
 export AUTOGLM_API_KEY="<your_autoglm_key>"
 export TELEGRAM_BOT_TOKEN="<your_telegram_bot_token>"
+export OPENPOCKET_HUMAN_AUTH_KEY="<your_human_auth_relay_key>"
+export NGROK_AUTHTOKEN="<your_ngrok_token>"
 export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
 export OPENPOCKET_HOME="$HOME/.openpocket"
 ```
@@ -177,10 +151,11 @@ Command prefix by install mode:
 ./openpocket telegram setup
 ./openpocket skills list
 ./openpocket gateway start
+./openpocket human-auth-relay start
 ./openpocket panel start
 ```
 
-`./openpocket human-auth-relay start ...` remains available as an optional standalone debug mode.
+`human-auth-relay start` is mainly a standalone debug mode. In normal gateway usage, local relay/tunnel startup is handled automatically from config.
 
 Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
@@ -189,6 +164,21 @@ Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 1. Open an already-installed panel app from `/Applications` or `~/Applications`.
 2. If running from a source clone with `apps/openpocket-menubar`, build and launch from source.
 3. If neither is available (typical npm install), open GitHub Releases and guide PKG installation.
+
+## Human Authorization Modes
+
+OpenPocket supports three human-auth configurations:
+
+1. **Disabled**: no relay, no remote approval.
+2. **LAN relay**: local relay exposed on LAN for phone access in the same network.
+3. **Relay + ngrok**: gateway auto-starts local relay and ngrok, then issues public approval links.
+
+When the agent emits `request_human_auth`, Telegram users can:
+
+- tap the web approval link
+- or run fallback commands:
+  - `/auth approve <request-id> [note]`
+  - `/auth reject <request-id> [note]`
 
 ## Documentation
 
