@@ -75,6 +75,46 @@ test("init does not install CLI shortcut implicitly", () => {
   assert.equal(fs.existsSync(path.join(shellHome, ".bashrc")), false, "init should not touch .bashrc");
 });
 
+test("onboard installs CLI launcher once on first run", () => {
+  const runtimeHome = makeHome("openpocket-ts-onboard-runtime-");
+  const shellHome = makeHome("openpocket-ts-onboard-shell-");
+
+  const init = runCli(["init"], {
+    OPENPOCKET_HOME: runtimeHome,
+    HOME: shellHome,
+  });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const firstRun = runCli(["onboard"], {
+    OPENPOCKET_HOME: runtimeHome,
+    HOME: shellHome,
+  });
+  assert.equal(firstRun.status, 1);
+  assert.match(firstRun.stderr, /interactive terminal/i);
+  assert.match(firstRun.stdout, /\[OpenPocket\]\[onboard\] CLI launcher installed:/);
+
+  const commandPath = path.join(shellHome, ".local", "bin", "openpocket");
+  const markerPath = path.join(runtimeHome, "state", "cli-shortcut.json");
+  assert.equal(fs.existsSync(commandPath), true, "onboard should install CLI launcher on first run");
+  assert.equal(fs.existsSync(markerPath), true, "onboard should persist CLI shortcut marker on first run");
+
+  const marker = JSON.parse(fs.readFileSync(markerPath, "utf-8"));
+  assert.equal(typeof marker.installedAt, "string");
+  assert.equal(marker.commandPath, commandPath);
+
+  const secondRun = runCli(["onboard"], {
+    OPENPOCKET_HOME: runtimeHome,
+    HOME: shellHome,
+  });
+  assert.equal(secondRun.status, 1);
+  assert.match(secondRun.stderr, /interactive terminal/i);
+  assert.equal(
+    secondRun.stdout.includes("[OpenPocket][onboard] CLI launcher installed:"),
+    false,
+    "onboard should skip CLI launcher install after marker exists",
+  );
+});
+
 test("legacy snake_case config is migrated to camelCase by init", () => {
   const home = makeHome("openpocket-ts-migrate-");
   const cfgPath = path.join(home, "config.json");

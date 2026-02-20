@@ -590,8 +590,50 @@ async function runBootstrapCommand(configPath: string | undefined): Promise<Retu
   return cfg;
 }
 
+function shortcutMarkerPath(cfg: ReturnType<typeof loadConfig>): string {
+  return path.join(cfg.stateDir, "cli-shortcut.json");
+}
+
+function installCliShortcutOnFirstOnboard(cfg: ReturnType<typeof loadConfig>): void {
+  const markerPath = shortcutMarkerPath(cfg);
+  if (fs.existsSync(markerPath)) {
+    return;
+  }
+
+  const shortcut = installCliShortcut();
+  fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+  fs.writeFileSync(
+    markerPath,
+    `${JSON.stringify(
+      {
+        installedAt: new Date().toISOString(),
+        commandPath: shortcut.commandPath,
+        binDir: shortcut.binDir,
+        shellRcUpdated: shortcut.shellRcUpdated,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf-8",
+  );
+
+  // eslint-disable-next-line no-console
+  console.log(`[OpenPocket][onboard] CLI launcher installed: ${shortcut.commandPath}`);
+  if (shortcut.shellRcUpdated.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][onboard] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
+  }
+  if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      "[OpenPocket][onboard] Restart shell (or `source ~/.zshrc` / `source ~/.bashrc`) to use `openpocket` directly.",
+    );
+  }
+}
+
 async function runOnboardCommand(configPath: string | undefined): Promise<number> {
   const cfg = await runBootstrapCommand(configPath);
+  installCliShortcutOnFirstOnboard(cfg);
   await runSetupWizard(cfg);
   return 0;
 }
