@@ -145,8 +145,24 @@ function openPanelApp(appPath: string, launchArgs: string[] = []): boolean {
   if (launchArgs.length > 0) {
     openArgs.push("--args", ...launchArgs);
   }
-  const result = spawnSync("/usr/bin/open", openArgs, { stdio: "ignore" });
-  return (result.status ?? 1) === 0;
+  const result = spawnSync("/usr/bin/open", openArgs, { encoding: "utf-8", stdio: "pipe" });
+  if ((result.status ?? 1) !== 0) {
+    const detail = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    // eslint-disable-next-line no-console
+    console.error(`[OpenPocket][panel] /usr/bin/open failed (exit ${result.status}): ${detail || "(no output)"}`);
+    return false;
+  }
+
+  // /usr/bin/open returns immediately. Wait a moment and verify the process actually started.
+  if (executable) {
+    spawnSync("/bin/sleep", ["1.5"]);
+    if (!panelProcessRunning(executable)) {
+      // eslint-disable-next-line no-console
+      console.error("[OpenPocket][panel] Panel app was launched but the process is no longer running. It may have crashed at startup.");
+      return false;
+    }
+  }
+  return true;
 }
 
 function openReleasePage(url: string): void {
