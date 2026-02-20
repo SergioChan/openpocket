@@ -25,7 +25,7 @@ final class RuntimeBridge {
             return
         }
 
-        let (execPath, args) = try resolveOpendroidExecutable(workingDir: workingDir)
+        let (execPath, args) = try resolveOpenPocketExecutable(workingDir: workingDir)
         let process = Process()
         process.executableURL = execPath
         process.arguments = args + ["gateway", "start"]
@@ -74,7 +74,7 @@ final class RuntimeBridge {
 
     func runCommand(workingDir: URL, args: [String], timeoutSec: Int = 120) -> CommandResult {
         do {
-            let (execPath, execArgs) = try resolveOpendroidExecutable(workingDir: workingDir)
+            let (execPath, execArgs) = try resolveOpenPocketExecutable(workingDir: workingDir)
             let process = Process()
             process.executableURL = execPath
             process.arguments = execArgs + args
@@ -124,26 +124,104 @@ final class RuntimeBridge {
         }
     }
 
-    private func resolveOpendroidExecutable(workingDir: URL) throws -> (URL, [String]) {
-        let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        let candidates = envPath
-            .split(separator: ":")
-            .map(String.init)
-            .map { URL(fileURLWithPath: $0).appendingPathComponent("openpocket") }
-
+    private func resolveOpenPocketExecutable(workingDir: URL) throws -> (URL, [String]) {
         let fm = FileManager.default
-        if let found = candidates.first(where: { fm.isExecutableFile(atPath: $0.path) }) {
-            return (found, [])
+        let env = ProcessInfo.processInfo.environment
+        var searched: [String] = []
+
+        func trimmedEnv(_ name: String) -> String? {
+            let raw = env[name]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? nil : raw
         }
 
-        let repoRoot = workingDir
-        let distCli = repoRoot.appendingPathComponent("dist/cli.js")
-        if fm.fileExists(atPath: distCli.path) {
-            return (URL(fileURLWithPath: "/usr/bin/env"), ["node", distCli.path])
+        func resolvePath(_ raw: String) -> String {
+            if raw.hasPrefix("~/") {
+                return (raw as NSString).expandingTildeInPath
+            }
+            return raw
+        }
+
+        func appendUnique(_ value: String, to list: inout [String]) {
+            if !list.contains(value) {
+                list.append(value)
+            }
+        }
+
+        func pickExecutable(_ rawPath: String?) -> URL? {
+            guard let rawPath else {
+                return nil
+            }
+            let resolved = resolvePath(rawPath)
+            appendUnique(resolved, to: &searched)
+            if fm.isExecutableFile(atPath: resolved) {
+                return URL(fileURLWithPath: resolved)
+            }
+            return nil
+        }
+
+        func pickNodeScript(_ rawPath: String?) -> (URL, [String])? {
+            guard let rawPath else {
+                return nil
+            }
+            let resolved = resolvePath(rawPath)
+            appendUnique(resolved, to: &searched)
+            guard fm.fileExists(atPath: resolved) else {
+                return nil
+            }
+            return (URL(fileURLWithPath: "/usr/bin/env"), ["node", resolved])
+        }
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let envRepoRoot = trimmedEnv("OPENPOCKET_REPO_ROOT")
+        let envCliPath = trimmedEnv("OPENPOCKET_CLI_PATH")
+
+        if let explicit = pickExecutable(envCliPath) {
+            return (explicit, [])
+        }
+        if let explicitNode = pickNodeScript(envCliPath), envCliPath?.lowercased().hasSuffix(".js") == true {
+            return explicitNode
+        }
+
+        if let localLauncher = pickExecutable(workingDir.appendingPathComponent("openpocket").path) {
+            return (localLauncher, [])
+        }
+        if let repoRoot = envRepoRoot {
+            let repoLauncher = URL(fileURLWithPath: resolvePath(repoRoot)).appendingPathComponent("openpocket").path
+            if let launcher = pickExecutable(repoLauncher) {
+                return (launcher, [])
+            }
+        }
+
+        var searchDirs: [String] = []
+        let envPath = env["PATH"] ?? ""
+        for segment in envPath.split(separator: ":").map(String.init) where !segment.isEmpty {
+            appendUnique(segment, to: &searchDirs)
+        }
+        ["/opt/homebrew/bin", "/usr/local/bin", "\(homeDir)/.local/bin", "\(homeDir)/bin"]
+            .forEach { appendUnique($0, to: &searchDirs) }
+
+        for dir in searchDirs {
+            if let found = pickExecutable(URL(fileURLWithPath: resolvePath(dir)).appendingPathComponent("openpocket").path) {
+                return (found, [])
+            }
+        }
+
+        var distCandidates: [String] = [workingDir.appendingPathComponent("dist/cli.js").path]
+        if let repoRoot = envRepoRoot {
+            distCandidates.append(
+                URL(fileURLWithPath: resolvePath(repoRoot))
+                    .appendingPathComponent("dist/cli.js")
+                    .path
+            )
+        }
+        for distPath in distCandidates {
+            if let nodeRunner = pickNodeScript(distPath) {
+                return nodeRunner
+            }
         }
 
         throw NSError(domain: "OpenPocketMenuBar", code: 1, userInfo: [
-            NSLocalizedDescriptionKey: "Could not find `openpocket` in PATH and `dist/cli.js` was not found at \(distCli.path)."
+            NSLocalizedDescriptionKey: "Could not resolve OpenPocket CLI executable. Checked: \(searched.joined(separator: ", "))"
         ])
     }
 }

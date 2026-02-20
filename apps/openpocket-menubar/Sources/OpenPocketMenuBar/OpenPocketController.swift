@@ -45,14 +45,7 @@ final class OpenPocketController: ObservableObject {
     let repoRoot: URL
 
     init() {
-        let fallbackRepo = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let packageCwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let detected = [packageCwd, fallbackRepo].first(where: {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent("package.json").path)
-        }) ?? packageCwd
-        repoRoot = detected
+        repoRoot = Self.detectRepoRoot()
 
         let loadedOnboarding = store.loadOnboardingState()
         onboarding = loadedOnboarding
@@ -77,6 +70,56 @@ final class OpenPocketController: ObservableObject {
         }
 
         loadAll()
+    }
+
+    private static func detectRepoRoot() -> URL {
+        let fm = FileManager.default
+        let env = ProcessInfo.processInfo.environment
+
+        func trimmed(_ value: String?) -> String? {
+            let text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return text.isEmpty ? nil : text
+        }
+
+        func expanded(_ value: String) -> String {
+            (value as NSString).expandingTildeInPath
+        }
+
+        func hasPackageJson(_ url: URL) -> Bool {
+            fm.fileExists(atPath: url.appendingPathComponent("package.json").path)
+        }
+
+        var candidates: [URL] = []
+
+        if let repo = trimmed(env["OPENPOCKET_REPO_ROOT"]) {
+            candidates.append(URL(fileURLWithPath: expanded(repo), isDirectory: true))
+        }
+
+        if let cliPathRaw = trimmed(env["OPENPOCKET_CLI_PATH"]) {
+            let cliPath = expanded(cliPathRaw)
+            var cliURL = URL(fileURLWithPath: cliPath)
+            if cliPath.lowercased().hasSuffix("/dist/cli.js") {
+                cliURL.deleteLastPathComponent() // dist
+                cliURL.deleteLastPathComponent() // repo root
+                candidates.append(cliURL)
+            } else if URL(fileURLWithPath: cliPath).lastPathComponent == "openpocket" {
+                candidates.append(URL(fileURLWithPath: cliPath).deletingLastPathComponent())
+            }
+        }
+
+        var cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        for _ in 0..<4 {
+            candidates.append(cwd)
+            cwd.deleteLastPathComponent()
+        }
+
+        for candidate in candidates {
+            if hasPackageJson(candidate) {
+                return candidate
+            }
+        }
+
+        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     }
 
     func loadAll() {
@@ -552,6 +595,9 @@ final class OpenPocketController: ObservableObject {
 
                 guard result.ok else {
                     self.emulatorStatusText = "Unknown"
+                    if !result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.appendLog("[status] \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
                     return
                 }
 
