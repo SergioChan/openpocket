@@ -514,6 +514,10 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       if (shortcut.shellRcUpdated.length > 0 || !shortcut.binDirAlreadyInPath) {
         // eslint-disable-next-line no-console
         console.log(`[OpenPocket][gateway-start] CLI launcher ensured: ${shortcut.commandPath}`);
+        if (shortcut.preferredPathCommandPath) {
+          // eslint-disable-next-line no-console
+          console.log(`[OpenPocket][gateway-start] Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
+        }
         if (shortcut.shellRcUpdated.length > 0) {
           // eslint-disable-next-line no-console
           console.log(`[OpenPocket][gateway-start] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
@@ -626,6 +630,10 @@ function installCliShortcutOnFirstOnboard(cfg: ReturnType<typeof loadConfig>): v
 
   // eslint-disable-next-line no-console
   console.log(`[OpenPocket][onboard] CLI launcher installed: ${shortcut.commandPath}`);
+  if (shortcut.preferredPathCommandPath) {
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][onboard] Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
+  }
   if (shortcut.shellRcUpdated.length > 0) {
     // eslint-disable-next-line no-console
     console.log(`[OpenPocket][onboard] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
@@ -647,6 +655,10 @@ async function runInstallCliCommand(): Promise<number> {
   const shortcut = installCliShortcut();
   // eslint-disable-next-line no-console
   console.log(`CLI launcher installed: ${shortcut.commandPath}`);
+  if (shortcut.preferredPathCommandPath) {
+    // eslint-disable-next-line no-console
+    console.log(`Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
+  }
   if (shortcut.shellRcUpdated.length > 0) {
     // eslint-disable-next-line no-console
     console.log(`Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
