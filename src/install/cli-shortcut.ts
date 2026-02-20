@@ -73,6 +73,10 @@ function installPreferredPathLauncher(
   launcher: string,
   homeBinDir: string,
 ): string | null {
+  if (process.env.OPENPOCKET_SKIP_ENV_SETUP === "1" || process.env.OPENPOCKET_SKIP_GLOBAL_PATH_INSTALL === "1") {
+    return null;
+  }
+
   const preferred = ["/usr/local/bin", "/opt/homebrew/bin"];
   const pathEntries = (process.env.PATH ?? "")
     .split(path.delimiter)
