@@ -188,12 +188,8 @@ function fetchLatestGithubReleaseAssets(releaseUrl: string): GithubReleaseAsset[
 }
 
 function pickPanelReleaseAsset(assets: GithubReleaseAsset[]): GithubReleaseAsset | null {
-  const zipAssets = assets.filter((asset) => asset.name.toLowerCase().endsWith(".zip"));
-  if (zipAssets.length === 0) {
-    return null;
-  }
-
-  const scored = zipAssets
+  const scored = assets
+    .filter((asset) => asset.name.toLowerCase().endsWith(".zip"))
     .map((asset) => {
       const lower = asset.name.toLowerCase();
       let score = 0;
@@ -209,8 +205,14 @@ function pickPanelReleaseAsset(assets: GithubReleaseAsset[]): GithubReleaseAsset
       if (lower.includes("linux") || lower.includes("windows") || lower.includes("win")) {
         score -= 10;
       }
-      return { asset, score };
+      return {
+        asset,
+        score,
+        hasPanelName: lower.includes("panel") || lower.includes("menubar"),
+        hasMacHint: lower.includes("mac") || lower.includes("darwin") || lower.includes("osx"),
+      };
     })
+    .filter((item) => item.hasPanelName && item.hasMacHint)
     .sort((a, b) => b.score - a.score);
 
   return scored[0]?.asset ?? null;
@@ -926,12 +928,13 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
 
   const installedApp = resolveInstalledPanelApp();
   if (installedApp) {
-    if (!openPanelApp(installedApp)) {
-      throw new Error(`Failed to open installed panel app: ${installedApp}`);
+    if (openPanelApp(installedApp)) {
+      // eslint-disable-next-line no-console
+      console.log(`OpenPocket Control Panel opened: ${installedApp}`);
+      return 0;
     }
     // eslint-disable-next-line no-console
-    console.log(`OpenPocket Control Panel opened: ${installedApp}`);
-    return 0;
+    console.log(`[OpenPocket][panel] Installed app could not be opened. Reinstalling: ${installedApp}`);
   }
 
   const releaseUrl = getPanelReleaseUrl();
