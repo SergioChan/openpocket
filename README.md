@@ -8,6 +8,33 @@
 An Intelligent Phone That Never Sleeps.  
 OpenPocket runs an always-on agent phone locally, with privacy first.
 
+## Current Development Progress
+
+Status snapshot (February 2026):
+
+### Implemented and usable today
+
+- Local Android emulator runtime driven by CLI + Telegram gateway.
+- Interactive onboarding (`openpocket onboard`) for consent, model/API key setup, Telegram setup, emulator boot, and human-auth mode selection.
+- Human authorization relay bridge with:
+  - in-chat manual fallback (`/auth approve|reject`)
+  - one-time web approval links
+  - optional local ngrok tunnel auto-start
+- Script execution safety controls (allowlist, deny patterns, timeout, output limits).
+- Workspace persistence for sessions, daily memory logs, screenshots, and script run artifacts.
+- Gateway operational loop with heartbeat, cron triggers, and restart handling.
+
+### In progress and partially complete
+
+- Human-auth remote flow reliability and UX hardening.
+- Runtime architecture and docs stabilization for broader open-source adoption.
+
+### Priority gaps to close
+
+- A stronger long-horizon memory system.
+- Phone-use-specific prompt engineering and evaluation.
+- Cross-platform runtime/panel support beyond macOS-first workflows.
+
 ## Quick Start
 
 ### 1. Prerequisites
@@ -76,6 +103,138 @@ Or send plain text directly to your Telegram bot after `gateway start`.
 - **Production-style gateway operations**: Telegram command menu bootstrap, heartbeat, cron jobs, restart loop, safe stop.
 - **Script safety controls**: allowlist + deny patterns + timeout + output caps + run artifacts.
 - **Auditable persistence**: task sessions, daily memory, screenshots, and script archives.
+
+## Roadmap
+
+### R1. Memory System (Core Intelligence)
+
+Build a robust memory layer for long-horizon tasks:
+
+- semantic retrieval and episodic memory
+- memory compaction/summarization
+- conflict resolution and freshness policies
+- memory-aware planning loops
+
+### R2. Prompt Engineering for Phone-Use
+
+Establish a production prompt stack tailored to mobile workflows:
+
+- phone-specific action planning prompts
+- app-state-aware prompting templates
+- failure-recovery prompting
+- prompt eval suite and regression benchmarks
+
+### R3. Multi-OS Runtime and Control Surface
+
+Expand from macOS-first to full platform support:
+
+- Linux (Ubuntu and headless server scenarios)
+- Windows support
+- dashboard portability strategy:
+  - primary target: local/remote Web UI
+  - fallback: native OS-specific control apps only when needed
+
+### R4. Real Device Authorization + Permission Isolation
+
+Strengthen system-level authorization architecture:
+
+- iOS and Android real-device compatibility
+- cross-device authorization where real phone and emulator differ
+- secure remote port authorization flow
+- strict permission boundary between real phone and emulator runtime
+
+### R5. Skill System Maturity
+
+Evolve from static skills to dynamic capability generation:
+
+- agent-authored skills/code generation
+- safe execution sandbox and policy gates
+- skill validation, caching, and reuse
+
+### R6. Multi-Channel Control Integrations
+
+Go beyond Telegram and support more communication entry points:
+
+- international platforms: Discord, WhatsApp, iMessage, Messenger
+- China-focused platforms: WeChat, QQ
+- unified channel abstraction for message, auth, and task control
+
+### R7. Account Login UX and Session Authorization
+
+Improve real-world login workflows after app installation:
+
+- one-time session authorization links
+- 2FA and SMS code handoff UX
+- low-friction human-in-the-loop checkpoints
+
+### R8. Reliability, Security, and Release Quality (Added)
+
+Additional engineering tracks needed for production readiness:
+
+- end-to-end integration test matrix (including headless CI scenarios)
+- threat model and security hardening for relay/auth artifacts
+- observability improvements (structured logs, replay/debug traces)
+- packaging/release automation and upgrade safety
+
+## Contributor Task Board
+
+The project is actively seeking contributors. If you want to help, pick one task area below and open a PR with the task ID in the title (for example: `R2-T3`).
+
+### Memory System
+
+- `R1-T1`: design memory schema v2 (episodic + semantic + working memory)
+- `R1-T2`: implement memory retrieval ranking and relevance filters
+- `R1-T3`: implement memory compaction/summarization jobs
+- `R1-T4`: add memory quality tests for multi-step phone tasks
+
+### Prompt Engineering
+
+- `R2-T1`: draft phone-use prompt templates per task category (shopping/social/entertainment)
+- `R2-T2`: add prompt fallback strategies for app-state ambiguity
+- `R2-T3`: build prompt regression suite with golden trajectories
+- `R2-T4`: add failure taxonomy and prompt tuning playbook
+
+### Cross-Platform Runtime + Dashboard
+
+- `R3-T1`: Linux runtime parity audit (CLI/emulator/gateway)
+- `R3-T2`: Windows runtime bring-up and compatibility fixes
+- `R3-T3`: define and implement Web UI dashboard MVP
+- `R3-T4`: headless server operator workflow (no GUI) documentation + scripts
+
+### Real Device Auth + Isolation
+
+- `R4-T1`: iOS real-device auth bridge prototype
+- `R4-T2`: Android real-device auth bridge hardening
+- `R4-T3`: permission isolation policy and enforcement checks
+- `R4-T4`: secure tunnel and one-time token lifecycle review
+
+### Skill System
+
+- `R5-T1`: agent-authored skill generation interface
+- `R5-T2`: skill static checks + runtime policy gate
+- `R5-T3`: skill test harness and reproducibility tools
+- `R5-T4`: skill marketplace-style metadata/index format
+
+### Multi-Channel Integrations
+
+- `R6-T1`: channel abstraction layer for inbound/outbound control
+- `R6-T2`: Discord connector
+- `R6-T3`: WhatsApp connector
+- `R6-T4`: WeChat/QQ connector research and adapter design
+
+### Login UX + Human-in-the-Loop
+
+- `R7-T1`: one-time account authorization session protocol
+- `R7-T2`: 2FA/SMS remote approval UX flow and timeout handling
+- `R7-T3`: user-facing auth status model and recovery paths
+- `R7-T4`: mobile-first approval page UX improvements
+
+### Reliability and Security
+
+- `R8-T1`: integration test matrix for onboarding + gateway + auth relay
+- `R8-T2`: security review for relay APIs and artifact storage
+- `R8-T3`: observability dashboard/log schema improvements
+- `R8-T4`: release pipeline hardening and rollback-safe packaging
 
 ## Product Scenarios
 
