@@ -1,5 +1,14 @@
 import Foundation
 
+func launchArgumentValue(_ flag: String) -> String? {
+    let args = ProcessInfo.processInfo.arguments
+    guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else {
+        return nil
+    }
+    let value = args[idx + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+}
+
 enum StoreError: LocalizedError {
     case missingConfig(path: String)
     case parseFailed(path: String, reason: String)
@@ -27,9 +36,11 @@ final class OpenPocketPaths {
     private init() {
         let envConfigPath = ProcessInfo.processInfo.environment["OPENPOCKET_CONFIG_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines)
             ?? ProcessInfo.processInfo.environment["OPENPOCKET_CONFIG"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let argConfigPath = launchArgumentValue("--config-path")
+        let configPathCandidate = envConfigPath?.isEmpty == false ? envConfigPath : argConfigPath
 
-        if let envConfigPath, !envConfigPath.isEmpty {
-            let expanded = Self.expandPath(envConfigPath)
+        if let configPathCandidate, !configPathCandidate.isEmpty {
+            let expanded = Self.expandPath(configPathCandidate)
             configPath = URL(fileURLWithPath: expanded)
             homeDir = configPath.deletingLastPathComponent()
         } else {

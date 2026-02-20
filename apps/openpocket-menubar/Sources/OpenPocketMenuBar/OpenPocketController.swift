@@ -91,11 +91,13 @@ final class OpenPocketController: ObservableObject {
 
         var candidates: [URL] = []
 
-        if let repo = trimmed(env["OPENPOCKET_REPO_ROOT"]) {
+        let repoRootHint = trimmed(env["OPENPOCKET_REPO_ROOT"]) ?? launchArgumentValue("--repo-root")
+        if let repo = repoRootHint {
             candidates.append(URL(fileURLWithPath: expanded(repo), isDirectory: true))
         }
 
-        if let cliPathRaw = trimmed(env["OPENPOCKET_CLI_PATH"]) {
+        let cliPathHint = trimmed(env["OPENPOCKET_CLI_PATH"]) ?? launchArgumentValue("--cli-path")
+        if let cliPathRaw = cliPathHint {
             let cliPath = expanded(cliPathRaw)
             var cliURL = URL(fileURLWithPath: cliPath)
             if cliPath.lowercased().hasSuffix("/dist/cli.js") {

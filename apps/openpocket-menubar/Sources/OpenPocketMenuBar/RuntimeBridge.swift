@@ -246,8 +246,8 @@ final class RuntimeBridge {
         }
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let envRepoRoot = trimmedEnv("OPENPOCKET_REPO_ROOT")
-        let envCliPath = trimmedEnv("OPENPOCKET_CLI_PATH")
+        let envRepoRoot = trimmedEnv("OPENPOCKET_REPO_ROOT") ?? launchArgumentValue("--repo-root")
+        let envCliPath = trimmedEnv("OPENPOCKET_CLI_PATH") ?? launchArgumentValue("--cli-path")
 
         if let explicit = pickExecutable(envCliPath) {
             return (explicit, [])

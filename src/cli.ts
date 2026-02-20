@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import * as readline from "node:readline";
 import { createInterface, type Interface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -135,23 +135,17 @@ function panelProcessRunning(executablePath: string): boolean {
   return (probe.status ?? 1) === 0;
 }
 
-function openPanelApp(appPath: string, env?: NodeJS.ProcessEnv): boolean {
+function openPanelApp(appPath: string, launchArgs: string[] = []): boolean {
   const executable = installedPanelExecutable(appPath);
   if (executable && panelProcessRunning(executable)) {
     return true;
   }
 
-  if (executable) {
-    const child = spawn(executable, [], {
-      detached: true,
-      stdio: "ignore",
-      env: env ?? process.env,
-    });
-    child.unref();
-    return true;
+  const openArgs = ["-g", appPath];
+  if (launchArgs.length > 0) {
+    openArgs.push("--args", ...launchArgs);
   }
-
-  const result = spawnSync("/usr/bin/open", [appPath], { stdio: "ignore", env: env ?? process.env });
+  const result = spawnSync("/usr/bin/open", openArgs, { stdio: "ignore" });
   return (result.status ?? 1) === 0;
 }
 
@@ -999,21 +993,21 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
     throw new Error("OpenPocket menu bar panel is supported on macOS only.");
   }
 
-  const launchEnv = { ...process.env };
+  const launchArgs: string[] = [];
   const resolvedConfigPath = configPath?.trim() ? path.resolve(configPath.trim()) : "";
   if (resolvedConfigPath) {
-    launchEnv.OPENPOCKET_CONFIG_PATH = resolvedConfigPath;
+    launchArgs.push("--config-path", resolvedConfigPath);
   }
   const repoRoot = path.resolve(__dirname, "..");
-  launchEnv.OPENPOCKET_REPO_ROOT = repoRoot;
+  launchArgs.push("--repo-root", repoRoot);
   const localLauncher = path.join(repoRoot, "openpocket");
   if (fs.existsSync(localLauncher)) {
-    launchEnv.OPENPOCKET_CLI_PATH = localLauncher;
+    launchArgs.push("--cli-path", localLauncher);
   }
 
   const installedApp = resolveInstalledPanelApp();
   if (installedApp) {
-    if (openPanelApp(installedApp, launchEnv)) {
+    if (openPanelApp(installedApp, launchArgs)) {
       // eslint-disable-next-line no-console
       console.log(`OpenPocket Control Panel opened: ${installedApp}`);
       return 0;
@@ -1029,7 +1023,7 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
     // eslint-disable-next-line no-console
     console.log(`[OpenPocket][panel-install] ${line}`);
   });
-  if (!openPanelApp(installedFromRelease, launchEnv)) {
+  if (!openPanelApp(installedFromRelease, launchArgs)) {
     throw new Error(`Panel installed but failed to open: ${installedFromRelease}`);
   }
   // eslint-disable-next-line no-console
