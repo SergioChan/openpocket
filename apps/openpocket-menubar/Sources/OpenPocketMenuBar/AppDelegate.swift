@@ -24,17 +24,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem = nil
         }
 
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let primary = NSImage(systemSymbolName: "iphone.gen3.radiowaves.left.and.right", accessibilityDescription: "OpenPocket")
         let fallback = NSImage(systemSymbolName: "iphone", accessibilityDescription: "OpenPocket")
+        item.button?.image = nil
+        item.button?.title = " OP"
+        item.button?.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+        item.button?.toolTip = "OpenPocket"
         if let image = primary ?? fallback {
             image.isTemplate = true
             item.button?.image = image
+            item.button?.imagePosition = .imageLeading
+        } else {
+            item.button?.imagePosition = .noImage
         }
-        item.button?.title = "OP"
-        item.button?.imagePosition = .imageLeading
-        item.button?.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        item.button?.toolTip = "OpenPocket"
         item.isVisible = true
 
         let menu = NSMenu()
@@ -78,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             buildStatusItem()
             return
         }
+        item.button?.title = " OP"
         item.isVisible = true
     }
 
