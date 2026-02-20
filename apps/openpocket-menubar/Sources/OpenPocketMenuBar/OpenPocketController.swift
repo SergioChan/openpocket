@@ -141,7 +141,7 @@ final class OpenPocketController: ObservableObject {
 
             refreshFileList()
             refreshEmulatorStatus()
-            gatewayRunning = bridge.isGatewayRunning()
+            refreshGatewayStatus()
             statusMessage = "Loaded config at \(paths.configPath.path)"
         } catch {
             config = nil
@@ -536,15 +536,19 @@ final class OpenPocketController: ObservableObject {
     func startGateway() {
         do {
             try bridge.startGateway(workingDir: repoRoot)
-            gatewayRunning = true
+            refreshGatewayStatus()
         } catch {
             statusMessage = "Failed to start gateway: \(error.localizedDescription)"
         }
     }
 
-    func stopGateway() {
-        bridge.stopGateway()
-        gatewayRunning = false
+    func stopGateway(managedOnly: Bool = false) {
+        bridge.stopGateway(managedOnly: managedOnly)
+        refreshGatewayStatus()
+    }
+
+    func refreshGatewayStatus() {
+        gatewayRunning = bridge.isGatewayRunning()
     }
 
     func runSingleCli(args: [String], logPrefix: String? = nil) {

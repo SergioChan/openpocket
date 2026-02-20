@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct CommandResult {
     let exitCode: Int32
@@ -17,7 +18,10 @@ final class RuntimeBridge {
     var onGatewayExit: ((Int32) -> Void)?
 
     func isGatewayRunning() -> Bool {
-        gatewayProcess?.isRunning == true
+        if gatewayProcess?.isRunning == true {
+            return true
+        }
+        return !findExternalGatewayPIDs().isEmpty
     }
 
     func startGateway(workingDir: URL) throws {
@@ -65,11 +69,17 @@ final class RuntimeBridge {
         onGatewayLogLine?("[OpenPocket][menubar] gateway process started pid=\(process.processIdentifier)")
     }
 
-    func stopGateway() {
+    func stopGateway(managedOnly: Bool = false) {
         guard let process = gatewayProcess, process.isRunning else {
+            if !managedOnly {
+                terminateExternalGatewayProcesses()
+            }
             return
         }
         process.terminate()
+        if !managedOnly {
+            terminateExternalGatewayProcesses()
+        }
     }
 
     func runCommand(workingDir: URL, args: [String], timeoutSec: Int = 120) -> CommandResult {
@@ -121,6 +131,70 @@ final class RuntimeBridge {
             DispatchQueue.main.async {
                 self.onGatewayLogLine?(line)
             }
+        }
+    }
+
+    private func findExternalGatewayPIDs() -> [Int32] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-axo", "pid=,command="]
+
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return []
+        }
+        guard process.terminationStatus == 0 else {
+            return []
+        }
+
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        guard let body = String(data: data, encoding: .utf8) else {
+            return []
+        }
+
+        let currentPid = Int32(ProcessInfo.processInfo.processIdentifier)
+        var pids: [Int32] = []
+
+        for rawLine in body.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = String(rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty {
+                continue
+            }
+
+            let pidText = line.prefix { $0.isNumber }
+            guard !pidText.isEmpty, let pid = Int32(pidText), pid != currentPid else {
+                continue
+            }
+
+            let command = line.drop(while: { $0.isNumber || $0 == " " || $0 == "\t" })
+            if command.isEmpty {
+                continue
+            }
+
+            let lowered = String(command).lowercased()
+            guard lowered.contains("gateway start") else {
+                continue
+            }
+            if lowered.contains("openpocket")
+                || lowered.contains("/dist/cli.js")
+                || lowered.contains("/src/cli.ts")
+            {
+                pids.append(pid)
+            }
+        }
+
+        return Array(Set(pids)).sorted()
+    }
+
+    private func terminateExternalGatewayProcesses() {
+        for pid in findExternalGatewayPIDs() {
+            _ = Darwin.kill(pid_t(pid), SIGTERM)
         }
     }
 

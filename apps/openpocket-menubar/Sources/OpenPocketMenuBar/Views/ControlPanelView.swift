@@ -144,6 +144,7 @@ private struct StatusBadge: View {
 private struct RuntimeTabView: View {
     @EnvironmentObject private var controller: OpenPocketController
     private let previewTicker = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
+    private let gatewayTicker = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ScrollView {
@@ -322,6 +323,9 @@ private struct RuntimeTabView: View {
             if controller.emulatorPreviewAutoRefresh {
                 controller.refreshEmulatorPreview()
             }
+        }
+        .onReceive(gatewayTicker) { _ in
+            controller.refreshGatewayStatus()
         }
     }
 

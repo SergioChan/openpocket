@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        controller.stopGateway()
+        controller.stopGateway(managedOnly: true)
     }
 
     private func buildStatusItem() {
