@@ -8,8 +8,8 @@ const docsBaseRaw = process.env.DOCS_BASE?.trim() ?? "/";
 const docsBase = docsBaseRaw.startsWith("/") ? docsBaseRaw : `/${docsBaseRaw}`;
 const normalizedBase = docsBase.endsWith("/") ? docsBase : `${docsBase}/`;
 const docsRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+const homepageTitle = "OpenPocket | An Intelligent Phone That Never Sleeps";
 const siteTitle = "OpenPocket";
-const siteTagline = "Local AI Phone Agent for Android Automation";
 const siteDescription =
   "Run AI phone-use automation locally with Android Emulator, auditable logs, and human-in-the-loop control.";
 const siteKeywords = [
@@ -24,7 +24,7 @@ const siteKeywords = [
   "mobile workflow automation",
   "privacy-first automation",
 ].join(", ");
-const defaultSiteUrl = "https://openpocket.vercel.app";
+const defaultSiteUrl = "https://www.openpocket.ai";
 const assetVersion = process.env.DOCS_ASSET_VERSION?.trim() || "20260221";
 
 function normalizeSiteUrl(url) {
@@ -63,10 +63,8 @@ const rawSiteUrl =
   defaultSiteUrl;
 const siteUrl = normalizeSiteUrl(rawSiteUrl);
 const faviconPath = withAssetVersion(withDocsBase("/favicon.ico"));
-const logoPath = withDocsBase("/openpocket-logo.png");
 const canonicalPath = normalizedBase;
 const canonicalUrl = toAbsoluteUrl(siteUrl, canonicalPath);
-const socialImageUrl = toAbsoluteUrl(siteUrl, logoPath);
 const twitterSite = process.env.DOCS_TWITTER_SITE?.trim() ?? "";
 const twitterCreator = process.env.DOCS_TWITTER_CREATOR?.trim() ?? "";
 const siteHead = [
@@ -94,17 +92,13 @@ const siteHead = [
   ["meta", { property: "og:type", content: "website" }],
   ["meta", { property: "og:site_name", content: siteTitle }],
   ["meta", { property: "og:locale", content: "en_US" }],
-  ["meta", { property: "og:title", content: `${siteTitle} | ${siteTagline}` }],
+  ["meta", { property: "og:title", content: homepageTitle }],
   ["meta", { property: "og:description", content: siteDescription }],
   ["meta", { property: "og:url", content: canonicalUrl }],
-  ["meta", { property: "og:image", content: socialImageUrl }],
-  ["meta", { property: "og:image:alt", content: "OpenPocket logo" }],
-  ["meta", { name: "twitter:card", content: "summary_large_image" }],
-  ["meta", { name: "twitter:title", content: `${siteTitle} | ${siteTagline}` }],
+  ["meta", { name: "twitter:card", content: "summary" }],
+  ["meta", { name: "twitter:title", content: homepageTitle }],
   ["meta", { name: "twitter:description", content: siteDescription }],
   ["meta", { name: "twitter:url", content: canonicalUrl }],
-  ["meta", { name: "twitter:image", content: socialImageUrl }],
-  ["meta", { name: "twitter:image:alt", content: "OpenPocket logo" }],
 ];
 if (twitterSite) {
   siteHead.push(["meta", { name: "twitter:site", content: twitterSite }]);

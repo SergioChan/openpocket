@@ -1,8 +1,8 @@
 ---
 layout: home
 
-title: OpenPocket
-titleTemplate: OpenPocket — An Intelligent Phone That Never Sleeps
+title: OpenPocket | An Intelligent Phone That Never Sleeps
+titleTemplate: false
 ---
 
 <script setup>
