@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { loadConfig } = require("../dist/config/index.js");
 const { ChatAssistant } = require("../dist/gateway/chat-assistant.js");
+const { markWorkspaceOnboardingCompleted, isWorkspaceOnboardingCompleted } = require("../dist/memory/workspace.js");
 
 function withTempCodexHome(prefix, fn) {
   const prev = process.env.CODEX_HOME;
@@ -34,6 +35,9 @@ function createAssistant(options = {}) {
   } else {
     cfg.models[cfg.defaultModel].apiKey = "";
     cfg.models[cfg.defaultModel].apiKeyEnv = "MISSING_OPENAI_KEY";
+    if (!options.allowCodexFallback) {
+      cfg.models[cfg.defaultModel].model = "gpt-4.1-mini";
+    }
   }
 
   const identityPath = path.join(cfg.workspaceDir, "IDENTITY.md");
@@ -63,6 +67,11 @@ function createAssistant(options = {}) {
       ].join("\n"),
       "utf-8",
     );
+    const bootstrapPath = path.join(cfg.workspaceDir, "BOOTSTRAP.md");
+    if (fs.existsSync(bootstrapPath)) {
+      fs.unlinkSync(bootstrapPath);
+    }
+    markWorkspaceOnboardingCompleted(cfg.workspaceDir);
   } else {
     fs.writeFileSync(identityPath, "", "utf-8");
     fs.writeFileSync(userPath, "", "utf-8");
@@ -140,7 +149,7 @@ test("ChatAssistant decide uses Codex CLI credentials fallback", async () => {
       "utf-8",
     );
 
-    const { assistant } = createAssistant();
+    const { assistant } = createAssistant({ allowCodexFallback: true });
     assistant.classifyWithModel = async () => ({
       mode: "chat",
       task: "",
@@ -258,6 +267,12 @@ test("ChatAssistant onboarding reads question copy and presets from PROFILE_ONBO
 
 test("ChatAssistant onboarding triggers on default scaffold with blank profile fields", async () => {
   const { assistant, cfg } = createAssistant({ withApiKey: true });
+  assistant.requestBootstrapOnboardingDecision = async () => ({
+    reply: "先做个简短初始化：我该怎么称呼你？",
+    writeProfile: false,
+    onboardingComplete: false,
+    deleteBootstrap: false,
+  });
 
   fs.writeFileSync(
     path.join(cfg.workspaceDir, "IDENTITY.md"),
@@ -297,6 +312,52 @@ test("ChatAssistant onboarding triggers on default scaffold with blank profile f
   assert.equal(out.mode, "chat");
   assert.equal(out.reason, "profile_onboarding");
   assert.match(out.reply, /我该怎么称呼你/);
+});
+
+test("ChatAssistant model-driven onboarding completes and removes bootstrap file", async () => {
+  const { assistant, cfg } = createAssistant({ withApiKey: true, keepProfileEmpty: true });
+  let step = 0;
+  assistant.requestBootstrapOnboardingDecision = async () => {
+    step += 1;
+    if (step === 1) {
+      return {
+        reply: "你好，我先确认下：我该怎么称呼你？",
+        writeProfile: false,
+        onboardingComplete: false,
+        deleteBootstrap: false,
+      };
+    }
+    return {
+      reply: "好的，初始化完成。我会按你的设定继续。",
+      profile: {
+        userPreferredAddress: "Sergio",
+        assistantName: "Jarvis-Phone",
+        assistantPersona: "professional and reliable",
+      },
+      writeProfile: true,
+      onboardingComplete: true,
+      deleteBootstrap: true,
+    };
+  };
+
+  const first = await assistant.decide(41, "你好");
+  assert.equal(first.reason, "profile_onboarding");
+  assert.match(first.reply, /我该怎么称呼你/);
+
+  const second = await assistant.decide(41, "你叫 Jarvis-Phone，人设专业可靠，叫我 Sergio");
+  assert.equal(second.reason, "profile_onboarding");
+  assert.match(second.reply, /初始化完成/);
+
+  const identityBody = fs.readFileSync(path.join(cfg.workspaceDir, "IDENTITY.md"), "utf-8");
+  const userBody = fs.readFileSync(path.join(cfg.workspaceDir, "USER.md"), "utf-8");
+  assert.match(identityBody, /Name: Jarvis-Phone/);
+  assert.match(identityBody, /Persona: professional and reliable/);
+  assert.match(userBody, /Preferred form of address: Sergio/);
+
+  assert.equal(fs.existsSync(path.join(cfg.workspaceDir, "BOOTSTRAP.md")), false);
+  assert.equal(isWorkspaceOnboardingCompleted(cfg.workspaceDir), true);
+  const payload = assistant.consumePendingProfileUpdate(41);
+  assert.equal(payload?.assistantName, "Jarvis-Phone");
 });
 
 test("ChatAssistant exposes pending profile update after onboarding completion", async () => {

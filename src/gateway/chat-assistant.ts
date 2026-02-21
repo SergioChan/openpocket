@@ -4,12 +4,38 @@ import path from "node:path";
 
 import type { OpenPocketConfig } from "../types";
 import { getModelProfile, resolveModelAuth } from "../config";
+import {
+  DEFAULT_BOOTSTRAP_FILENAME,
+  isWorkspaceOnboardingCompleted,
+  markWorkspaceOnboardingCompleted,
+} from "../memory/workspace";
 
 type MsgRole = "user" | "assistant";
 
 interface ChatTurn {
   role: MsgRole;
   content: string;
+}
+
+interface BootstrapOnboardingState {
+  locale: OnboardingLocale;
+  profile: ProfileSnapshot;
+  turns: ChatTurn[];
+}
+
+interface BootstrapModelDecision {
+  reply: string;
+  profile?: {
+    userPreferredAddress?: string;
+    assistantName?: string;
+    assistantPersona?: string;
+    userName?: string;
+    timezone?: string;
+    languagePreference?: string;
+  };
+  writeProfile?: boolean;
+  onboardingComplete?: boolean;
+  deleteBootstrap?: boolean;
 }
 
 type OnboardingStep = 1 | 2 | 3;
@@ -219,10 +245,24 @@ function stringifyError(error: unknown): string {
   return String(error);
 }
 
+function extractJsonObjectText(output: string): string {
+  const fenced = output.match(/```json\s*([\s\S]*?)```/i) ?? output.match(/```\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+  const start = output.indexOf("{");
+  const end = output.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return output.slice(start, end + 1);
+  }
+  return output.trim();
+}
+
 export class ChatAssistant {
   private readonly config: OpenPocketConfig;
   private readonly history = new Map<number, ChatTurn[]>();
   private readonly profileOnboarding = new Map<number, ProfileOnboardingState>();
+  private readonly bootstrapOnboarding = new Map<number, BootstrapOnboardingState>();
   private readonly pendingProfileUpdates =
     new Map<number, { assistantName: string; locale: OnboardingLocale }>();
   private onboardingTemplateCache:
@@ -237,6 +277,7 @@ export class ChatAssistant {
   clear(chatId: number): void {
     this.history.delete(chatId);
     this.profileOnboarding.delete(chatId);
+    this.bootstrapOnboarding.delete(chatId);
     this.pendingProfileUpdates.delete(chatId);
   }
 
@@ -506,6 +547,54 @@ export class ChatAssistant {
     return this.needsIdentityOnboarding() || this.needsUserOnboarding();
   }
 
+  private bootstrapFilePath(): string {
+    return this.workspaceFilePath(DEFAULT_BOOTSTRAP_FILENAME);
+  }
+
+  private hasBootstrapOnboardingFile(): boolean {
+    return fs.existsSync(this.bootstrapFilePath());
+  }
+
+  private needsBootstrapOnboarding(): boolean {
+    if (this.hasBootstrapOnboardingFile()) {
+      return true;
+    }
+    if (this.needsProfileOnboarding()) {
+      return true;
+    }
+    if (!isWorkspaceOnboardingCompleted(this.config.workspaceDir)) {
+      return this.needsProfileOnboarding();
+    }
+    return false;
+  }
+
+  private isProfileSnapshotComplete(snapshot: ProfileSnapshot): boolean {
+    return !this.isPlaceholderValue(snapshot.userPreferredAddress)
+      && !this.isPlaceholderValue(snapshot.assistantName, ["openpocket"])
+      && !this.isPlaceholderValue(snapshot.assistantPersona);
+  }
+
+  private applyModelProfilePatch(
+    base: ProfileSnapshot,
+    patch: BootstrapModelDecision["profile"] | undefined,
+    locale: OnboardingLocale,
+  ): ProfileSnapshot {
+    if (!patch) {
+      return base;
+    }
+    const next: ProfileSnapshot = { ...base };
+    if (typeof patch.userPreferredAddress === "string" && this.normalizeOneLine(patch.userPreferredAddress)) {
+      next.userPreferredAddress = this.normalizeOneLine(patch.userPreferredAddress);
+    }
+    if (typeof patch.assistantName === "string" && this.normalizeOneLine(patch.assistantName)) {
+      next.assistantName = this.normalizeAssistantName(patch.assistantName);
+    }
+    if (typeof patch.assistantPersona === "string" && this.normalizeOneLine(patch.assistantPersona)) {
+      next.assistantPersona = this.resolvePersonaAnswer(this.normalizeOneLine(patch.assistantPersona), locale);
+    }
+    return next;
+  }
+
   private detectOnboardingLocale(input: string): OnboardingLocale {
     // Use a simple CJK signal so onboarding language follows the user's first message.
     return /[\u4e00-\u9fff]/.test(input) ? "zh" : "en";
@@ -614,6 +703,187 @@ export class ChatAssistant {
     if (!state.assistantName) return 2;
     if (!state.assistantPersona) return 3;
     return null;
+  }
+
+  private readBootstrapGuide(): string {
+    const bootstrap = this.readTextSafe(this.bootstrapFilePath()).trim();
+    if (bootstrap) {
+      return bootstrap;
+    }
+    return [
+      "# BOOTSTRAP",
+      "",
+      "Collect onboarding profile naturally:",
+      "1) how to address the user",
+      "2) what name the user gives the assistant",
+      "3) preferred assistant persona/tone",
+      "Persist to IDENTITY.md and USER.md once done.",
+    ].join("\n");
+  }
+
+  private buildBootstrapOnboardingPrompt(
+    state: BootstrapOnboardingState,
+    inputText: string,
+  ): string {
+    const turns = state.turns
+      .slice(-16)
+      .map((turn) => `${turn.role.toUpperCase()}: ${turn.content}`)
+      .join("\n");
+    const identity = this.readTextSafe(this.profileFilePath("IDENTITY.md")).trim() || "(empty)";
+    const user = this.readTextSafe(this.profileFilePath("USER.md")).trim() || "(empty)";
+    const soul = this.readTextSafe(this.workspaceFilePath("SOUL.md")).trim() || "(empty)";
+
+    return [
+      "You are OpenPocket onboarding conductor.",
+      "Follow BOOTSTRAP guide and continue a natural onboarding conversation.",
+      "Ask focused questions and avoid robotic tone.",
+      "If user already provided enough info, confirm briefly and complete onboarding.",
+      "Output strict JSON only, no markdown:",
+      "{",
+      '  "reply": "<assistant message to user>",',
+      '  "profile": {',
+      '    "userPreferredAddress": "<string optional>",',
+      '    "assistantName": "<string optional>",',
+      '    "assistantPersona": "<string optional>",',
+      '    "userName": "<string optional>",',
+      '    "timezone": "<string optional>",',
+      '    "languagePreference": "<string optional>"',
+      "  },",
+      '  "writeProfile": true|false,',
+      '  "onboardingComplete": true|false,',
+      '  "deleteBootstrap": true|false',
+      "}",
+      "Rules:",
+      "1) Keep reply concise and in user language.",
+      "2) Offer options/examples when asking about persona/tone.",
+      "3) Mark onboardingComplete=true only when required fields are all available.",
+      "4) Required fields: userPreferredAddress, assistantName, assistantPersona.",
+      `Locale hint: ${state.locale}`,
+      `Current profile snapshot: ${JSON.stringify(state.profile, null, 2)}`,
+      "",
+      "BOOTSTRAP.md:",
+      this.readBootstrapGuide(),
+      "",
+      "SOUL.md:",
+      soul,
+      "",
+      "IDENTITY.md:",
+      identity,
+      "",
+      "USER.md:",
+      user,
+      "",
+      "Conversation so far:",
+      turns || "(none)",
+      "",
+      `Latest user message: ${inputText}`,
+    ].join("\n");
+  }
+
+  private async requestBootstrapOnboardingDecision(
+    client: OpenAI,
+    model: string,
+    maxTokens: number,
+    prompt: string,
+  ): Promise<BootstrapModelDecision | null> {
+    const tryModes: Array<"responses" | "chat" | "completions"> =
+      this.modeHint === "responses"
+        ? ["responses", "chat", "completions"]
+        : this.modeHint === "chat"
+          ? ["chat", "responses", "completions"]
+          : ["completions", "responses", "chat"];
+
+    let output = "";
+    const errors: string[] = [];
+    for (const mode of tryModes) {
+      try {
+        if (mode === "responses") {
+          const response = await client.responses.create({
+            model,
+            max_output_tokens: Math.min(maxTokens, 500),
+            input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+          } as never);
+          output = readResponseOutputText(response);
+        } else if (mode === "chat") {
+          const response = await client.chat.completions.create({
+            model,
+            max_tokens: Math.min(maxTokens, 500),
+            messages: [{ role: "user", content: prompt }],
+          } as never);
+          output = typeof response.choices?.[0]?.message?.content === "string"
+            ? response.choices?.[0]?.message?.content.trim()
+            : "";
+        } else {
+          const response = await client.completions.create({
+            model,
+            max_tokens: Math.min(maxTokens, 500),
+            prompt,
+          } as never);
+          output = (response.choices?.[0]?.text ?? "").trim();
+        }
+
+        if (!output) {
+          continue;
+        }
+        if (this.modeHint !== mode) {
+          this.modeHint = mode;
+          // eslint-disable-next-line no-console
+          console.log(`[OpenPocket][chat] switched endpoint mode -> ${mode}`);
+        }
+        break;
+      } catch (error) {
+        errors.push(`${mode}: ${stringifyError(error)}`);
+      }
+    }
+
+    if (!output) {
+      // eslint-disable-next-line no-console
+      console.warn(`[OpenPocket][chat] bootstrap onboarding failed: ${errors.join(" | ")}`);
+      return null;
+    }
+
+    const jsonText = extractJsonObjectText(output);
+    try {
+      const parsed = JSON.parse(jsonText) as Partial<BootstrapModelDecision>;
+      const reply = typeof parsed.reply === "string" ? parsed.reply.trim() : "";
+      if (!reply) {
+        return null;
+      }
+      return {
+        reply,
+        profile: isObject(parsed.profile) ? {
+          userPreferredAddress:
+            typeof parsed.profile.userPreferredAddress === "string"
+              ? parsed.profile.userPreferredAddress
+              : undefined,
+          assistantName:
+            typeof parsed.profile.assistantName === "string"
+              ? parsed.profile.assistantName
+              : undefined,
+          assistantPersona:
+            typeof parsed.profile.assistantPersona === "string"
+              ? parsed.profile.assistantPersona
+              : undefined,
+          userName:
+            typeof parsed.profile.userName === "string"
+              ? parsed.profile.userName
+              : undefined,
+          timezone:
+            typeof parsed.profile.timezone === "string"
+              ? parsed.profile.timezone
+              : undefined,
+          languagePreference:
+            typeof parsed.profile.languagePreference === "string"
+              ? parsed.profile.languagePreference
+              : undefined,
+        } : undefined,
+        writeProfile: Boolean(parsed.writeProfile),
+        onboardingComplete: Boolean(parsed.onboardingComplete),
+        deleteBootstrap: Boolean(parsed.deleteBootstrap),
+      };
+    } catch {
+      return null;
+    }
   }
 
   private buildIdentityFromAnswers(params: {
@@ -758,9 +1028,113 @@ export class ChatAssistant {
     this.writeTextSafe(userPath, userBody);
   }
 
+  private completeWorkspaceBootstrap(snapshot: ProfileSnapshot): void {
+    this.writeProfileSnapshot(snapshot);
+
+    const bootstrapPath = this.bootstrapFilePath();
+    if (fs.existsSync(bootstrapPath)) {
+      try {
+        fs.unlinkSync(bootstrapPath);
+      } catch {
+        // Ignore file deletion errors; profile is already persisted.
+      }
+    }
+    markWorkspaceOnboardingCompleted(this.config.workspaceDir);
+  }
+
+  private async applyBootstrapOnboarding(chatId: number, inputText: string): Promise<string | null> {
+    const needs = this.needsBootstrapOnboarding();
+    const active = this.bootstrapOnboarding.get(chatId);
+    if (!needs && !active) {
+      return null;
+    }
+
+    const locale = active?.locale ?? this.detectOnboardingLocale(inputText);
+    const parsedFromInput = this.parseOnboardingFields(inputText);
+    const state: BootstrapOnboardingState = active ?? {
+      locale,
+      profile: this.readProfileSnapshot(locale),
+      turns: [],
+    };
+
+    if (parsedFromInput.userPreferredAddress) {
+      state.profile.userPreferredAddress = parsedFromInput.userPreferredAddress;
+    }
+    if (parsedFromInput.assistantName) {
+      state.profile.assistantName = this.normalizeAssistantName(parsedFromInput.assistantName);
+    }
+    if (parsedFromInput.assistantPersona) {
+      state.profile.assistantPersona = this.resolvePersonaAnswer(parsedFromInput.assistantPersona, locale);
+    }
+
+    const userLine = this.normalizeOneLine(inputText);
+    if (userLine) {
+      state.turns.push({ role: "user", content: userLine });
+    }
+
+    const profile = getModelProfile(this.config);
+    const auth = resolveModelAuth(profile);
+    if (!auth) {
+      this.bootstrapOnboarding.delete(chatId);
+      return this.applyProfileOnboarding(chatId, inputText);
+    }
+
+    const client = new OpenAI({
+      apiKey: auth.apiKey,
+      baseURL: auth.baseUrl ?? profile.baseUrl,
+    });
+
+    const prompt = this.buildBootstrapOnboardingPrompt(state, inputText);
+    let decision: BootstrapModelDecision | null = null;
+    try {
+      decision = await this.requestBootstrapOnboardingDecision(
+        client,
+        profile.model,
+        profile.maxTokens,
+        prompt,
+      );
+    } catch {
+      decision = null;
+    }
+
+    if (!decision?.reply) {
+      this.bootstrapOnboarding.delete(chatId);
+      return this.applyProfileOnboarding(chatId, inputText);
+    }
+
+    state.profile = this.applyModelProfilePatch(state.profile, decision.profile, locale);
+    state.turns.push({ role: "assistant", content: decision.reply });
+    this.bootstrapOnboarding.set(chatId, {
+      locale,
+      profile: state.profile,
+      turns: state.turns.slice(-20),
+    });
+
+    if (decision.writeProfile) {
+      this.writeProfileSnapshot(state.profile);
+    }
+
+    const completeByModel = Boolean(decision.onboardingComplete);
+    const completeByData = this.isProfileSnapshotComplete(state.profile) && !this.hasBootstrapOnboardingFile();
+    const shouldComplete = (completeByModel && this.isProfileSnapshotComplete(state.profile)) || completeByData;
+    if (!shouldComplete) {
+      return decision.reply;
+    }
+
+    this.completeWorkspaceBootstrap(state.profile);
+    this.bootstrapOnboarding.delete(chatId);
+    this.profileOnboarding.delete(chatId);
+    this.pendingProfileUpdates.set(chatId, {
+      assistantName: state.profile.assistantName,
+      locale,
+    });
+
+    return decision.reply;
+  }
+
   private applyProfileUpdate(chatId: number, inputText: string): string | null {
     const activeOnboarding = this.profileOnboarding.get(chatId);
-    if (activeOnboarding || this.needsProfileOnboarding()) {
+    if (activeOnboarding || this.bootstrapOnboarding.has(chatId) || this.needsBootstrapOnboarding()) {
       return null;
     }
 
@@ -891,27 +1265,17 @@ export class ChatAssistant {
     const userPreferredAddress = finalized.userPreferredAddress ?? this.pickFallback(finalized.locale, "user");
     const assistantName = finalized.assistantName ?? this.pickFallback(finalized.locale, "assistant");
     const assistantPersona = finalized.assistantPersona ?? this.pickFallback(finalized.locale, "persona");
-
-    this.writeTextSafe(
-      this.profileFilePath("IDENTITY.md"),
-      this.buildIdentityFromAnswers({
-        assistantName,
-        assistantPersona,
-      }),
-    );
-    this.writeTextSafe(
-      this.profileFilePath("USER.md"),
-      this.buildUserFromAnswers({
-        userPreferredAddress,
-        assistantName,
-        assistantPersona,
-      }),
-    );
+    this.completeWorkspaceBootstrap({
+      userPreferredAddress,
+      assistantName,
+      assistantPersona,
+    });
     this.pendingProfileUpdates.set(chatId, {
       assistantName,
       locale: finalized.locale,
     });
     this.profileOnboarding.delete(chatId);
+    this.bootstrapOnboarding.delete(chatId);
     return this.renderTemplate(this.localeTemplate(finalized.locale).onboardingSaved, {
       userPreferredAddress,
       assistantName,
@@ -1197,7 +1561,7 @@ export class ChatAssistant {
       };
     }
 
-    const onboardingReply = this.applyProfileOnboarding(chatId, normalizedInput);
+    const onboardingReply = await this.applyBootstrapOnboarding(chatId, normalizedInput);
     if (onboardingReply) {
       this.pushTurn(chatId, "user", normalizedInput);
       this.pushTurn(chatId, "assistant", onboardingReply);
