@@ -7,6 +7,10 @@ const { Layout } = DefaultTheme;
 const route = useRoute();
 
 function initScrollAnimations() {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
   nextTick(() => {
     const targets = document.querySelectorAll(
       ".op-hero-left, .op-hero-right, .op-why, .op-why-item, .op-usecases, .op-workflow, .op-workflow-step, .op-arch, .op-arch-group"
@@ -40,6 +44,10 @@ watch(
 );
 
 function isHomePage() {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
   return !!document.querySelector(".op-landing");
 }
 
