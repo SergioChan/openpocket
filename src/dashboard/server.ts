@@ -510,6 +510,31 @@ export class DashboardServer {
     };
   }
 
+  private credentialStatusMap(): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [profileName, profile] of Object.entries(this.config.models)) {
+      const configKey = profile.apiKey.trim();
+      const envName = profile.apiKeyEnv;
+      const envValue = (process.env[envName] ?? "").trim();
+
+      if (configKey) {
+        if (!envValue) {
+          result[profileName] = `Credential source: config.json (detected, length ${configKey.length}). ${envName} is optional.`;
+        } else {
+          result[profileName] = `Credential source: config.json (detected, length ${configKey.length}). ${envName} also detected (length ${envValue.length}).`;
+        }
+        continue;
+      }
+
+      if (envValue) {
+        result[profileName] = `Credential source: ${envName} env var (detected, length ${envValue.length}).`;
+      } else {
+        result[profileName] = `No API key found in config.json or ${envName}.`;
+      }
+    }
+    return result;
+  }
+
   private htmlShell(): string {
     return `<!doctype html>
 <html lang="en">
@@ -518,33 +543,734 @@ export class DashboardServer {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OpenPocket Dashboard</title>
   <style>
-    body { margin: 0; font-family: "SF Pro Text", "Segoe UI", Arial, sans-serif; background: #111827; color: #f8fafc; }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 28px; }
-    .card { background: #1f2937; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
-    h1 { margin: 0 0 8px; font-size: 28px; }
-    code { background: #0f172a; color: #93c5fd; padding: 2px 6px; border-radius: 6px; }
-    .muted { color: #9ca3af; }
-    ul { line-height: 1.8; }
+    :root {
+      --bg-0: #f6f2eb;
+      --bg-1: #eef6ff;
+      --ink-0: #111827;
+      --ink-1: #3a4352;
+      --brand: #0b8f6a;
+      --brand-soft: #d7f5ea;
+      --danger: #a92929;
+      --card: rgba(255, 255, 255, 0.92);
+      --line: #d7dee8;
+      --shadow: 0 14px 40px rgba(15, 35, 60, 0.12);
+      --mono: "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: "Avenir Next", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      color: var(--ink-0);
+      background:
+        radial-gradient(1200px 400px at 15% -5%, #f9e1c8 0%, transparent 55%),
+        radial-gradient(900px 420px at 100% -10%, #cae8ff 0%, transparent 60%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1));
+    }
+    .layout {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 20px 22px 30px;
+      display: grid;
+      gap: 14px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 14px 16px;
+    }
+    .title {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .title h1 {
+      margin: 0;
+      font-size: 29px;
+      letter-spacing: 0.2px;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--ink-1);
+      font-size: 13px;
+    }
+    .badge-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .badge {
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #2b3340;
+    }
+    .badge.ok {
+      background: var(--brand-soft);
+      color: #0f6f52;
+      border-color: #bde7d7;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: #1f2b3d;
+      padding: 9px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .tab-btn:hover {
+      transform: translateY(-1px);
+      background: #f4f8fc;
+    }
+    .tab-btn.active {
+      background: #e7f6ef;
+      border-color: #b9e9d6;
+      color: #0e6f51;
+    }
+    .status-line {
+      font-size: 13px;
+      color: var(--ink-1);
+      padding: 0 3px;
+      min-height: 20px;
+    }
+    .tab-panel {
+      display: none;
+      animation: rise 180ms ease-out;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+    .hint {
+      color: var(--ink-1);
+      font-size: 13px;
+      margin-top: 3px;
+      margin-bottom: 10px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row.spread {
+      justify-content: space-between;
+    }
+    .btn {
+      border: 1px solid #bfd3e2;
+      background: #fff;
+      color: #172234;
+      border-radius: 9px;
+      cursor: pointer;
+      font-weight: 700;
+      padding: 8px 12px;
+    }
+    .btn.primary {
+      border-color: #0f906a;
+      background: #0f906a;
+      color: #fff;
+    }
+    .btn.warn {
+      border-color: #b73f3f;
+      background: #b73f3f;
+      color: #fff;
+    }
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    input[type="text"], input[type="password"], select, textarea {
+      width: 100%;
+      border: 1px solid #c7d4e2;
+      border-radius: 9px;
+      background: #fff;
+      padding: 8px 10px;
+      color: #122133;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+    .kv {
+      font-size: 13px;
+      color: var(--ink-1);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .kv code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #14365a;
+      background: #edf4fb;
+      border-radius: 6px;
+      padding: 2px 5px;
+    }
+    .preview-wrap {
+      position: relative;
+      background: #0b1118;
+      border-radius: 12px;
+      min-height: 270px;
+      overflow: hidden;
+      border: 1px solid #0d1723;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #preview-image {
+      max-width: 100%;
+      max-height: 420px;
+      display: none;
+      cursor: crosshair;
+      image-rendering: auto;
+    }
+    .preview-empty {
+      color: #dbe7f4;
+      font-size: 13px;
+      text-align: center;
+      padding: 14px;
+    }
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .placeholder {
+      color: var(--ink-1);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    @media (max-width: 980px) {
+      .grid.cols-2 {
+        grid-template-columns: 1fr;
+      }
+      .layout {
+        padding: 12px;
+      }
+      .title h1 {
+        font-size: 24px;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>OpenPocket Local Dashboard (V1)</h1>
-    <p class="muted">Backend API is online. Web UI tabs will be completed in V2/V3.</p>
-    <div class="card">
-      <p>Quick API checks:</p>
-      <ul>
-        <li><code>/api/health</code></li>
-        <li><code>/api/runtime</code></li>
-        <li><code>/api/emulator/status</code></li>
-        <li><code>/api/emulator/preview</code></li>
-        <li><code>/api/config</code></li>
-        <li><code>/api/onboarding</code></li>
-        <li><code>/api/control-settings</code></li>
-      </ul>
+  <div class="layout">
+    <header class="topbar">
+      <div class="title">
+        <h1>OpenPocket</h1>
+        <p class="subtitle">Local Android agent control dashboard (Web)</p>
+      </div>
+      <div class="badge-row">
+        <span class="badge" id="gateway-badge">Gateway: Unknown</span>
+        <span class="badge" id="emulator-badge">Emulator: Unknown</span>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="runtime">Runtime</button>
+      <button class="tab-btn" data-tab="onboarding">Onboarding</button>
+      <button class="tab-btn" data-tab="permissions">Permissions</button>
+      <button class="tab-btn" data-tab="prompts">Agent Prompts</button>
+      <button class="tab-btn" data-tab="logs">Logs</button>
     </div>
+
+    <div class="status-line" id="status-line"></div>
+
+    <section class="tab-panel active" data-panel="runtime">
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Gateway</h3>
+          <p class="hint">Gateway is managed by CLI in integrated mode. Runtime status refreshes automatically.</p>
+          <div class="row">
+            <button class="btn" id="runtime-refresh-btn">Refresh Runtime</button>
+          </div>
+          <div class="kv" id="gateway-kv"></div>
+        </div>
+
+        <div class="card">
+          <h3>Android Emulator</h3>
+          <p class="hint">Control emulator lifecycle and visibility while tasks continue in background.</p>
+          <div class="row">
+            <button class="btn primary" data-emu-action="start">Start</button>
+            <button class="btn warn" data-emu-action="stop">Stop</button>
+            <button class="btn" data-emu-action="show">Show</button>
+            <button class="btn" data-emu-action="hide">Hide</button>
+            <button class="btn" id="emu-refresh-btn">Refresh Status</button>
+          </div>
+          <div class="kv" id="emulator-kv"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Emulator Screen Preview</h3>
+        <div class="row">
+          <button class="btn" id="preview-refresh-btn">Refresh Preview</button>
+          <label class="row">
+            <input type="checkbox" id="preview-auto" />
+            <span>Auto refresh (2s)</span>
+          </label>
+          <span class="kv" id="preview-meta"></span>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input type="text" id="emulator-text-input" placeholder="Type text to active input field" />
+          <button class="btn" id="emulator-text-send">Send Text</button>
+        </div>
+        <div class="preview-wrap" style="margin-top:10px;">
+          <img id="preview-image" alt="Emulator preview" />
+          <div class="preview-empty" id="preview-empty">Preview unavailable. Start emulator and click Refresh Preview.</div>
+        </div>
+        <div class="hint">Click on preview image to send tap. Coordinates are mapped to device pixels.</div>
+      </div>
+
+      <div class="card">
+        <h3>Core Paths</h3>
+        <div class="grid cols-2">
+          <div>
+            <label for="workspace-input">Workspace</label>
+            <input type="text" id="workspace-input" />
+          </div>
+          <div>
+            <label for="state-input">State</label>
+            <input type="text" id="state-input" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn primary" id="save-core-paths-btn">Save Config</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="onboarding">
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>User Consent</h3>
+          <p class="hint">Emulator artifacts are stored locally. Cloud model providers may receive task text/screenshots.</p>
+          <label class="row">
+            <input type="checkbox" id="onboard-consent" />
+            <span>I accept local automation and data handling terms.</span>
+          </label>
+        </div>
+        <div class="card">
+          <h3>Play Store Login</h3>
+          <p class="hint">Manually complete Gmail sign-in in emulator when needed.</p>
+          <label class="row">
+            <input type="checkbox" id="onboard-gmail-done" />
+            <span>I finished Gmail sign-in and verified Play Store access.</span>
+          </label>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn" id="onboard-start-emu">Start Emulator</button>
+            <button class="btn" id="onboard-show-emu">Show Emulator</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Model Selection</h3>
+        <div class="row">
+          <div style="min-width:320px;flex:1;">
+            <label for="onboard-model-select">Default Model</label>
+            <select id="onboard-model-select"></select>
+          </div>
+        </div>
+        <div class="kv" id="onboard-model-meta"></div>
+      </div>
+
+      <div class="card">
+        <h3>API Key Setup</h3>
+        <label class="row">
+          <input type="checkbox" id="onboard-use-env" checked />
+          <span>Use environment variable for API key</span>
+        </label>
+        <div style="margin-top:10px;" id="onboard-api-key-wrap">
+          <input type="password" id="onboard-api-key" placeholder="Paste API key when not using env variable" />
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row spread">
+          <h3 style="margin:0;">Save Onboarding</h3>
+          <button class="btn primary" id="onboard-save-btn">Save Onboarding to Config + State</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="permissions">
+      <div class="card placeholder">
+        Permissions tab UI will be completed in V3. Backend APIs are ready: <span class="mono">/api/control-settings</span>, <span class="mono">/api/permissions/files</span>, <span class="mono">/api/permissions/read-file</span>.
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="prompts">
+      <div class="card placeholder">
+        Agent Prompts tab UI will be completed in V3. Prompt files are already persisted via <span class="mono">control-panel.json</span>.
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="logs">
+      <div class="card placeholder">
+        Logs tab UI will be completed in V3. Current backend log endpoint: <span class="mono">/api/logs</span>.
+      </div>
+    </section>
   </div>
-</body>
+  <script>
+    const state = {
+      runtime: null,
+      config: null,
+      onboarding: null,
+      preview: null,
+      previewTimer: null,
+      runtimeTimer: null,
+      credentialStatus: {},
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+
+    function setStatus(text, tone = "normal") {
+      const el = $("#status-line");
+      el.textContent = text || "";
+      if (tone === "error") {
+        el.style.color = "#a92929";
+      } else if (tone === "ok") {
+        el.style.color = "#0f7c5a";
+      } else {
+        el.style.color = "";
+      }
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: {
+          "content-type": "application/json",
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || response.statusText || "Request failed");
+      }
+      return payload;
+    }
+
+    function activateTab(tab) {
+      document.querySelectorAll(".tab-btn").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === tab);
+      });
+      document.querySelectorAll(".tab-panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.dataset.panel === tab);
+      });
+    }
+
+    function updateBadges(runtime) {
+      const gatewayBadge = $("#gateway-badge");
+      const emulatorBadge = $("#emulator-badge");
+      const gatewayRunning = Boolean(runtime?.gateway?.running);
+      const emulatorRunning = (runtime?.emulator?.bootedDevices || []).length > 0;
+
+      gatewayBadge.textContent = "Gateway: " + (gatewayRunning ? "Running" : "Stopped/Unknown");
+      gatewayBadge.classList.toggle("ok", gatewayRunning);
+
+      emulatorBadge.textContent = "Emulator: " + (runtime?.emulator?.statusText || "Unknown");
+      emulatorBadge.classList.toggle("ok", emulatorRunning);
+    }
+
+    function renderRuntime(runtime) {
+      updateBadges(runtime);
+      $("#gateway-kv").innerHTML =
+        "<div>Mode: <code>" + (runtime.mode || "unknown") + "</code></div>" +
+        "<div>Gateway note: " + (runtime.gateway?.note || "n/a") + "</div>" +
+        "<div>Dashboard: <code>" + (runtime.dashboard?.address || location.origin) + "</code></div>";
+
+      $("#emulator-kv").innerHTML =
+        "<div>AVD: <code>" + (runtime.emulator?.avdName || "unknown") + "</code></div>" +
+        "<div>Devices: " + ((runtime.emulator?.devices || []).join(", ") || "(none)") + "</div>" +
+        "<div>Booted: " + ((runtime.emulator?.bootedDevices || []).join(", ") || "(none)") + "</div>";
+
+      if (!$("#workspace-input").value) {
+        $("#workspace-input").value = runtime.config?.workspaceDir || "";
+      }
+      if (!$("#state-input").value) {
+        $("#state-input").value = runtime.config?.stateDir || "";
+      }
+    }
+
+    async function loadRuntime() {
+      const payload = await api("/api/runtime");
+      state.runtime = payload;
+      renderRuntime(payload);
+      return payload;
+    }
+
+    async function loadConfigAndOnboarding() {
+      const [configPayload, onboardingPayload] = await Promise.all([
+        api("/api/config"),
+        api("/api/onboarding"),
+      ]);
+      state.config = configPayload.config;
+      state.credentialStatus = configPayload.credentialStatus || {};
+      state.onboarding = onboardingPayload.onboarding || {};
+      renderOnboarding();
+    }
+
+    function renderOnboarding() {
+      const config = state.config;
+      const onboarding = state.onboarding || {};
+      if (!config) {
+        return;
+      }
+
+      const select = $("#onboard-model-select");
+      const current = onboarding.modelProfile || config.defaultModel;
+      select.innerHTML = "";
+      Object.keys(config.models || {}).sort().forEach((key) => {
+        const profile = config.models[key];
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key + " (" + (profile.providerLabel || profile.baseUrl || "provider") + ")";
+        if (key === current) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
+
+      $("#onboard-consent").checked = Boolean(onboarding.consentAcceptedAt);
+      $("#onboard-gmail-done").checked = Boolean(onboarding.gmailLoginConfirmedAt);
+      $("#onboard-use-env").checked = (onboarding.apiKeySource || "env") !== "config";
+      $("#onboard-api-key-wrap").style.display = $("#onboard-use-env").checked ? "none" : "block";
+
+      const selected = select.value || config.defaultModel;
+      const profile = config.models[selected];
+      const provider = profile?.baseUrl ? profile.baseUrl : "unknown";
+      const envName = profile?.apiKeyEnv || "N/A";
+      const modelId = profile?.model || "unknown";
+      const status = state.credentialStatus[selected] || "";
+
+      $("#onboard-model-meta").innerHTML =
+        "<div>Model ID: <code>" + modelId + "</code></div>" +
+        "<div>Provider: <code>" + provider + "</code></div>" +
+        "<div>Provider API env: <code>" + envName + "</code></div>" +
+        "<div>" + status + "</div>";
+    }
+
+    async function refreshPreview() {
+      setStatus("Refreshing emulator preview...");
+      const preview = await api("/api/emulator/preview");
+      state.preview = preview;
+      const image = $("#preview-image");
+      image.src = "data:image/png;base64," + preview.screenshotBase64;
+      image.dataset.pixelWidth = String(preview.width || 0);
+      image.dataset.pixelHeight = String(preview.height || 0);
+      image.style.display = "block";
+      $("#preview-empty").style.display = "none";
+      $("#preview-meta").textContent =
+        "App: " + (preview.currentApp || "unknown") +
+        " | " + (preview.width || "?") + "x" + (preview.height || "?") +
+        " | Updated: " + new Date(preview.capturedAt || Date.now()).toLocaleTimeString();
+      setStatus("Preview updated.", "ok");
+    }
+
+    async function emulatorAction(action) {
+      const payload = await api("/api/emulator/" + action, { method: "POST", body: "{}" });
+      setStatus(payload.message || ("Emulator " + action + " done."), "ok");
+      await loadRuntime();
+    }
+
+    async function sendTextInput() {
+      const text = $("#emulator-text-input").value || "";
+      if (!text.trim()) {
+        setStatus("Input text is empty.", "error");
+        return;
+      }
+      const payload = await api("/api/emulator/type", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      setStatus(payload.message || "Text input sent.", "ok");
+      await refreshPreview().catch(() => {});
+    }
+
+    async function saveCorePaths() {
+      const workspaceDir = $("#workspace-input").value.trim();
+      const stateDir = $("#state-input").value.trim();
+      const payload = await api("/api/config", {
+        method: "POST",
+        body: JSON.stringify({ workspaceDir, stateDir }),
+      });
+      state.config = payload.config;
+      setStatus("Config saved.", "ok");
+      await loadRuntime();
+      await loadConfigAndOnboarding();
+    }
+
+    async function saveOnboarding() {
+      const selectedModelProfile = $("#onboard-model-select").value;
+      const consentAccepted = $("#onboard-consent").checked;
+      const gmailLoginDone = $("#onboard-gmail-done").checked;
+      const useEnvKey = $("#onboard-use-env").checked;
+      const apiKey = $("#onboard-api-key").value;
+
+      await api("/api/onboarding/apply", {
+        method: "POST",
+        body: JSON.stringify({
+          selectedModelProfile,
+          consentAccepted,
+          gmailLoginDone,
+          useEnvKey,
+          apiKey,
+        }),
+      });
+      setStatus("Onboarding saved to config + state.", "ok");
+      await loadConfigAndOnboarding();
+      await loadRuntime();
+    }
+
+    async function sendPreviewTap(event) {
+      const image = $("#preview-image");
+      const width = Number(image.dataset.pixelWidth || "0");
+      const height = Number(image.dataset.pixelHeight || "0");
+      if (!width || !height) {
+        return;
+      }
+      const rect = image.getBoundingClientRect();
+      const localX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const localY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+      const targetX = Math.round((localX / rect.width) * width);
+      const targetY = Math.round((localY / rect.height) * height);
+
+      await api("/api/emulator/tap", {
+        method: "POST",
+        body: JSON.stringify({ x: targetX, y: targetY }),
+      });
+      setStatus("Tap sent at (" + targetX + ", " + targetY + ").", "ok");
+      await refreshPreview().catch(() => {});
+    }
+
+    function bindEvents() {
+      document.querySelectorAll(".tab-btn").forEach((button) => {
+        button.addEventListener("click", () => activateTab(button.dataset.tab));
+      });
+
+      $("#runtime-refresh-btn").addEventListener("click", () => {
+        loadRuntime().then(() => setStatus("Runtime refreshed.", "ok")).catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#emu-refresh-btn").addEventListener("click", () => {
+        loadRuntime().then(() => setStatus("Emulator status refreshed.", "ok")).catch((error) => setStatus(error.message, "error"));
+      });
+
+      document.querySelectorAll("[data-emu-action]").forEach((button) => {
+        button.addEventListener("click", () => {
+          emulatorAction(button.dataset.emuAction).catch((error) => setStatus(error.message, "error"));
+        });
+      });
+
+      $("#preview-refresh-btn").addEventListener("click", () => {
+        refreshPreview().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#preview-auto").addEventListener("change", (event) => {
+        const enabled = event.target.checked;
+        if (state.previewTimer) {
+          clearInterval(state.previewTimer);
+          state.previewTimer = null;
+        }
+        if (enabled) {
+          state.previewTimer = setInterval(() => {
+            refreshPreview().catch(() => {});
+          }, 2000);
+        }
+      });
+
+      $("#emulator-text-send").addEventListener("click", () => {
+        sendTextInput().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#save-core-paths-btn").addEventListener("click", () => {
+        saveCorePaths().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#onboard-use-env").addEventListener("change", (event) => {
+        $("#onboard-api-key-wrap").style.display = event.target.checked ? "none" : "block";
+      });
+
+      $("#onboard-model-select").addEventListener("change", () => {
+        renderOnboarding();
+      });
+
+      $("#onboard-save-btn").addEventListener("click", () => {
+        saveOnboarding().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#onboard-start-emu").addEventListener("click", () => {
+        emulatorAction("start").catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#onboard-show-emu").addEventListener("click", () => {
+        emulatorAction("show").catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#preview-image").addEventListener("click", (event) => {
+        sendPreviewTap(event).catch((error) => setStatus(error.message, "error"));
+      });
+    }
+
+    async function init() {
+      bindEvents();
+      try {
+        await loadRuntime();
+        await loadConfigAndOnboarding();
+        setStatus("Dashboard ready.", "ok");
+      } catch (error) {
+        setStatus(error.message || "Initialization failed", "error");
+      }
+      state.runtimeTimer = setInterval(() => {
+        loadRuntime().catch(() => {});
+      }, 3000);
+    }
+
+    init();
+  </script>
+  </body>
 </html>`;
   }
 
@@ -592,6 +1318,7 @@ export class DashboardServer {
         sendJson(res, 200, {
           config: this.config,
           modelProfiles: Object.keys(this.config.models).sort(),
+          credentialStatus: this.credentialStatusMap(),
         });
         return;
       }
