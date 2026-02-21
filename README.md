@@ -468,6 +468,34 @@ When Telegram receives the human-auth message:
 2. Approve/reject on the web page.
 3. Agent resumes and reports task result in Telegram.
 
+## Dockerized Agent E2E (Headless Linux)
+
+OpenPocket can run on Linux/headless servers when Android SDK + emulator dependencies are present.
+The current auto-installer is macOS-only, but runtime execution is cross-platform.
+
+For repeatable integration tests, use the Docker E2E harness:
+
+```bash
+npm run test:e2e:docker
+```
+
+What this flow does:
+
+1. Build a Linux Docker image with Android SDK, emulator, and an AVD.
+2. Start a headless emulator in the container.
+3. Run OpenPocket agent with a natural-language task.
+4. Verify session artifacts and action execution results.
+
+Important notes:
+
+- On Linux with `/dev/kvm`, emulator boot is much faster.
+- On macOS Docker Desktop (no KVM passthrough), emulator usually works with software acceleration but can be significantly slower.
+- You can override the task text:
+
+```bash
+OPENPOCKET_E2E_TASK=\"Open Android Settings and then go home\" npm run test:e2e:docker
+```
+
 ## Documentation
 
 ### Where the frontend is
