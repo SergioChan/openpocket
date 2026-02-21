@@ -40,6 +40,7 @@
 - ensure gateway started with `humanAuth.useLocalRelay=true`
 - check gateway logs for local relay startup failure
 - use `/auth pending` to verify request creation even when web link fallback is unavailable
+- if running PermissionLab E2E, use `openpocket test permission-app run --chat <id>` so gateway sends auth link automatically
 
 ## ngrok tunnel does not come up
 
@@ -47,6 +48,7 @@
 - verify `NGROK_AUTHTOKEN` (or `humanAuth.tunnel.ngrok.authtoken`) is set
 - confirm `ngrok` executable exists in PATH or set `humanAuth.tunnel.ngrok.executable`
 - inspect gateway logs for `[human-auth][ngrok]` startup errors
+- if error contains `ERR_NGROK_108`, terminate other ngrok agent sessions and retry
 
 ## Human-auth request always times out
 
@@ -54,6 +56,20 @@
 - if LAN mode, verify host/port reachability from phone network
 - if ngrok mode, verify tunnel URL is active and not blocked
 - increase `humanAuth.requestTimeoutSec` when approvals need more time
+- check relay state file for pending/expired records: `state/human-auth-relay/requests.json`
+
+## Web page camera says permission denied after Allow
+
+- Telegram in-app browser may block camera access on some devices/versions
+- use `Capture/Upload Photo` button as fallback
+- or approve/reject without image when the flow does not require camera artifact
+
+## Delegated artifact was approved but flow did not resume correctly
+
+- inspect session file for `delegation_result=...` and `delegation_template=...`
+- ensure app UI has an active focused input field for text delegation
+- for image delegation, confirm app picker can access `/sdcard/Download`
+- rerun with a deterministic case (`camera`, `location`, `sms`) before app-specific flows
 
 ## Scripts blocked unexpectedly
 

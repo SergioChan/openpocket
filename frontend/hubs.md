@@ -8,8 +8,7 @@ This documentation is organized into documentation hubs with a clear separation 
 - Keep operations and troubleshooting separated.
 
 All pages in this folder document implemented behavior in the current TypeScript runtime (`src/`).
-For the native macOS menu bar app, see:
-- [OpenPocket Menu Bar App](../apps/openpocket-menubar/README.md)
+The primary control surface is the local Web dashboard (`openpocket dashboard start` or auto-started by `gateway start`).
 
 ## Direction
 
@@ -41,6 +40,7 @@ OpenPocket is a local emulator-first phone-use agent aimed at real consumer scen
 - Skill format and loading rules: [Skills](./tools/skills.md)
 - Script format and execution rules: [Scripts](./tools/scripts.md)
 - CLI and Telegram commands: [CLI and Gateway](./reference/cli-and-gateway.md)
+- Remote auth and delegation design: [Remote Human Authorization](./concepts/remote-human-authorization.md)
 
 ## Scope Policy
 

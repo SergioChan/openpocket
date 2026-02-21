@@ -50,6 +50,8 @@ For human-auth steps, `execution_result` may include:
 ```text
 Human auth approved|rejected|timeout request_id=<id> message=<summary>
 human_artifact=<absolute path, optional>
+delegation_result=<runtime apply summary, optional>
+delegation_template=<next-step UI template hint, optional>
 local_screenshot=<absolute path, optional>
 ```
 
@@ -145,3 +147,17 @@ Extension mapping is inferred from mime type:
 - `image/webp` -> `.webp`
 - `application/json` -> `.json`
 - unknown -> `.bin`
+
+Common JSON payload shapes:
+
+```json
+{ "kind": "text", "value": "123456", "capability": "2fa", "capturedAt": "..." }
+```
+
+```json
+{ "kind": "qr_text", "value": "otpauth://...", "capability": "qr", "capturedAt": "..." }
+```
+
+```json
+{ "kind": "geo", "lat": 37.7749, "lon": -122.4194, "capability": "location", "capturedAt": "..." }
+```

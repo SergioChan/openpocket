@@ -266,6 +266,7 @@ const baseSidebar = [
       { text: "Index", link: "/concepts/" },
       { text: "Project Blueprint", link: "/concepts/project-blueprint" },
       { text: "Architecture", link: "/concepts/architecture" },
+      { text: "Remote Human Authorization", link: "/concepts/remote-human-authorization" },
       { text: "Prompting and Decision Model", link: "/concepts/prompting" },
       { text: "Sessions and Memory", link: "/concepts/sessions-memory" },
     ],

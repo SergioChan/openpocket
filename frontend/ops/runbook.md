@@ -29,6 +29,30 @@ Human-auth readiness checks:
 - `humanAuth.relayBaseUrl` / `humanAuth.publicBaseUrl` populated after gateway boot
 - if ngrok mode is enabled, verify `NGROK_AUTHTOKEN` (or config token) is available
 
+## Remote Auth Validation (PermissionLab)
+
+Use this playbook to verify end-to-end remote authorization before production use.
+
+```bash
+openpocket telegram whoami
+openpocket test permission-app cases
+openpocket test permission-app run --case camera --chat <telegram_chat_id>
+```
+
+Expected outcome:
+
+1. PermissionLab deploys and launches.
+2. Agent taps scenario button in emulator.
+3. Telegram receives human-auth request with web link.
+4. Phone approval/rejection resolves request.
+5. Agent resumes and reports final result.
+
+Recommended scenario matrix:
+
+- `--case camera` for image delegation
+- `--case location` for geo delegation
+- `--case sms` or `--case 2fa` for text/code delegation
+
 ## Monitoring
 
 - gateway terminal logs show accepted task, step progress, and final status
@@ -38,12 +62,22 @@ Human-auth readiness checks:
 - each task appends one line to daily memory file
 - human-auth relay requests are persisted in `state/human-auth-relay/requests.json`
 - uploaded auth artifacts are stored in `state/human-auth-artifacts/`
+- delegation apply summaries are recorded in session `execution_result`
 
 ## Safe Stop
 
 - use `/stop` in Telegram to request cancellation
 - runtime checks stop flag between steps and finalizes session as failed with stop reason
 - for blocked auth requests, use `/auth pending` and resolve with `/auth approve|reject`
+
+## Debug Evidence Collection
+
+When remote auth flow fails, collect:
+
+- gateway log lines containing `[OpenPocket][human-auth]`
+- latest session file under `workspace/sessions/`
+- relay state file `state/human-auth-relay/requests.json`
+- artifact directory listing under `state/human-auth-artifacts/`
 
 ## Data Retention
 

@@ -27,6 +27,10 @@ type AgentAction =
       type: "request_human_auth";
       capability:
         | "camera"
+        | "qr"
+        | "microphone"
+        | "voice"
+        | "nfc"
         | "sms"
         | "2fa"
         | "location"
@@ -73,6 +77,10 @@ When fields are missing/invalid:
 - `shell`: executes command tokens after `adb shell`
 - `run_script`: handled by `ScriptExecutor` in `AgentRuntime`
 - `request_human_auth`: pauses task and waits for human approval through `HumanAuthBridge`
+- when approved with delegation artifact, runtime can auto-apply data to emulator
+- text artifact is typed into focused field
+- geo artifact is injected via `adb emu geo fix <lon> <lat>`
+- image artifact is pushed to `/sdcard/Download/...` and adds `delegation_template` hint
 - `wait`: async sleep
 - `finish`: marks successful task completion
 

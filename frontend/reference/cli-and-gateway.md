@@ -6,16 +6,17 @@
 openpocket [--config <path>] install-cli
 openpocket [--config <path>] onboard
 openpocket [--config <path>] config-show
-openpocket [--config <path>] emulator status|start|stop|hide|show|list-avds|screenshot [--out <path>]
+openpocket [--config <path>] emulator status|start|stop|hide|show|list-avds|screenshot [--out <path>] [--device <id>]
 openpocket [--config <path>] emulator tap --x <int> --y <int> [--device <id>]
 openpocket [--config <path>] emulator type --text <text> [--device <id>]
 openpocket [--config <path>] agent [--model <name>] <task>
 openpocket [--config <path>] skills list
 openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
-openpocket [--config <path>] telegram setup
+openpocket [--config <path>] telegram setup|whoami
 openpocket [--config <path>] gateway [start|telegram]
+openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
+openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task|run|cases] [--device <id>] [--clean] [--case <id>] [--send] [--chat <id>] [--model <name>]
 openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
-openpocket panel start
 ```
 
 Deprecated aliases:
@@ -31,94 +32,113 @@ Local clone launcher:
 ./openpocket <command>
 ```
 
-## `panel start`
-
-- startup order:
-- first tries installed panel app in `/Applications` and `~/Applications`
-- then falls back to source build launch from `apps/openpocket-menubar` (local clone/dev)
-- if panel app is not found, opens GitHub Releases for PKG download guidance
-- menu bar only (no Dock icon)
-- includes UI onboarding, runtime controls, permissions, storage scope, and prompt management
-
 ## `onboard`
 
-- loads/creates config
-- saves normalized config
+- loads or creates config
+- writes normalized config
 - ensures workspace bootstrap files and directories
 - runs Android dependency doctor (auto-install on macOS when tools are missing)
-- ensures Java 17+ for Android command line tools; auto-installs via Homebrew on macOS if needed
-- reuses existing local AVD when available to avoid heavy repeated image/bootstrap installs
-- runs interactive onboarding wizard (consent/model/API key/emulator login/human-auth tunnel mode)
+- ensures Java 17+ for Android command line tools
+- reuses existing local AVD when available
+- installs CLI launcher on first onboard (`~/.local/bin/openpocket`)
+- runs interactive onboarding wizard (consent/model/API key/Telegram/human-auth mode)
+
+Interactive onboarding wizard flow:
+
+- setup banner and consent
+- default model profile and API key source
+- Telegram token source and chat allowlist policy
+- emulator wake-up and optional Play Store login guidance
+- human-auth bridge mode (`disabled` / `LAN relay` / `local relay + ngrok`)
+- writes onboarding state to `state/onboarding.json`
 
 ## `install-cli`
 
 - explicitly (re)installs local CLI launcher at `~/.local/bin/openpocket`
 - adds `~/.local/bin` export line to `~/.zshrc` and `~/.bashrc` when missing
 
-Interactive onboarding wizard flow:
+## `dashboard start`
 
-- prints setup banner/logo
-- presents required user consent (local runtime + cloud model boundary)
-- selects default model profile (GPT, Claude, AutoGLM, etc.)
-- configures provider-specific API key (env or local config.json)
-- configures Telegram bot token and chat allowlist policy
-- option prompts use Up/Down arrows + Enter (no numeric menu input)
-- can start/show emulator and guide manual Gmail login for Play Store
-- configures human-auth bridge mode (`ngrok` / `LAN` / disabled)
-- writes onboarding state to `state/onboarding.json`
-
-## `init` (deprecated alias)
-
-- compatibility alias
-- in interactive terminals: behaves like `onboard`
-- in non-interactive terminals: runs bootstrap only (config + workspace + env doctor), without prompts
-
-## `setup` (deprecated alias)
-
-- compatibility alias
-- behaves like `onboard`
-
-## `agent`
-
-- runs one task synchronously
-- returns message and session path
-- exit code `0` on success, `1` on failure
-
-## `emulator tap` / `emulator type`
-
-- `emulator tap` sends one direct tap action to target device
-- `emulator type` types text to the focused input target
-- `--device <id>` overrides default device resolution for one command
-
-## `script run`
-
-- executes script via `ScriptExecutor`
-- prints status, run directory, and stdout/stderr
-- exit code follows `result.ok`
-
-## `telegram setup`
-
-- interactive setup for Telegram bot token source (env or config file)
-- optional interactive allowlist update for `telegram.allowedChatIds`
-- requires an interactive terminal (TTY)
-- `gateway start` auto-configures Telegram slash-command menu (`setMyCommands` + menu button)
+- starts local Web dashboard server
+- default host/port from `config.dashboard`
+- optional `--host` and `--port` override
+- can auto-open browser when `dashboard.autoOpenBrowser=true`
+- standalone mode only reports detected gateway process status
 
 ## `gateway start`
 
-Startup behavior includes a preflight sequence:
+Startup behavior includes preflight sequence:
 
-1. load and validate config
+1. load config
 2. validate Telegram token source (`config.telegram.botToken` or env)
-3. ensure emulator is booted (auto-start headless when needed)
-4. start panel on macOS (`panel start`)
-5. start gateway runtime services (Telegram polling, heartbeat, cron)
+3. ensure emulator is booted
+4. ensure local dashboard is running
+5. initialize gateway runtime
+6. start services (Telegram polling, heartbeat, cron)
 
 When human auth is enabled in config, gateway also auto-starts:
 
-- local relay server (`useLocalRelay=true`)
-- optional ngrok tunnel (`humanAuth.tunnel.provider=ngrok` and `ngrok.enabled=true`)
+- local relay server (`humanAuth.useLocalRelay=true`)
+- optional ngrok tunnel (`humanAuth.tunnel.provider=ngrok` and `humanAuth.tunnel.ngrok.enabled=true`)
 
-## Telegram
+## `telegram setup`
+
+- interactive setup for Telegram bot token source (env or config)
+- optional interactive allowlist update for `telegram.allowedChatIds`
+- requires interactive terminal (TTY)
+
+## `telegram whoami`
+
+- prints current token source and allow policy
+- prints allowlist summary
+- fetches bot identity (`getMe`)
+- discovers known chat IDs from recent updates (`getUpdates`)
+- useful for validating `--chat <id>` before E2E tests
+
+## `test permission-app`
+
+Purpose:
+
+- build and install a local Android test app (`OpenPocket PermissionLab`)
+- trigger concrete permission/auth walls
+- validate end-to-end human-auth delegation flow
+
+Actions:
+
+- `cases`: list supported scenarios
+- `deploy` / `install`: build+install app (with or without launch)
+- `launch`: launch app
+- `reset`: clear app data and revoke requested permissions
+- `uninstall`: remove app from emulator
+- `task`: print scenario-specific Telegram task prompt
+- `task --send` or `run`: execute full E2E scenario
+
+Common options:
+
+- `--case <id>`: scenario (`camera`, `location`, `sms`, `2fa`, etc.)
+- `--chat <id>`: Telegram chat ID for notifications and auth link
+- `--model <name>`: override model for this run
+- `--device <id>`: target emulator device
+- `--clean`: rebuild test app from clean build dir
+
+Recommended E2E command:
+
+```bash
+openpocket test permission-app run --case camera --chat <telegram_chat_id>
+```
+
+## `human-auth-relay start`
+
+- standalone relay server mode for debugging
+- not required for normal gateway operation when local stack is enabled
+- endpoint surface:
+  - `POST /v1/human-auth/requests`
+  - `GET /v1/human-auth/requests/<id>?pollToken=...`
+  - `POST /v1/human-auth/requests/<id>/resolve`
+  - `GET /human-auth/<id>?token=...`
+  - `GET /healthz`
+
+## Telegram Commands
 
 Supported commands:
 
@@ -152,12 +172,12 @@ Gateway runtime behavior:
 
 - long-running process loop with signal-aware shutdown/restart
 - `SIGUSR1` restarts gateway in-process
-- heartbeat runner logs health snapshots on interval
+- heartbeat runner writes periodic health snapshots
 - cron service executes due jobs from `workspace/cron/jobs.json`
 - if `humanAuth.enabled=true` and `useLocalRelay=true`, gateway auto-starts local relay
-- if `humanAuth.tunnel.provider=ngrok` and `ngrok.enabled=true`, gateway also auto-starts ngrok tunnel
+- if ngrok is enabled, gateway auto-starts tunnel and exposes public auth URL
 
-## Telegram Output
+## Telegram Output Sanitization
 
 Before sending model/task content back to chat:
 
@@ -165,11 +185,10 @@ Before sending model/task content back to chat:
 - redact local screenshot and run directory paths
 - collapse whitespace and truncate
 
-This keeps user-facing chat concise and avoids exposing local filesystem details.
+This keeps user-facing chat concise and avoids leaking local filesystem details.
 
-## `human-auth-relay`
+## Related Specs
 
-- runs a lightweight web relay for real-device authorization handoff
-- receives human-auth requests from gateway and returns one-time approval links
-- provides polling APIs so task runtime can resume after approve/reject
-- optional standalone mode for debugging (normal flow does not require manual start)
+- [Remote Human Authorization](../concepts/remote-human-authorization.md)
+- [Action and Output Schema](./action-schema.md)
+- [Session and Memory Formats](./session-memory-formats.md)

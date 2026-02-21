@@ -39,6 +39,8 @@ For authorization checkpoints, gateway also supports a third interaction surface
 
 - **Remote auth handoff**: one-time web link approval (plus Telegram fallback commands) when `request_human_auth` is emitted.
 
+Detailed protocol, token model, and delegation application matrix are documented in [Remote Human Authorization](./remote-human-authorization.md).
+
 ## Components
 
 - `AgentRuntime`: orchestrates task loop, step execution, and session/memory persistence.

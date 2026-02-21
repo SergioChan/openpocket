@@ -52,6 +52,7 @@ For task mode with auth checkpoints:
 - agent can emit `request_human_auth`
 - gateway opens one-time web approval link (when relay is configured)
 - Telegram `/auth approve|reject` remains available as manual fallback
+- approved requests may inject `delegation_result` and `delegation_template` lines into history, so the next step can continue with deterministic UI paths (for example gallery import after delegated image upload)
 
 ## Memory Window
 

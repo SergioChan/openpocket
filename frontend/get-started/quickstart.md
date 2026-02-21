@@ -21,14 +21,10 @@ npm install -g openpocket
 openpocket onboard
 ```
 
-If you use the native macOS panel, install the release package from:
-
-- [OpenPocket Releases](https://github.com/SergioChan/openpocket/releases)
-
-Then start the panel:
+OpenPocket now uses a local Web dashboard instead of a native panel app:
 
 ```bash
-openpocket panel start
+openpocket dashboard start
 ```
 
 ## Source Install
@@ -132,6 +128,10 @@ Current remote human-in-the-loop support:
 - if agent emits `request_human_auth`, gateway can issue a one-time approval link
 - user can approve/reject from phone browser, or use `/auth approve|reject` in Telegram
 
+For architecture, security, and end-to-end test playbook, see:
+
+- [Remote Human Authorization](../concepts/remote-human-authorization.md)
+
 Planned next step:
 
 - broader phone-side remote controls (pause/resume/retry beyond auth-only checkpoints)
@@ -149,3 +149,9 @@ For auth workflow testing, use:
 - `/auth pending`
 - `/auth approve <request-id> [note]`
 - `/auth reject <request-id> [note]`
+
+PermissionLab end-to-end test command:
+
+```bash
+openpocket test permission-app run --case camera --chat <telegram_chat_id>
+```
