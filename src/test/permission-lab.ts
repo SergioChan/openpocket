@@ -638,6 +638,10 @@ export class PermissionLabManager {
 
     requireCommandOk(apksigner, ["verify", signedApk], "apksigner verify");
 
+    const statusBeforeInstall = this.emulator.status();
+    if (statusBeforeInstall.devices.length === 0) {
+      await this.emulator.start(true);
+    }
     const deviceId = this.ensureEmulatorReady(options.deviceId);
     const adb = this.emulator.adbBinary();
     const installOutput = requireCommandOk(
