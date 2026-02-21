@@ -303,6 +303,8 @@ export class HumanAuthRelayServer {
     #photoPreview { width: 100%; border-radius: 10px; margin-top: 10px; background: #0b1118; }
     .status { margin-top: 14px; font-weight: 600; }
     .muted { color: #4a6279; font-size: 13px; }
+    .hidden { display: none !important; }
+    .grid2 { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   </style>
 </head>
 <body>
@@ -317,9 +319,37 @@ export class HumanAuthRelayServer {
         <div><strong>Reason</strong><br/>${reason}</div>
         <div><strong>Current App</strong><br/>${currentApp}</div>
       </div>
+      <div class="muted" id="capabilityHint"></div>
 
       <label for="note"><strong>Optional note</strong></label>
       <textarea id="note" placeholder="e.g., Face ID approved, code confirmed"></textarea>
+
+      <div class="meta" id="delegationBlock">
+        <div>
+          <strong>Delegated Data (optional)</strong><br/>
+          Attach real-device data for VM continuation (code/text/geo/photo).
+        </div>
+      </div>
+
+      <div id="textDelegation">
+        <label for="resultText"><strong>Text / Code</strong></label>
+        <input id="resultText" type="text" style="width:100%;border-radius:8px;border:1px solid #c5d2e4;padding:10px;box-sizing:border-box" placeholder="e.g., SMS code, OTP, QR result text" />
+        <div class="actions">
+          <button id="attachText" type="button">Attach Text</button>
+        </div>
+      </div>
+
+      <div id="geoDelegation" class="hidden">
+        <label><strong>Location (lat/lon)</strong></label>
+        <div class="grid2">
+          <input id="geoLat" type="number" step="0.000001" placeholder="Latitude" style="width:100%;border-radius:8px;border:1px solid #c5d2e4;padding:10px;box-sizing:border-box" />
+          <input id="geoLon" type="number" step="0.000001" placeholder="Longitude" style="width:100%;border-radius:8px;border:1px solid #c5d2e4;padding:10px;box-sizing:border-box" />
+        </div>
+        <div class="actions">
+          <button id="useGeo" type="button">Use Current Location</button>
+          <button id="attachGeo" type="button">Attach Location</button>
+        </div>
+      </div>
 
       <div class="actions">
         <button id="startCam" type="button">Enable Camera</button>
@@ -343,14 +373,60 @@ export class HumanAuthRelayServer {
   <script>
     const requestId = ${JSON.stringify(record.requestId)};
     const token = ${JSON.stringify(tokenEscaped)};
+    const capability = ${JSON.stringify(record.capability)};
     const statusEl = document.getElementById("status");
     const noteEl = document.getElementById("note");
+    const capabilityHintEl = document.getElementById("capabilityHint");
     const videoEl = document.getElementById("video");
     const canvasEl = document.getElementById("canvas");
     const photoInputEl = document.getElementById("photoInput");
     const photoPreviewEl = document.getElementById("photoPreview");
+    const resultTextEl = document.getElementById("resultText");
+    const geoLatEl = document.getElementById("geoLat");
+    const geoLonEl = document.getElementById("geoLon");
     let stream = null;
     let artifact = null;
+
+    function show(id, visible) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle("hidden", !visible);
+    }
+
+    function capabilityHintText(cap) {
+      if (cap === "location") return "Recommended: attach location. VM will receive geo coordinates.";
+      if (cap === "camera") return "Recommended: attach a photo if app flow needs image input.";
+      if (cap === "2fa" || cap === "sms") return "Recommended: attach OTP/code text.";
+      if (cap === "qr") return "Recommended: attach decoded QR text or photo.";
+      return "Attach optional evidence/data to help the agent continue in VM.";
+    }
+
+    function configureByCapability() {
+      capabilityHintEl.textContent = capabilityHintText(capability);
+      show("geoDelegation", capability === "location");
+      show("textDelegation", capability !== "location");
+      if (capability === "location") {
+        resultTextEl.placeholder = "Optional location note";
+      } else if (capability === "sms" || capability === "2fa") {
+        resultTextEl.placeholder = "e.g., 6-digit OTP";
+      } else if (capability === "qr") {
+        resultTextEl.placeholder = "Paste QR decoded content";
+      }
+    }
+
+    function toBase64Utf8(text) {
+      const bytes = new TextEncoder().encode(text);
+      let binary = "";
+      for (const b of bytes) binary += String.fromCharCode(b);
+      return btoa(binary);
+    }
+
+    function setJsonArtifact(payload) {
+      artifact = {
+        mimeType: "application/json",
+        base64: toBase64Utf8(JSON.stringify(payload)),
+      };
+    }
 
     function humanErrorMessage(err) {
       const name = err && err.name ? String(err.name) : "";
@@ -366,6 +442,57 @@ export class HumanAuthRelayServer {
         return "Camera is busy or blocked by another app. Close other camera apps and retry, or use Capture/Upload Photo.";
       }
       return "Failed to open camera: " + message;
+    }
+
+    function attachTextArtifact() {
+      const text = String(resultTextEl.value || "").trim();
+      if (!text) {
+        statusEl.textContent = "Text is empty.";
+        return;
+      }
+      setJsonArtifact({
+        kind: capability === "qr" ? "qr_text" : "text",
+        value: text,
+        capability,
+        capturedAt: new Date().toISOString(),
+      });
+      statusEl.textContent = "Text attached.";
+    }
+
+    function attachGeoArtifact() {
+      const lat = Number(geoLatEl.value);
+      const lon = Number(geoLonEl.value);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        statusEl.textContent = "Latitude/Longitude is invalid.";
+        return;
+      }
+      setJsonArtifact({
+        kind: "geo",
+        lat,
+        lon,
+        capability,
+        capturedAt: new Date().toISOString(),
+      });
+      statusEl.textContent = "Location attached.";
+    }
+
+    function useCurrentLocation() {
+      if (!navigator.geolocation) {
+        statusEl.textContent = "Geolocation is not supported in this browser.";
+        return;
+      }
+      statusEl.textContent = "Fetching location...";
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          geoLatEl.value = String(pos.coords.latitude);
+          geoLonEl.value = String(pos.coords.longitude);
+          attachGeoArtifact();
+        },
+        (err) => {
+          statusEl.textContent = "Failed to read location: " + (err && err.message ? err.message : String(err));
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
+      );
     }
 
     function fileToDataUrl(file) {
@@ -463,9 +590,13 @@ export class HumanAuthRelayServer {
     document.getElementById("startCam").addEventListener("click", startCamera);
     document.getElementById("snapCam").addEventListener("click", captureSnapshot);
     document.getElementById("pickPhoto").addEventListener("click", pickPhoto);
+    document.getElementById("attachText").addEventListener("click", attachTextArtifact);
+    document.getElementById("useGeo").addEventListener("click", useCurrentLocation);
+    document.getElementById("attachGeo").addEventListener("click", attachGeoArtifact);
     photoInputEl.addEventListener("change", onPhotoChange);
     document.getElementById("approve").addEventListener("click", () => submitDecision(true));
     document.getElementById("reject").addEventListener("click", () => submitDecision(false));
+    configureByCapability();
   </script>
 </body>
 </html>`;

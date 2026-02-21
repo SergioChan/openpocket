@@ -11,6 +11,10 @@ function toNumber(value: unknown, fallback: number): number {
 
 const HUMAN_AUTH_CAPABILITIES = new Set([
   "camera",
+  "qr",
+  "microphone",
+  "voice",
+  "nfc",
   "sms",
   "2fa",
   "location",

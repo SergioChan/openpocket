@@ -142,7 +142,7 @@ const TOOL_DEFS: ToolDef[] = [
         capability: {
           type: "string",
           description:
-            "The capability that needs authorization: camera, sms, 2fa, location, biometric, notification, contacts, calendar, files, oauth, payment, permission, or unknown.",
+            "The capability that needs authorization: camera, qr, microphone, voice, nfc, sms, 2fa, location, biometric, notification, contacts, calendar, files, oauth, payment, permission, or unknown.",
         },
         instruction: {
           type: "string",

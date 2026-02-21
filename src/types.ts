@@ -84,6 +84,10 @@ export interface HumanAuthConfig {
 
 export type HumanAuthCapability =
   | "camera"
+  | "qr"
+  | "microphone"
+  | "voice"
+  | "nfc"
   | "sms"
   | "2fa"
   | "location"
