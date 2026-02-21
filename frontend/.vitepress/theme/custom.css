@@ -92,7 +92,7 @@ h1, h2, h3, h4, h5, h6,
 
 .VPNavBar .wrapper { height: 100%; }
 
-.VPNavBar .container {
+.VPNavBar > .wrapper > .container {
   max-width: none !important;
   height: 100% !important;
   padding: 0 80px !important;
@@ -934,19 +934,17 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-grid       { gap: 32px; }
   .op-arch-simple         { padding: 12px; }
   .op-arch-flow           { justify-content: flex-start; }
-  .VPNavBar .container    { padding: 0 32px !important; }
+  .VPNavBar > .wrapper > .container { padding: 0 32px !important; }
 }
 
 /* Tablet portrait */
 @media (max-width: 860px) {
   .VPNavBarMenu             { display: none !important; }
-  .VPNavBar .container      { padding: 0 14px !important; align-items: center !important; }
+  .VPNavBar > .wrapper > .container { padding: 0 14px !important; align-items: center !important; }
   .VPNavBar .title          { height: var(--vp-nav-height) !important; }
   .VPNavBar .content        { height: var(--vp-nav-height) !important; justify-content: flex-end !important; margin-left: auto !important; }
   .VPNavBar .content-body   { width: auto !important; margin-left: auto !important; gap: 0 !important; justify-content: flex-end !important; }
   .VPNavBar .content-body > *:not(.VPNavBarHamburger) { display: none !important; }
-  .VPNavBar .hamburger      { margin-left: auto !important; margin-right: 0 !important; height: var(--vp-nav-height) !important; display: flex !important; align-items: center !important; }
-  .VPNavBar .hamburger .container { margin: 0 !important; top: 0 !important; }
   .op-landing             { padding: 48px 28px; gap: 64px; }
   .op-hero-title          { font-size: 36px !important; line-height: 44px !important; }
   .op-hero-desc           { font-size: 16px; }
@@ -968,7 +966,6 @@ h1, h2, h3, h4, h5, h6,
 /* Mobile navbar alignment fix */
 @media (max-width: 767px) {
   .VPNavBar .content-body { justify-content: flex-end !important; gap: 6px !important; }
-  .VPNavBar .hamburger    { margin-left: auto !important; margin-right: 0 !important; }
 }
 
 /* Mobile */
@@ -995,7 +992,7 @@ h1, h2, h3, h4, h5, h6,
   .op-arch-node           { padding: 8px 12px !important; font-size: 12px !important; line-height: 18px !important; height: 34px !important; }
   .op-arch-node--compact  { padding: 8px 12px !important; font-size: 12px !important; line-height: 18px !important; height: 34px !important; }
   .op-arch-arrow::after   { font-size: 14px; }
-  .VPNavBar .container    { padding: 0 16px !important; }
+  .VPNavBar > .wrapper > .container { padding: 0 16px !important; }
 }
 
 @media (max-width: 860px) {
