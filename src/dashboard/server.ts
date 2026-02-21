@@ -1415,8 +1415,11 @@ export class DashboardServer {
       $("#logs-meta").textContent = lines.length + " lines";
     }
 
-    async function refreshPreview() {
-      setStatus("Refreshing emulator preview...");
+    async function refreshPreview(options = {}) {
+      const silent = Boolean(options.silent);
+      if (!silent) {
+        setStatus("Refreshing emulator preview...");
+      }
       const preview = await api("/api/emulator/preview");
       state.preview = preview;
       const image = $("#preview-image");
@@ -1429,7 +1432,9 @@ export class DashboardServer {
         "App: " + (preview.currentApp || "unknown") +
         " | " + (preview.width || "?") + "x" + (preview.height || "?") +
         " | Updated: " + new Date(preview.capturedAt || Date.now()).toLocaleTimeString();
-      setStatus("Preview updated.", "ok");
+      if (!silent) {
+        setStatus("Preview updated.", "ok");
+      }
     }
 
     async function emulatorAction(action) {
@@ -1449,7 +1454,7 @@ export class DashboardServer {
         body: JSON.stringify({ text }),
       });
       setStatus(payload.message || "Text input sent.", "ok");
-      await refreshPreview().catch(() => {});
+      await refreshPreview({ silent: true }).catch(() => {});
     }
 
     async function saveCorePaths() {
@@ -1506,7 +1511,7 @@ export class DashboardServer {
         body: JSON.stringify({ x: targetX, y: targetY }),
       });
       setStatus("Tap sent at (" + targetX + ", " + targetY + ").", "ok");
-      await refreshPreview().catch(() => {});
+      await refreshPreview({ silent: true }).catch(() => {});
     }
 
     function bindEvents() {
@@ -1542,7 +1547,7 @@ export class DashboardServer {
       });
 
       $("#preview-refresh-btn").addEventListener("click", () => {
-        refreshPreview().catch((error) => setStatus(error.message, "error"));
+        refreshPreview({ silent: false }).catch((error) => setStatus(error.message, "error"));
       });
 
       $("#preview-auto").addEventListener("change", (event) => {
@@ -1553,7 +1558,7 @@ export class DashboardServer {
         }
         if (enabled) {
           state.previewTimer = setInterval(() => {
-            refreshPreview().catch(() => {});
+            refreshPreview({ silent: true }).catch(() => {});
           }, 2000);
         }
       });
