@@ -129,7 +129,6 @@ import { withBase } from "vitepress";
         <div class="op-arch-node op-arch-node--gray">Android Emulator</div>
       </div>
     </div>
-
     <div class="op-arch-track op-arch-group">
       <p class="op-arch-track-label">Model + Skills + Artifacts</p>
       <div class="op-arch-flow">
@@ -148,7 +147,6 @@ import { withBase } from "vitepress";
         </div>
       </div>
     </div>
-
     <div class="op-arch-track op-arch-group">
       <p class="op-arch-track-label">Gateway Operations</p>
       <div class="op-arch-flow">
@@ -163,7 +161,6 @@ import { withBase } from "vitepress";
         <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Cron Service</div>
       </div>
     </div>
-
     <div class="op-arch-track op-arch-group">
       <p class="op-arch-track-label">Remote Human Authorization</p>
       <div class="op-arch-flow">
