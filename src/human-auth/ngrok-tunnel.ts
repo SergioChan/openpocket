@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import net from "node:net";
 
 import type { HumanAuthTunnelNgrokConfig } from "../types";
 import { sleep } from "../utils/time";
@@ -44,6 +43,14 @@ function toHostPort(value: string): string {
   }
 }
 
+function normalizeApiBaseUrl(value: string): string {
+  const hostPort = toHostPort(value);
+  if (!hostPort) {
+    return "";
+  }
+  return `http://${hostPort}`;
+}
+
 export class NgrokTunnel {
   private readonly config: HumanAuthTunnelNgrokConfig;
   private readonly targetUrl: string;
@@ -52,6 +59,7 @@ export class NgrokTunnel {
   private publicUrl = "";
   private closed = false;
   private apiBaseUrl = "";
+  private processExitHint = "";
 
   constructor(
     config: HumanAuthTunnelNgrokConfig,
@@ -78,71 +86,78 @@ export class NgrokTunnel {
     return "";
   }
 
-  private async reserveApiWebAddress(): Promise<{ webAddr: string; apiBaseUrl: string }> {
-    const fallbackApiBase = "http://127.0.0.1:4040";
-    let parsed: URL;
+  private parseNgrokApiBaseUrlFromLine(line: string): string {
+    if (!line.startsWith("{")) {
+      return "";
+    }
     try {
-      parsed = new URL(this.config.apiBaseUrl || fallbackApiBase);
-    } catch {
-      parsed = new URL(fallbackApiBase);
-    }
-    const host = normalizeHost(parsed.hostname || "127.0.0.1");
-    const basePortRaw = Number(parsed.port || "4040");
-    const basePort = Number.isFinite(basePortRaw) ? Math.max(1024, Math.trunc(basePortRaw)) : 4040;
-
-    const tryPort = (port: number): Promise<boolean> =>
-      new Promise((resolve) => {
-        const server = net.createServer();
-        server.once("error", () => resolve(false));
-        server.listen(port, host, () => {
-          server.close(() => resolve(true));
-        });
-      });
-
-    for (let offset = 0; offset < 25; offset += 1) {
-      const port = basePort + offset;
-      // eslint-disable-next-line no-await-in-loop
-      if (await tryPort(port)) {
-        return {
-          webAddr: `${host}:${port}`,
-          apiBaseUrl: `http://${host}:${port}`,
-        };
+      const parsed = JSON.parse(line) as unknown;
+      if (!isObject(parsed)) {
+        return "";
       }
+      const msg = String(parsed.msg ?? "");
+      const addr = String(parsed.addr ?? "");
+      if (!msg.toLowerCase().includes("starting web service")) {
+        return "";
+      }
+      return normalizeApiBaseUrl(addr);
+    } catch {
+      return "";
     }
-
-    throw new Error(`Unable to reserve ngrok API web address from ${host}:${basePort}..${host}:${basePort + 24}`);
   }
 
-  private async readPublicUrlFromApi(): Promise<string> {
-    const apiBaseUrl = this.apiBaseUrl || this.config.apiBaseUrl;
+  private async queryPublicUrlFromApi(apiBaseUrl: string): Promise<string> {
     const response = await fetch(`${apiBaseUrl}/api/tunnels`);
     if (!response.ok) {
-      throw new Error(`ngrok api status=${response.status}`);
+      throw new Error(`ngrok api status=${response.status} at ${apiBaseUrl}`);
     }
     const parsed = (await response.json()) as unknown;
     if (!isObject(parsed) || !Array.isArray(parsed.tunnels)) {
-      throw new Error("ngrok api returned invalid payload.");
+      throw new Error(`ngrok api returned invalid payload at ${apiBaseUrl}`);
     }
     const targetKey = toHostPort(this.targetUrl);
     const tunnels = parsed.tunnels
       .filter((item): item is Record<string, unknown> => isObject(item))
       .map((item) => ({
         publicUrl: String(item.public_url ?? ""),
-        proto: String(item.proto ?? ""),
         addr: isObject(item.config) ? String(item.config.addr ?? "") : String(item.addr ?? ""),
       }))
       .filter((item) => item.publicUrl.startsWith("https://"));
     if (tunnels.length === 0) {
-      throw new Error("ngrok api has no https tunnel yet.");
+      throw new Error(`ngrok api has no https tunnel yet at ${apiBaseUrl}`);
     }
     const matched = tunnels.find((item) => toHostPort(item.addr) === targetKey);
-    if (matched) {
-      return matched.publicUrl.replace(/\/+$/, "");
+    if (!matched) {
+      throw new Error(`ngrok api has no tunnel for target ${this.targetUrl} at ${apiBaseUrl}`);
     }
-    if (tunnels.length === 1) {
-      return tunnels[0].publicUrl.replace(/\/+$/, "");
+    return matched.publicUrl.replace(/\/+$/, "");
+  }
+
+  private async readPublicUrlFromApi(): Promise<string> {
+    const candidates = [
+      normalizeApiBaseUrl(this.apiBaseUrl),
+      normalizeApiBaseUrl(this.config.apiBaseUrl),
+      "http://127.0.0.1:4040",
+      "http://127.0.0.1:4041",
+      "http://127.0.0.1:4042",
+    ].filter(Boolean);
+    const seen = new Set<string>();
+    let lastError = "ngrok api endpoint unavailable";
+    for (const candidate of candidates) {
+      if (seen.has(candidate)) {
+        continue;
+      }
+      seen.add(candidate);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const url = await this.queryPublicUrlFromApi(candidate);
+        this.apiBaseUrl = candidate;
+        return url;
+      } catch (error) {
+        lastError = stringifyError(error);
+      }
     }
-    throw new Error(`ngrok api has no tunnel for target ${this.targetUrl}`);
+    throw new Error(lastError);
   }
 
   async start(): Promise<string> {
@@ -153,14 +168,12 @@ export class NgrokTunnel {
       throw new Error("ngrok tunnel is starting.");
     }
 
-    const reserved = await this.reserveApiWebAddress();
-    this.apiBaseUrl = reserved.apiBaseUrl;
+    this.apiBaseUrl = normalizeApiBaseUrl(this.config.apiBaseUrl) || "http://127.0.0.1:4040";
+    this.processExitHint = "";
 
     const args = [
       "http",
       this.targetUrl,
-      "--web-addr",
-      reserved.webAddr,
       "--log",
       "stdout",
       "--log-format",
@@ -185,6 +198,18 @@ export class NgrokTunnel {
         if (!trimmed) {
           continue;
         }
+        const discoveredApiBase = this.parseNgrokApiBaseUrlFromLine(trimmed);
+        if (discoveredApiBase) {
+          this.apiBaseUrl = discoveredApiBase;
+        }
+        const lowered = trimmed.toLowerCase();
+        if (
+          lowered.includes("err_ngrok_") ||
+          lowered.includes("unknown flag") ||
+          lowered.includes("authentication failed")
+        ) {
+          this.processExitHint = trimmed;
+        }
         this.log(`[OpenPocket][human-auth][ngrok] ${prefix}${trimmed}`);
       }
     };
@@ -204,7 +229,8 @@ export class NgrokTunnel {
     let lastError = "";
     while (Date.now() < deadline) {
       if (!this.process || this.closed) {
-        throw new Error("ngrok process exited before tunnel became ready.");
+        const suffix = this.processExitHint ? ` ${this.processExitHint}` : "";
+        throw new Error(`ngrok process exited before tunnel became ready.${suffix}`);
       }
       try {
         const url = await this.readPublicUrlFromApi();
