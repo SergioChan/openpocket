@@ -19,6 +19,7 @@ import { ScriptExecutor } from "./tools/script-executor";
 import { runSetupWizard } from "./onboarding/setup-wizard";
 import { installCliShortcut } from "./install/cli-shortcut";
 import { ensureAndroidPrerequisites } from "./environment/android-prerequisites";
+import { PermissionLabManager } from "./test/permission-lab";
 
 function printHelp(): void {
   // eslint-disable-next-line no-console
@@ -42,6 +43,7 @@ Usage:
   openpocket [--config <path>] telegram setup
   openpocket [--config <path>] gateway [start|telegram]
   openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
+  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
 
 Legacy aliases (deprecated):
@@ -58,6 +60,8 @@ Examples:
   openpocket telegram setup
   openpocket gateway start
   openpocket dashboard start
+  openpocket test permission-app deploy
+  openpocket test permission-app task
   openpocket human-auth-relay start --port 8787
 `);
 }
@@ -953,6 +957,84 @@ async function runHumanAuthRelayCommand(
   return 0;
 }
 
+async function runTestCommand(configPath: string | undefined, args: string[]): Promise<number> {
+  const target = (args[0] ?? "").trim();
+  if (target !== "permission-app") {
+    throw new Error(
+      "Unknown test target. Use: test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean]",
+    );
+  }
+
+  const hasClean = args.includes("--clean");
+  const withoutClean = args.filter((item) => item !== "--clean");
+  const { value: deviceId, rest } = takeOption(withoutClean.slice(1), "--device");
+  if (rest.length > 1) {
+    throw new Error(`Unexpected test arguments: ${rest.slice(1).join(" ")}`);
+  }
+  const action = (rest[0] ?? "deploy").trim();
+
+  const cfg = loadConfig(configPath);
+  const permissionLab = new PermissionLabManager(cfg);
+
+  if (action === "task") {
+    // eslint-disable-next-line no-console
+    console.log(permissionLab.recommendedTelegramTask());
+    return 0;
+  }
+
+  if (action === "deploy" || action === "install") {
+    const shouldLaunch = action === "deploy";
+    // eslint-disable-next-line no-console
+    console.log("[OpenPocket][test] Building and deploying Android PermissionLab...");
+    const deployed = await permissionLab.deploy({
+      deviceId: deviceId ?? undefined,
+      launch: shouldLaunch,
+      clean: hasClean,
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] APK: ${deployed.apkPath}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Device: ${deployed.deviceId}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] SDK: ${deployed.sdkRoot}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Build-tools: ${deployed.buildToolsVersion} | Platform: ${deployed.platformVersion}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Install: ${deployed.installOutput || "ok"}`);
+    if (deployed.launchOutput) {
+      // eslint-disable-next-line no-console
+      console.log(`[OpenPocket][test] Launch: ${deployed.launchOutput}`);
+    }
+    // eslint-disable-next-line no-console
+    console.log("[OpenPocket][test] Suggested Telegram task:");
+    // eslint-disable-next-line no-console
+    console.log(permissionLab.recommendedTelegramTask());
+    return 0;
+  }
+
+  if (action === "launch") {
+    // eslint-disable-next-line no-console
+    console.log(permissionLab.launch(deviceId ?? undefined));
+    return 0;
+  }
+
+  if (action === "reset") {
+    // eslint-disable-next-line no-console
+    console.log(permissionLab.reset(deviceId ?? undefined));
+    return 0;
+  }
+
+  if (action === "uninstall") {
+    // eslint-disable-next-line no-console
+    console.log(permissionLab.uninstall(deviceId ?? undefined));
+    return 0;
+  }
+
+  throw new Error(
+    `Unknown permission-app action: ${action}. Use deploy|install|launch|reset|uninstall|task`,
+  );
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const { value: configPath, rest } = takeOption(argv, "--config");
 
@@ -1011,6 +1093,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (command === "human-auth-relay") {
     return runHumanAuthRelayCommand(configPath ?? undefined, rest.slice(1));
+  }
+
+  if (command === "test") {
+    return runTestCommand(configPath ?? undefined, rest.slice(1));
   }
 
   if (command === "skills") {

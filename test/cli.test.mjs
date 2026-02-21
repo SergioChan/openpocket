@@ -260,3 +260,16 @@ test("dashboard command validates subcommand", () => {
   assert.equal(run.status, 1);
   assert.match(run.stderr, /Unknown dashboard subcommand/);
 });
+
+test("test permission-app task prints recommended telegram flow", () => {
+  const run = runCli(["test", "permission-app", "task"]);
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /request_human_auth/i);
+  assert.match(run.stdout, /OpenPocket PermissionLab/i);
+});
+
+test("test command validates unknown target", () => {
+  const run = runCli(["test", "unknown-target"]);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Unknown test target/);
+});
