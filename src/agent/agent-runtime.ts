@@ -170,7 +170,7 @@ export class AgentRuntime {
           };
         }
 
-        const snapshot = await this.adb.captureScreenSnapshot(this.config.agent.deviceId);
+        const snapshot = await this.adb.captureScreenSnapshot(this.config.agent.deviceId, profile.model);
         shouldReturnHome = true;
         let screenshotPath: string | null = null;
         if (this.config.screenshots.saveStepScreenshots) {
@@ -540,7 +540,7 @@ export class AgentRuntime {
         });
 
         history.push(
-          `step ${step}: app=${snapshot.currentApp} action=${output.action.type} result=${executionResult}`,
+          `step ${step}: app=${snapshot.currentApp} thought="${output.thought}" action=${output.action.type} result=${executionResult}`,
         );
 
         if (this.config.agent.verbose) {

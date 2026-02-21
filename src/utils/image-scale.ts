@@ -9,22 +9,43 @@ export interface ScaledImage {
 }
 
 /**
- * Scale a PNG screenshot so its shortest side equals targetShortSide.
+ * Determine the scaling strategy based on the model name.
+ * - Anthropic/Claude: scale longest side to 1568px
+ * - OpenAI (default): scale shortest side to 768px
+ */
+function getScaleTarget(modelName: string): { side: "short" | "long"; pixels: number } {
+  const lower = modelName.toLowerCase();
+  if (lower.includes("claude") || lower.includes("anthropic")) {
+    return { side: "long", pixels: 1568 };
+  }
+  // Default: OpenAI-style (short side = 768)
+  return { side: "short", pixels: 768 };
+}
+
+/**
+ * Scale a PNG screenshot for optimal model consumption.
+ * When modelName is provided, picks the right strategy per provider:
+ * - OpenAI: shortest side → 768px
+ * - Anthropic/Claude: longest side → 1568px
  * Returns the scaled image buffer and the scale factors needed to map
  * coordinates from the scaled image back to the original resolution.
  */
 export async function scaleScreenshot(
   pngBuffer: Buffer,
-  targetShortSide = 768,
+  modelName?: string,
 ): Promise<ScaledImage> {
   const metadata = await sharp(pngBuffer).metadata();
   const origWidth = metadata.width!;
   const origHeight = metadata.height!;
 
-  const shortSide = Math.min(origWidth, origHeight);
+  const target = getScaleTarget(modelName ?? "");
+  const referenceSide =
+    target.side === "short"
+      ? Math.min(origWidth, origHeight)
+      : Math.max(origWidth, origHeight);
 
   // Skip scaling if already at or below target size.
-  if (shortSide <= targetShortSide) {
+  if (referenceSide <= target.pixels) {
     return {
       data: pngBuffer,
       scaleX: 1,
@@ -34,7 +55,7 @@ export async function scaleScreenshot(
     };
   }
 
-  const ratio = targetShortSide / shortSide;
+  const ratio = target.pixels / referenceSide;
   const newWidth = Math.round(origWidth * ratio);
   const newHeight = Math.round(origHeight * ratio);
 

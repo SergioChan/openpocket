@@ -76,7 +76,7 @@ export class AdbRuntime {
     throw new Error("No running emulator device found.");
   }
 
-  async captureScreenSnapshot(preferred?: string | null): Promise<ScreenSnapshot> {
+  async captureScreenSnapshot(preferred?: string | null, modelName?: string): Promise<ScreenSnapshot> {
     const deviceId = this.resolveDeviceId(preferred);
 
     const { data } = this.emulator.captureScreenshotBuffer(deviceId);
@@ -91,7 +91,7 @@ export class AdbRuntime {
       currentApp = "unknown";
     }
 
-    const scaled = await scaleScreenshot(data);
+    const scaled = await scaleScreenshot(data, modelName);
 
     return {
       deviceId,
