@@ -8,6 +8,82 @@ const docsBaseRaw = process.env.DOCS_BASE?.trim() ?? "/";
 const docsBase = docsBaseRaw.startsWith("/") ? docsBaseRaw : `/${docsBaseRaw}`;
 const normalizedBase = docsBase.endsWith("/") ? docsBase : `${docsBase}/`;
 const docsRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+const siteTitle = "OpenPocket";
+const siteDescription =
+  "Local emulator-first phone-use agent for everyday workflows with auditable local control.";
+const defaultSiteUrl = "https://openpocket.vercel.app";
+
+function normalizeSiteUrl(url) {
+  const trimmed = (url ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withProtocol.replace(/\/+$/, "");
+}
+
+function withDocsBase(assetPath) {
+  const cleaned = assetPath.replace(/^\/+/, "");
+  return `${normalizedBase}${cleaned}`;
+}
+
+function toAbsoluteUrl(siteUrl, pathname) {
+  if (!siteUrl) {
+    return "";
+  }
+
+  const cleaned = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return `${siteUrl}${cleaned}`;
+}
+
+const rawSiteUrl =
+  process.env.DOCS_SITE_URL?.trim() ||
+  process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+  process.env.VERCEL_URL?.trim() ||
+  defaultSiteUrl;
+const siteUrl = normalizeSiteUrl(rawSiteUrl);
+const faviconPath = withDocsBase("/favicon.ico");
+const logoPath = withDocsBase("/openpocket-logo.png");
+const canonicalPath = normalizedBase;
+const canonicalUrl = toAbsoluteUrl(siteUrl, canonicalPath);
+const socialImageUrl = toAbsoluteUrl(siteUrl, logoPath);
+const siteHead = [
+  ["link", { rel: "icon", href: faviconPath, sizes: "any" }],
+  ["link", { rel: "shortcut icon", href: faviconPath, type: "image/x-icon" }],
+  ["link", { rel: "canonical", href: canonicalUrl }],
+  ["meta", { name: "application-name", content: siteTitle }],
+  ["meta", { name: "apple-mobile-web-app-title", content: siteTitle }],
+  ["meta", { name: "theme-color", content: "#ff8a00" }],
+  ["meta", { name: "robots", content: "index, follow" }],
+  [
+    "meta",
+    {
+      name: "googlebot",
+      content: "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+    },
+  ],
+  [
+    "meta",
+    {
+      name: "keywords",
+      content: "OpenPocket, phone-use agent, Android emulator, local automation, AI agent",
+    },
+  ],
+  ["meta", { property: "og:type", content: "website" }],
+  ["meta", { property: "og:site_name", content: siteTitle }],
+  ["meta", { property: "og:locale", content: "en_US" }],
+  ["meta", { property: "og:title", content: siteTitle }],
+  ["meta", { property: "og:description", content: siteDescription }],
+  ["meta", { property: "og:url", content: canonicalUrl }],
+  ["meta", { property: "og:image", content: socialImageUrl }],
+  ["meta", { property: "og:image:alt", content: "OpenPocket logo" }],
+  ["meta", { name: "twitter:card", content: "summary" }],
+  ["meta", { name: "twitter:title", content: siteTitle }],
+  ["meta", { name: "twitter:description", content: siteDescription }],
+  ["meta", { name: "twitter:image", content: socialImageUrl }],
+  ["meta", { name: "twitter:image:alt", content: "OpenPocket logo" }],
+];
 
 function stripInlineMarkdown(text) {
   return text
@@ -216,8 +292,9 @@ const baseSidebar = [
 export default withMermaid(defineConfig({
   base: normalizedBase,
   lang: "en-US",
-  title: "OpenPocket",
-  description: "Local emulator-first phone-use agent for everyday workflows with auditable local control.",
+  title: siteTitle,
+  description: siteDescription,
+  head: siteHead,
   lastUpdated: true,
   cleanUrls: true,
   ignoreDeadLinks: [
