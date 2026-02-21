@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import fs from "node:fs";
+import path from "node:path";
 
 import type { OpenPocketConfig } from "../types";
 import { getModelProfile, resolveModelAuth } from "../config";
@@ -8,6 +10,15 @@ type MsgRole = "user" | "assistant";
 interface ChatTurn {
   role: MsgRole;
   content: string;
+}
+
+type OnboardingStep = 1 | 2 | 3;
+
+interface ProfileOnboardingState {
+  step: OnboardingStep;
+  userPreferredAddress?: string;
+  assistantName?: string;
+  assistantPersona?: string;
 }
 
 export interface ChatDecision {
@@ -66,6 +77,7 @@ function stringifyError(error: unknown): string {
 export class ChatAssistant {
   private readonly config: OpenPocketConfig;
   private readonly history = new Map<number, ChatTurn[]>();
+  private readonly profileOnboarding = new Map<number, ProfileOnboardingState>();
   private modeHint: "responses" | "chat" | "completions" = "responses";
 
   constructor(config: OpenPocketConfig) {
@@ -74,6 +86,202 @@ export class ChatAssistant {
 
   clear(chatId: number): void {
     this.history.delete(chatId);
+    this.profileOnboarding.delete(chatId);
+  }
+
+  private profileFilePath(name: "IDENTITY.md" | "USER.md"): string {
+    return path.join(this.config.workspaceDir, name);
+  }
+
+  private readTextSafe(filePath: string): string {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return "";
+      }
+      return fs.readFileSync(filePath, "utf-8");
+    } catch {
+      return "";
+    }
+  }
+
+  private writeTextSafe(filePath: string, content: string): void {
+    fs.writeFileSync(filePath, `${content.trim()}\n`, "utf-8");
+  }
+
+  private normalizeOneLine(input: string): string {
+    return input.replace(/\s+/g, " ").trim();
+  }
+
+  private extractBulletValue(content: string, key: string): string {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`^-\\s*${escaped}\\s*:\\s*(.+?)\\s*$`, "im");
+    const match = content.match(regex);
+    if (!match?.[1]) {
+      return "";
+    }
+    return this.normalizeOneLine(match[1]);
+  }
+
+  private needsIdentityOnboarding(): boolean {
+    const content = this.readTextSafe(this.profileFilePath("IDENTITY.md")).trim();
+    if (!content) {
+      return true;
+    }
+    const name = this.extractBulletValue(content, "Name");
+    if (!name) {
+      return true;
+    }
+    if (/^(unknown|tbd|todo|null|n\/a|none|placeholder)$/i.test(name)) {
+      return true;
+    }
+    return false;
+  }
+
+  private needsUserOnboarding(): boolean {
+    const content = this.readTextSafe(this.profileFilePath("USER.md")).trim();
+    if (!content) {
+      return true;
+    }
+    const preferred = this.extractBulletValue(content, "Preferred form of address")
+      || this.extractBulletValue(content, "What to call them");
+    if (!preferred) {
+      return true;
+    }
+    if (/^(unknown|tbd|todo|null|n\/a|none|placeholder)$/i.test(preferred)) {
+      return true;
+    }
+    return false;
+  }
+
+  private needsProfileOnboarding(): boolean {
+    // Run onboarding if either profile file is missing critical identity fields.
+    return this.needsIdentityOnboarding() || this.needsUserOnboarding();
+  }
+
+  private questionForStep(step: OnboardingStep): string {
+    if (step === 1) {
+      return "Quick onboarding before we continue: what would you like me to call you?";
+    }
+    if (step === 2) {
+      return "Great. What name would you like to call me?";
+    }
+    return "Got it. What persona should I keep (tone/style/traits)?";
+  }
+
+  private buildIdentityFromAnswers(params: {
+    assistantName: string;
+    assistantPersona: string;
+  }): string {
+    return [
+      "# IDENTITY",
+      "",
+      "## Agent Identity",
+      "",
+      `- Name: ${params.assistantName}`,
+      "- Role: Android phone-use automation agent",
+      `- Persona: ${params.assistantPersona}`,
+      "- Primary objective: execute user tasks safely and efficiently",
+      "",
+      "## Behavioral Defaults",
+      "",
+      "- Language for model thought/action text: English",
+      "- Planning style: sub-goal driven, one deterministic step at a time",
+      "- Escalation trigger: request_human_auth when real-device authorization is required",
+    ].join("\n");
+  }
+
+  private buildUserFromAnswers(params: {
+    userPreferredAddress: string;
+    assistantName: string;
+    assistantPersona: string;
+  }): string {
+    return [
+      "# USER",
+      "",
+      "Record user-specific preferences and constraints.",
+      "",
+      "## Profile",
+      "",
+      "- Name:",
+      `- Preferred form of address: ${params.userPreferredAddress}`,
+      "- Timezone:",
+      "- Language preference:",
+      "",
+      "## Interaction Preferences",
+      "",
+      "- Verbosity:",
+      "- Risk tolerance:",
+      "- Confirmation preference for external actions:",
+      `- Preferred assistant name: ${params.assistantName}`,
+      `- Preferred assistant persona: ${params.assistantPersona}`,
+      "",
+      "## Task Preferences",
+      "",
+      "- Preferred apps/services:",
+      "- Avoided apps/services:",
+      "- Recurring goals:",
+      "",
+      "## Notes",
+      "",
+      "- Add durable preferences here.",
+      "- Keep sensitive details minimal.",
+    ].join("\n");
+  }
+
+  private applyProfileOnboarding(chatId: number, inputText: string): string | null {
+    const needs = this.needsProfileOnboarding();
+    const current = this.profileOnboarding.get(chatId);
+    if (!needs && !current) {
+      return null;
+    }
+
+    if (!current) {
+      const state: ProfileOnboardingState = { step: 1 };
+      this.profileOnboarding.set(chatId, state);
+      return this.questionForStep(1);
+    }
+
+    const answer = this.normalizeOneLine(inputText);
+    if (!answer) {
+      return "Please answer in one short sentence so I can save your profile.";
+    }
+
+    if (current.step === 1) {
+      current.userPreferredAddress = answer;
+      current.step = 2;
+      this.profileOnboarding.set(chatId, current);
+      return this.questionForStep(2);
+    }
+
+    if (current.step === 2) {
+      current.assistantName = answer;
+      current.step = 3;
+      this.profileOnboarding.set(chatId, current);
+      return this.questionForStep(3);
+    }
+
+    current.assistantPersona = answer;
+    const userPreferredAddress = current.userPreferredAddress ?? "User";
+    const assistantName = current.assistantName ?? "OpenPocket";
+    const assistantPersona = current.assistantPersona;
+
+    this.writeTextSafe(
+      this.profileFilePath("IDENTITY.md"),
+      this.buildIdentityFromAnswers({
+        assistantName,
+        assistantPersona,
+      }),
+    );
+    this.writeTextSafe(
+      this.profileFilePath("USER.md"),
+      this.buildUserFromAnswers({
+        userPreferredAddress,
+        assistantName,
+        assistantPersona,
+      }),
+    );
+    this.profileOnboarding.delete(chatId);
+    return `Perfect. I saved your profile to USER.md and IDENTITY.md. I'll address you as "${userPreferredAddress}" and use "${assistantName}" with persona "${assistantPersona}".`;
   }
 
   private systemPrompt(): string {
@@ -343,7 +551,6 @@ export class ChatAssistant {
   }
 
   async decide(chatId: number, inputText: string): Promise<ChatDecision> {
-    void chatId;
     const normalizedInput = inputText.trim();
     if (!normalizedInput) {
       return {
@@ -352,6 +559,19 @@ export class ChatAssistant {
         reply: "Please share a request and I will respond.",
         confidence: 1,
         reason: "empty_input",
+      };
+    }
+
+    const onboardingReply = this.applyProfileOnboarding(chatId, normalizedInput);
+    if (onboardingReply) {
+      this.pushTurn(chatId, "user", normalizedInput);
+      this.pushTurn(chatId, "assistant", onboardingReply);
+      return {
+        mode: "chat",
+        task: "",
+        reply: onboardingReply,
+        confidence: 1,
+        reason: "profile_onboarding",
       };
     }
 

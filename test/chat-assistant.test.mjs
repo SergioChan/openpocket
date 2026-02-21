@@ -35,17 +35,50 @@ function createAssistant(options = {}) {
     cfg.models[cfg.defaultModel].apiKey = "";
     cfg.models[cfg.defaultModel].apiKeyEnv = "MISSING_OPENAI_KEY";
   }
+
+  const identityPath = path.join(cfg.workspaceDir, "IDENTITY.md");
+  const userPath = path.join(cfg.workspaceDir, "USER.md");
+  if (!options.keepProfileEmpty) {
+    fs.writeFileSync(
+      identityPath,
+      [
+        "# IDENTITY",
+        "",
+        "## Agent Identity",
+        "",
+        "- Name: OpenPocket",
+        "- Role: Android phone-use automation agent",
+        "- Persona: pragmatic and concise",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      userPath,
+      [
+        "# USER",
+        "",
+        "## Profile",
+        "",
+        "- Preferred form of address: Sergio",
+      ].join("\n"),
+      "utf-8",
+    );
+  } else {
+    fs.writeFileSync(identityPath, "", "utf-8");
+    fs.writeFileSync(userPath, "", "utf-8");
+  }
+
   const assistant = new ChatAssistant(cfg);
   if (prev === undefined) {
     delete process.env.OPENPOCKET_HOME;
   } else {
     process.env.OPENPOCKET_HOME = prev;
   }
-  return assistant;
+  return { assistant, cfg, home };
 }
 
 test("ChatAssistant decide relies on model routing for greeting text", async () => {
-  const assistant = createAssistant({ withApiKey: true });
+  const { assistant } = createAssistant({ withApiKey: true });
   assistant.classifyWithModel = async () => ({
     mode: "chat",
     task: "",
@@ -61,7 +94,7 @@ test("ChatAssistant decide relies on model routing for greeting text", async () 
 });
 
 test("ChatAssistant decide keeps model task result", async () => {
-  const assistant = createAssistant({ withApiKey: true });
+  const { assistant } = createAssistant({ withApiKey: true });
   assistant.classifyWithModel = async () => ({
     mode: "task",
     task: "search weather in san francisco",
@@ -78,7 +111,7 @@ test("ChatAssistant decide keeps model task result", async () => {
 
 test("ChatAssistant decide reports missing API key without heuristics", async () => {
   await withTempCodexHome("openpocket-codex-empty-", async () => {
-    const assistant = createAssistant();
+    const { assistant } = createAssistant();
     const out = await assistant.decide(3, "hi");
     assert.equal(out.mode, "chat");
     assert.equal(out.reason, "no_api_key");
@@ -88,7 +121,7 @@ test("ChatAssistant decide reports missing API key without heuristics", async ()
 
 test("ChatAssistant reply handles missing API key gracefully", async () => {
   await withTempCodexHome("openpocket-codex-empty-", async () => {
-    const assistant = createAssistant();
+    const { assistant } = createAssistant();
     const out = await assistant.reply(4, "who are you");
     assert.match(out, /API key.*not configured/i);
   });
@@ -107,7 +140,7 @@ test("ChatAssistant decide uses Codex CLI credentials fallback", async () => {
       "utf-8",
     );
 
-    const assistant = createAssistant();
+    const { assistant } = createAssistant();
     assistant.classifyWithModel = async () => ({
       mode: "chat",
       task: "",
@@ -120,4 +153,29 @@ test("ChatAssistant decide uses Codex CLI credentials fallback", async () => {
     assert.equal(out.mode, "chat");
     assert.equal(out.reason, "model_classify");
   });
+});
+
+test("ChatAssistant runs profile onboarding when identity and user are empty", async () => {
+  const { assistant, cfg } = createAssistant({ keepProfileEmpty: true });
+
+  const first = await assistant.decide(7, "hello");
+  assert.equal(first.mode, "chat");
+  assert.equal(first.reason, "profile_onboarding");
+  assert.match(first.reply, /what would you like me to call you/i);
+
+  const second = await assistant.decide(7, "Sergio");
+  assert.match(second.reply, /what name would you like to call me/i);
+
+  const third = await assistant.decide(7, "Pocket");
+  assert.match(third.reply, /what persona should i keep/i);
+
+  const done = await assistant.decide(7, "Pragmatic, calm, and direct");
+  assert.match(done.reply, /saved your profile/i);
+
+  const identityBody = fs.readFileSync(path.join(cfg.workspaceDir, "IDENTITY.md"), "utf-8");
+  const userBody = fs.readFileSync(path.join(cfg.workspaceDir, "USER.md"), "utf-8");
+  assert.match(identityBody, /Name: Pocket/);
+  assert.match(identityBody, /Persona: Pragmatic, calm, and direct/);
+  assert.match(userBody, /Preferred form of address: Sergio/);
+  assert.match(userBody, /Preferred assistant name: Pocket/);
 });
