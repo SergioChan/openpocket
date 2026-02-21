@@ -11,6 +11,7 @@ import { CronService, type CronRunResult } from "./cron-service";
 import { HeartbeatRunner } from "./heartbeat-runner";
 
 export const TELEGRAM_MENU_COMMANDS: TelegramBot.BotCommand[] = [
+  { command: "start", description: "Start or resume chat onboarding" },
   { command: "help", description: "Show command help" },
   { command: "status", description: "Show gateway and emulator status" },
   { command: "model", description: "Show or switch model profile" },
@@ -147,6 +148,15 @@ export class TelegramGateway {
     }
     // Telegram bot display name max length is 64 chars.
     return normalized.slice(0, 64);
+  }
+
+  private inferLocale(message: Message): "zh" | "en" {
+    const languageCode = String(message.from?.language_code ?? "").toLowerCase();
+    if (languageCode.startsWith("zh")) {
+      return "zh";
+    }
+    const text = message.text ?? "";
+    return /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
   }
 
   private async syncBotDisplayName(
@@ -414,11 +424,39 @@ export class TelegramGateway {
       return;
     }
 
+    if (/^\/start(?:\s.*)?$/i.test(text) && !text.startsWith("/startvm")) {
+      const locale = this.inferLocale(message);
+      if (this.chat.isOnboardingPending()) {
+        const onboardingSeed = locale === "zh" ? "你好" : "hello";
+        const decision = await this.chat.decide(chatId, onboardingSeed);
+        const reply = decision.reply || (
+          locale === "zh"
+            ? "我们先做一个简短初始化。"
+            : "Let's do a quick onboarding first."
+        );
+        await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
+        const profileUpdate = this.chat.consumePendingProfileUpdate(chatId);
+        if (profileUpdate) {
+          await this.syncBotDisplayName(chatId, profileUpdate.assistantName, profileUpdate.locale);
+        }
+        return;
+      }
+
+      await this.bot.sendMessage(
+        chatId,
+        locale === "zh"
+          ? "OpenPocket 已就绪。直接发需求即可；发送 /help 查看命令。"
+          : "OpenPocket is ready. Send a request directly, or use /help for commands.",
+      );
+      return;
+    }
+
     if (text.startsWith("/help")) {
       await this.bot.sendMessage(
         chatId,
         [
           "OpenPocket commands:",
+          "/start",
           "/status",
           "/model [name]",
           "/startvm",
@@ -536,12 +574,29 @@ export class TelegramGateway {
     if (text === "/reset") {
       this.chat.clear(chatId);
       const accepted = this.agent.stopCurrentTask();
-      await this.bot.sendMessage(
-        chatId,
-        accepted
-          ? "Conversation memory cleared. Stop requested for the running task."
-          : "Conversation memory cleared. No running task to stop.",
-      );
+      const locale = this.inferLocale(message);
+      const resetSummary = accepted
+        ? "Conversation memory cleared. Stop requested for the running task."
+        : "Conversation memory cleared. No running task to stop.";
+      await this.bot.sendMessage(chatId, resetSummary);
+
+      if (this.chat.isOnboardingPending()) {
+        const onboardingSeed = locale === "zh" ? "你好" : "hello";
+        const decision = await this.chat.decide(chatId, onboardingSeed);
+        const reply = decision.reply || (
+          locale === "zh"
+            ? "我们先做一个简短初始化。"
+            : "Let's do a quick onboarding first."
+        );
+        await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
+        const profileUpdate = this.chat.consumePendingProfileUpdate(chatId);
+        if (profileUpdate) {
+          await this.syncBotDisplayName(chatId, profileUpdate.assistantName, profileUpdate.locale);
+        }
+        return;
+      }
+
+      await this.bot.sendMessage(chatId, this.sanitizeForChat(this.chat.sessionResetPrompt(locale), 1800));
       return;
     }
 

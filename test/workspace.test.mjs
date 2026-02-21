@@ -26,6 +26,7 @@ test("ensureWorkspaceBootstrap creates required layout", () => {
     "HEARTBEAT.md",
     "MEMORY.md",
     "BOOTSTRAP.md",
+    "BARE_SESSION_RESET_PROMPT.md",
     "PROFILE_ONBOARDING.json",
     path.join(".openpocket", "workspace-state.json"),
     path.join("memory", "README.md"),

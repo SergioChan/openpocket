@@ -121,6 +121,7 @@ export function defaultPromptEntries(workspaceDir: string): PromptFileEntry[] {
     { id: "heartbeat", title: "HEARTBEAT", fileName: "HEARTBEAT.md" },
     { id: "memory", title: "MEMORY", fileName: "MEMORY.md" },
     { id: "bootstrap", title: "BOOTSTRAP", fileName: "BOOTSTRAP.md" },
+    { id: "session-reset", title: "SESSION RESET", fileName: "BARE_SESSION_RESET_PROMPT.md" },
   ];
   return files.map((file) => ({
     id: file.id,

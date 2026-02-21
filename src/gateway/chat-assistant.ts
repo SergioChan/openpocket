@@ -87,6 +87,24 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 const PROFILE_ONBOARDING_TEMPLATE_FILE = "PROFILE_ONBOARDING.json";
+const BARE_SESSION_RESET_TEMPLATE_FILE = "BARE_SESSION_RESET_PROMPT.md";
+
+const DEFAULT_SESSION_RESET_PROMPT: Record<OnboardingLocale, string> = {
+  zh: [
+    "会话已重置。请先完成 Session Startup：",
+    "1) 确认当前任务目标与约束",
+    "2) 读取 AGENTS.md / SOUL.md / USER.md / IDENTITY.md",
+    "3) 如果 BOOTSTRAP.md 存在，先完成初始化",
+    "4) 然后再进入任务执行",
+  ].join("\n"),
+  en: [
+    "Session reset complete. Run Session Startup first:",
+    "1) Reconfirm goal and constraints",
+    "2) Read AGENTS.md / SOUL.md / USER.md / IDENTITY.md",
+    "3) If BOOTSTRAP.md exists, finish onboarding first",
+    "4) Then continue task execution",
+  ].join("\n"),
+};
 
 const DEFAULT_ONBOARDING_TEMPLATE: OnboardingTemplate = {
   version: 1,
@@ -287,6 +305,28 @@ export class ChatAssistant {
     const payload = this.pendingProfileUpdates.get(chatId) ?? null;
     this.pendingProfileUpdates.delete(chatId);
     return payload;
+  }
+
+  isOnboardingPending(): boolean {
+    return this.needsBootstrapOnboarding();
+  }
+
+  sessionResetPrompt(locale: OnboardingLocale): string {
+    const raw = this.readTextSafe(this.workspaceFilePath(BARE_SESSION_RESET_TEMPLATE_FILE)).trim();
+    if (!raw) {
+      return DEFAULT_SESSION_RESET_PROMPT[locale];
+    }
+
+    const zhMatch = raw.match(/(?:^|\n)##\s*zh\s*\n([\s\S]*?)(?=\n##\s*en\s*\n|$)/i);
+    const enMatch = raw.match(/(?:^|\n)##\s*en\s*\n([\s\S]*?)(?=\n##\s*zh\s*\n|$)/i);
+    const zh = this.normalizeOneLine((zhMatch?.[1] ?? "").replace(/\n{2,}/g, "\n").trim());
+    const en = this.normalizeOneLine((enMatch?.[1] ?? "").replace(/\n{2,}/g, "\n").trim());
+
+    if (zh && en) {
+      return locale === "zh" ? zh : en;
+    }
+
+    return this.normalizeOneLine(raw) || DEFAULT_SESSION_RESET_PROMPT[locale];
   }
 
   private workspaceFilePath(name: string): string {

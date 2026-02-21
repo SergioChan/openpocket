@@ -8,6 +8,7 @@ const { TELEGRAM_MENU_COMMANDS } = require("../dist/gateway/telegram-gateway.js"
 test("telegram command menu includes control commands for bot menu", () => {
   const commands = TELEGRAM_MENU_COMMANDS.map((item) => item.command);
   const expected = [
+    "start",
     "help",
     "status",
     "model",

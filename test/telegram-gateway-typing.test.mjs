@@ -228,3 +228,156 @@ test("TelegramGateway resolves pending 2FA request from plain numeric text", asy
     assert.match(sent[0].text, /Received code/i);
   });
 });
+
+test("TelegramGateway /start triggers onboarding reply when onboarding is pending", async () => {
+  await withTempHome("openpocket-telegram-start-onboarding-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+
+    let decideInput = "";
+    gateway.chat.isOnboardingPending = () => true;
+    gateway.chat.decide = async (_chatId, inputText) => {
+      decideInput = inputText;
+      return {
+        mode: "chat",
+        task: "",
+        reply: "先做个简短初始化：我该怎么称呼你？",
+        confidence: 1,
+        reason: "profile_onboarding",
+      };
+    };
+
+    let taskStarted = false;
+    gateway.runTaskAsync = async () => {
+      taskStarted = true;
+    };
+
+    await gateway.consumeMessage({
+      chat: { id: 9101 },
+      from: { id: 1, is_bot: false, language_code: "zh-CN", first_name: "Tester" },
+      text: "/start",
+    });
+
+    assert.equal(decideInput, "你好");
+    assert.equal(taskStarted, false);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /简短初始化/);
+  });
+});
+
+test("TelegramGateway /start replies with stable welcome when onboarding is completed", async () => {
+  await withTempHome("openpocket-telegram-start-ready-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+
+    let decideCalled = false;
+    gateway.chat.isOnboardingPending = () => false;
+    gateway.chat.decide = async () => {
+      decideCalled = true;
+      return {
+        mode: "chat",
+        task: "",
+        reply: "",
+        confidence: 1,
+        reason: "noop",
+      };
+    };
+
+    await gateway.consumeMessage({
+      chat: { id: 9102 },
+      from: { id: 1, is_bot: false, language_code: "en", first_name: "Tester" },
+      text: "/start",
+    });
+
+    assert.equal(decideCalled, false);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /OpenPocket is ready/);
+  });
+});
+
+test("TelegramGateway /reset sends session reset startup prompt when onboarding is completed", async () => {
+  await withTempHome("openpocket-telegram-reset-startup-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+    gateway.chat.isOnboardingPending = () => false;
+    gateway.chat.sessionResetPrompt = () => "Session reset complete. Run Session Startup first.";
+    gateway.agent.stopCurrentTask = () => false;
+
+    await gateway.consumeMessage({
+      chat: { id: 9103 },
+      from: { id: 1, is_bot: false, language_code: "en", first_name: "Tester" },
+      text: "/reset",
+    });
+
+    assert.equal(sent.length, 2);
+    assert.match(sent[0].text, /Conversation memory cleared/);
+    assert.match(sent[1].text, /Session reset complete/);
+  });
+});
+
+test("TelegramGateway /reset routes into onboarding when onboarding is pending", async () => {
+  await withTempHome("openpocket-telegram-reset-onboarding-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+
+    gateway.chat.isOnboardingPending = () => true;
+    gateway.chat.decide = async () => ({
+      mode: "chat",
+      task: "",
+      reply: "先做个简短初始化：我该怎么称呼你？",
+      confidence: 1,
+      reason: "profile_onboarding",
+    });
+    gateway.agent.stopCurrentTask = () => false;
+
+    await gateway.consumeMessage({
+      chat: { id: 9104 },
+      from: { id: 1, is_bot: false, language_code: "zh-CN", first_name: "Tester" },
+      text: "/reset",
+    });
+
+    assert.equal(sent.length, 2);
+    assert.match(sent[0].text, /Conversation memory cleared/);
+    assert.match(sent[1].text, /简短初始化/);
+  });
+});
