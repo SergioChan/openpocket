@@ -104,6 +104,10 @@ type CommandResult = {
   error: string | null;
 };
 
+export function isAdbInstallUpdateIncompatible(detail: string): boolean {
+  return /INSTALL_FAILED_UPDATE_INCOMPATIBLE/i.test(detail);
+}
+
 export interface PermissionLabDeployOptions {
   deviceId?: string;
   launch?: boolean;
@@ -149,6 +153,10 @@ function requireCommandOk(
     throw new Error(`${label} failed.\n${detail}`.trim());
   }
   return out.stdout;
+}
+
+function commandFailureDetail(out: CommandResult): string {
+  return [out.error, out.stderr.trim(), out.stdout.trim()].filter(Boolean).join("\n");
 }
 
 function parseVersionParts(value: string): number[] {
@@ -883,11 +891,40 @@ export class PermissionLabManager {
     }
     const deviceId = this.ensureEmulatorReady(options.deviceId);
     const adb = this.emulator.adbBinary();
-    const installOutput = requireCommandOk(
-      adb,
-      ["-s", deviceId, "install", "-r", "-d", "-t", signedApk],
-      "adb install",
-    ).trim();
+    const installArgs = ["-s", deviceId, "install", "-r", "-d", "-t", signedApk];
+    let installOutput = "";
+    const firstInstall = runCommand(adb, installArgs);
+    if (firstInstall.status === 0 && !firstInstall.error) {
+      installOutput = firstInstall.stdout.trim();
+    } else {
+      const detail = commandFailureDetail(firstInstall);
+      if (!isAdbInstallUpdateIncompatible(detail)) {
+        throw new Error(`adb install failed.\n${detail}`.trim());
+      }
+
+      const uninstallResult = runCommand(adb, ["-s", deviceId, "uninstall", PACKAGE_NAME]);
+      if (uninstallResult.status !== 0 || uninstallResult.error) {
+        const uninstallDetail = commandFailureDetail(uninstallResult);
+        throw new Error(
+          `adb install failed with signature mismatch, and uninstall recovery failed.\n${detail}\n${uninstallDetail}`.trim(),
+        );
+      }
+
+      const retryInstall = runCommand(adb, installArgs);
+      if (retryInstall.status !== 0 || retryInstall.error) {
+        const retryDetail = commandFailureDetail(retryInstall);
+        throw new Error(
+          `adb install retry failed after uninstall recovery.\n${detail}\n${retryDetail}`.trim(),
+        );
+      }
+
+      installOutput = [
+        "Recovered from INSTALL_FAILED_UPDATE_INCOMPATIBLE by uninstalling existing package.",
+        retryInstall.stdout.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
 
     let launchOutput: string | null = null;
     if (options.launch ?? true) {
