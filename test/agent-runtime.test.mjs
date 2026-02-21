@@ -46,6 +46,47 @@ function setupRuntime({ returnHomeOnTaskEnd }) {
   return runtime;
 }
 
+test("AgentRuntime injects BOOTSTRAP guidance into system prompt context", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  fs.writeFileSync(
+    path.join(runtime.config.workspaceDir, "BOOTSTRAP.md"),
+    "# BOOTSTRAP\n\nruntime-bootstrap-check\n",
+    "utf-8",
+  );
+
+  runtime.adb = {
+    captureScreenSnapshot: () => makeSnapshot(),
+    executeAction: async () => "ok",
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  let capturedSystemPrompt = "";
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async (params) => {
+    capturedSystemPrompt = params.systemPrompt;
+    return {
+      thought: "done",
+      action: { type: "finish", message: "task completed" },
+      raw: '{"thought":"done","action":{"type":"finish","message":"task completed"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask("bootstrap context test");
+    assert.equal(result.ok, true);
+    assert.match(
+      capturedSystemPrompt,
+      /Instruction priority inside workspace context: AGENTS\.md > BOOTSTRAP\.md > SOUL\.md > other files\./,
+    );
+    assert.match(capturedSystemPrompt, /### BOOTSTRAP\.md/);
+    assert.match(capturedSystemPrompt, /runtime-bootstrap-check/);
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+  }
+});
+
 test("AgentRuntime returns home after successful task by default", async () => {
   const runtime = setupRuntime({ returnHomeOnTaskEnd: true });
   const actionCalls = [];

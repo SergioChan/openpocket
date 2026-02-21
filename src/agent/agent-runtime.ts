@@ -69,6 +69,7 @@ const PERMISSION_DENY_ID_HINTS = [
 
 const SYSTEM_PROMPT_CONTEXT_FILES = [
   "AGENTS.md",
+  "BOOTSTRAP.md",
   "SOUL.md",
   "USER.md",
   "IDENTITY.md",
@@ -239,7 +240,7 @@ export class AgentRuntime {
     }
 
     return [
-      "Instruction priority inside workspace context: AGENTS.md > SOUL.md > other files.",
+      "Instruction priority inside workspace context: AGENTS.md > BOOTSTRAP.md > SOUL.md > other files.",
       ...blocks,
     ].join("\n\n");
   }
