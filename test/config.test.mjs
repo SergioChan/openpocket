@@ -6,7 +6,13 @@ import test from "node:test";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { loadConfig, saveConfig, getModelProfile, resolveApiKey } = require("../dist/config/index.js");
+const {
+  loadConfig,
+  saveConfig,
+  getModelProfile,
+  resolveApiKey,
+  resolveModelAuth,
+} = require("../dist/config/index.js");
 
 function withTempHome(prefix, fn) {
   const prevHome = process.env.OPENPOCKET_HOME;
@@ -19,6 +25,21 @@ function withTempHome(prefix, fn) {
       delete process.env.OPENPOCKET_HOME;
     } else {
       process.env.OPENPOCKET_HOME = prevHome;
+    }
+  }
+}
+
+function withTempCodexHome(prefix, fn) {
+  const prevCodexHome = process.env.CODEX_HOME;
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  process.env.CODEX_HOME = codexHome;
+  try {
+    return fn(codexHome);
+  } finally {
+    if (prevCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = prevCodexHome;
     }
   }
 }
@@ -176,23 +197,96 @@ test("loadConfig normalizes agent.lang to en", () => {
 
 test("getModelProfile and resolveApiKey follow precedence rules", () => {
   withTempHome("openpocket-config-key-", (home) => {
-    const cfg = loadConfig(path.join(home, "config.json"));
-    const profile = getModelProfile(cfg, cfg.defaultModel);
-    assert.equal(profile.model.length > 0, true);
+    withTempCodexHome("openpocket-codex-empty-", () => {
+      const cfg = loadConfig(path.join(home, "config.json"));
+      const profile = getModelProfile(cfg, cfg.defaultModel);
+      assert.equal(profile.model.length > 0, true);
 
-    const prev = process.env.OPENAI_API_KEY;
-    process.env.OPENAI_API_KEY = "  env-key  ";
-    try {
-      assert.equal(resolveApiKey({ ...profile, apiKey: " local-key ", apiKeyEnv: "OPENAI_API_KEY" }), "local-key");
-      assert.equal(resolveApiKey({ ...profile, apiKey: "", apiKeyEnv: "OPENAI_API_KEY" }), "env-key");
-      assert.equal(resolveApiKey({ ...profile, apiKey: "", apiKeyEnv: "MISSING_ENV" }), "");
-    } finally {
-      if (prev === undefined) {
-        delete process.env.OPENAI_API_KEY;
-      } else {
-        process.env.OPENAI_API_KEY = prev;
+      const prev = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = "  env-key  ";
+      try {
+        assert.equal(
+          resolveApiKey({ ...profile, apiKey: " local-key ", apiKeyEnv: "OPENAI_API_KEY" }),
+          "local-key",
+        );
+        assert.equal(resolveApiKey({ ...profile, apiKey: "", apiKeyEnv: "OPENAI_API_KEY" }), "env-key");
+        assert.equal(resolveApiKey({ ...profile, apiKey: "", apiKeyEnv: "MISSING_ENV" }), "");
+      } finally {
+        if (prev === undefined) {
+          delete process.env.OPENAI_API_KEY;
+        } else {
+          process.env.OPENAI_API_KEY = prev;
+        }
       }
-    }
+    });
+  });
+});
+
+test("resolveModelAuth falls back to Codex CLI auth.json for codex models", () => {
+  withTempHome("openpocket-config-codex-fallback-", (home) => {
+    withTempCodexHome("openpocket-codex-auth-", (codexHome) => {
+      const cfg = loadConfig(path.join(home, "config.json"));
+      const profile = getModelProfile(cfg, "gpt-5.2-codex");
+      const authPath = path.join(codexHome, "auth.json");
+      fs.writeFileSync(
+        authPath,
+        JSON.stringify({
+          tokens: {
+            access_token: "codex-access-token",
+            refresh_token: "codex-refresh-token",
+          },
+        }),
+        "utf-8",
+      );
+
+      const prevOpenAi = process.env.OPENAI_API_KEY;
+      delete process.env.OPENAI_API_KEY;
+      try {
+        const resolved = resolveModelAuth({
+          ...profile,
+          apiKey: "",
+          apiKeyEnv: "OPENAI_API_KEY",
+        });
+
+        assert.equal(resolved?.apiKey, "codex-access-token");
+        assert.match(String(resolved?.source ?? ""), /codex-cli/i);
+        assert.equal(resolved?.preferredMode, "responses");
+        assert.match(String(resolved?.baseUrl ?? ""), /chatgpt\.com\/backend-api\/codex/i);
+      } finally {
+        if (prevOpenAi === undefined) {
+          delete process.env.OPENAI_API_KEY;
+        } else {
+          process.env.OPENAI_API_KEY = prevOpenAi;
+        }
+      }
+    });
+  });
+});
+
+test("resolveModelAuth does not use Codex CLI fallback for non-codex models", () => {
+  withTempCodexHome("openpocket-codex-auth-noncodex-", (codexHome) => {
+    fs.writeFileSync(
+      path.join(codexHome, "auth.json"),
+      JSON.stringify({
+        tokens: {
+          access_token: "codex-access-token",
+          refresh_token: "codex-refresh-token",
+        },
+      }),
+      "utf-8",
+    );
+
+    const resolved = resolveModelAuth({
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4.1-mini",
+      apiKey: "",
+      apiKeyEnv: "MISSING_ENV",
+      maxTokens: 512,
+      reasoningEffort: null,
+      temperature: null,
+    });
+
+    assert.equal(resolved, null);
   });
 });
 

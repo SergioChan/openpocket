@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 
 import type { EmulatorStatus, ModelProfile, OpenPocketConfig } from "../types";
 import { saveConfig } from "../config";
+import { readCodexCliCredential } from "../config/codex-cli";
 import { ensureDir, nowIso } from "../utils/paths";
 import { EmulatorManager } from "../device/emulator-manager";
 
@@ -39,7 +40,7 @@ interface SetupState {
   modelProvider?: string;
   modelConfiguredAt?: string;
   apiKeyEnv?: string;
-  apiKeySource?: "env" | "config" | "skipped";
+  apiKeySource?: "env" | "config" | "codex-cli" | "skipped";
   apiKeyConfiguredAt?: string;
   emulatorStartedAt?: string;
   gmailLoginConfirmedAt?: string;
@@ -51,6 +52,13 @@ interface SetupState {
   humanAuthMode?: "disabled" | "lan" | "ngrok";
   ngrokConfiguredAt?: string;
 }
+
+type ModelAuthMode = "api-key" | "codex-cli";
+
+type ModelSelectionResult = {
+  profileKey: string;
+  authMode: ModelAuthMode;
+};
 
 type SelectOption<T extends string> = {
   value: T;
@@ -81,6 +89,7 @@ export type RunSetupOptions = {
   emulator?: SetupEmulator;
   skipTtyCheck?: boolean;
   printHeader?: boolean;
+  codexCliLoginRunner?: () => Promise<{ ok: boolean; detail: string }>;
 };
 
 function shouldUseColor(stream: NodeJS.WriteStream = output): boolean {
@@ -212,6 +221,60 @@ function modelOptionLabel(profileKey: string, profile: ModelProfile): string {
     return "AutoGLM Phone (Z.ai)";
   }
   return `${profile.model} (${providerFromBaseUrl(profile.baseUrl)})`;
+}
+
+function isOpenAiLikeHost(baseUrl: string): boolean {
+  const lower = baseUrl.toLowerCase();
+  return lower.includes("openai.com") || lower.includes("chatgpt.com");
+}
+
+function isCodexCliCapableModel(profile: ModelProfile): boolean {
+  return profile.model.toLowerCase().includes("codex") && isOpenAiLikeHost(profile.baseUrl);
+}
+
+function modelSelectionValue(profileKey: string, authMode: ModelAuthMode): string {
+  return authMode === "codex-cli" ? `${profileKey}::codex-cli` : profileKey;
+}
+
+function parseModelSelectionValue(value: string): ModelSelectionResult {
+  const marker = "::codex-cli";
+  if (value.endsWith(marker)) {
+    return {
+      profileKey: value.slice(0, -marker.length),
+      authMode: "codex-cli",
+    };
+  }
+  return {
+    profileKey: value,
+    authMode: "api-key",
+  };
+}
+
+function resolveCodexHomeForDisplay(): string {
+  const raw = process.env.CODEX_HOME?.trim();
+  return raw ? raw : "~/.codex";
+}
+
+async function runCodexCliLoginCommand(): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const result = spawnSync("codex", ["login"], {
+      stdio: "inherit",
+      timeout: 15 * 60 * 1000,
+    });
+    if ((result.status ?? 1) === 0) {
+      return { ok: true, detail: "codex login completed" };
+    }
+    const stderr = (result.stderr ?? "").toString().trim();
+    return {
+      ok: false,
+      detail: stderr || `codex login exited with status ${result.status ?? "unknown"}`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: (error as Error).message,
+    };
+  }
 }
 
 function detectPlayStore(emulator: SetupEmulator, preferredDeviceId: string | null): boolean | null {
@@ -500,49 +563,116 @@ async function runModelSelectionStep(
   config: OpenPocketConfig,
   prompter: SetupPrompter,
   state: SetupState,
-): Promise<string> {
-  const options = Object.entries(config.models).map(([profileKey, profile]) => ({
-    value: profileKey,
-    label: modelOptionLabel(profileKey, profile),
-    hint: `${profile.model} | ${profile.apiKeyEnv}`,
-  }));
-  const selected = await prompter.select(
+): Promise<ModelSelectionResult> {
+  const options = Object.entries(config.models).flatMap(([profileKey, profile]) => {
+    const baseOption: SelectOption<string> = {
+      value: modelSelectionValue(profileKey, "api-key"),
+      label: modelOptionLabel(profileKey, profile),
+      hint: `${profile.model} | ${profile.apiKeyEnv}`,
+    };
+    if (!isCodexCliCapableModel(profile)) {
+      return [baseOption];
+    }
+    return [
+      baseOption,
+      {
+        value: modelSelectionValue(profileKey, "codex-cli"),
+        label: `${modelOptionLabel(profileKey, profile)} + Codex CLI Login`,
+        hint: "OAuth via codex cli",
+      },
+    ];
+  });
+  const selectedRaw = await prompter.select(
     "Choose your default model profile",
     options,
-    config.defaultModel,
+    modelSelectionValue(config.defaultModel, "api-key"),
   );
+  const selection = parseModelSelectionValue(selectedRaw);
 
-  config.defaultModel = selected;
+  config.defaultModel = selection.profileKey;
   saveConfig(config);
 
-  const selectedProfile = config.models[selected];
-  state.modelProfile = selected;
+  const selectedProfile = config.models[selection.profileKey];
+  if (!selectedProfile) {
+    throw new Error(`Unknown model profile during setup: ${selection.profileKey}`);
+  }
+  state.modelProfile = selection.profileKey;
   state.modelProvider = providerFromBaseUrl(selectedProfile.baseUrl);
   state.apiKeyEnv = selectedProfile.apiKeyEnv;
   state.modelConfiguredAt = nowIso();
 
+  const authSummary =
+    selection.authMode === "codex-cli"
+      ? "Auth: Codex CLI login (OAuth)"
+      : `API key env: ${selectedProfile.apiKeyEnv}`;
   await prompter.note(
     "Model Setup",
     [
-      `Default model profile: ${selected}`,
+      `Default model profile: ${selection.profileKey}`,
       `Provider: ${state.modelProvider}`,
       `Model id: ${selectedProfile.model}`,
-      `API key env: ${selectedProfile.apiKeyEnv}`,
+      authSummary,
     ].join("\n"),
   );
 
-  return selected;
+  return selection;
 }
 
 async function runApiKeyStep(
   config: OpenPocketConfig,
   prompter: SetupPrompter,
   state: SetupState,
-  modelProfileKey: string,
+  selection: ModelSelectionResult,
+  options?: RunSetupOptions,
 ): Promise<void> {
+  const modelProfileKey = selection.profileKey;
   const selectedProfile = config.models[modelProfileKey];
   if (!selectedProfile) {
     throw new Error(`Unknown model profile during setup: ${modelProfileKey}`);
+  }
+
+  if (selection.authMode === "codex-cli") {
+    const codexHome = resolveCodexHomeForDisplay();
+    const authPath = path.join(codexHome, "auth.json");
+    await prompter.note(
+      "Codex CLI Authorization",
+      [
+        "You selected Codex CLI auth mode.",
+        "OpenPocket will run `codex login` now for authorization.",
+        `Credential file expected at: ${authPath}`,
+      ].join("\n"),
+    );
+
+    const loginRunner = options?.codexCliLoginRunner ?? runCodexCliLoginCommand;
+    const loginResult = await loginRunner();
+    const credential = readCodexCliCredential();
+    if (loginResult.ok && credential) {
+      state.apiKeySource = "codex-cli";
+      state.apiKeyConfiguredAt = nowIso();
+      await prompter.note(
+        "Codex CLI Authorization",
+        "Authorization complete. Codex CLI credentials detected and ready.",
+      );
+      return;
+    }
+
+    await prompter.note(
+      "Codex CLI Authorization",
+      [
+        "Authorization was not confirmed.",
+        `Details: ${loginResult.detail}`,
+        "You can continue with API key setup as fallback.",
+      ].join("\n"),
+    );
+
+    const useFallback = await prompter.confirm(
+      "Continue with API key setup fallback?",
+      true,
+    );
+    if (!useFallback) {
+      state.apiKeySource = "skipped";
+      return;
+    }
   }
 
   const envName = selectedProfile.apiKeyEnv || "MODEL_API_KEY";
@@ -995,7 +1125,7 @@ export async function runSetupWizard(
     await prompter.intro("OpenPocket onboarding");
     await runConsentStep(prompter, state);
     const selectedModel = await runModelSelectionStep(config, prompter, state);
-    await runApiKeyStep(config, prompter, state, selectedModel);
+    await runApiKeyStep(config, prompter, state, selectedModel, options);
     await runTelegramStep(config, prompter, state);
     await runVmStep(config, prompter, state, emulator);
     await runHumanAuthStep(config, prompter, state);

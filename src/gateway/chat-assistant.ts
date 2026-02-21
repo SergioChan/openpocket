@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 import type { OpenPocketConfig } from "../types";
-import { getModelProfile, resolveApiKey } from "../config";
+import { getModelProfile, resolveModelAuth } from "../config";
 
 type MsgRole = "user" | "assistant";
 
@@ -290,12 +290,18 @@ export class ChatAssistant {
 
   async reply(chatId: number, inputText: string): Promise<string> {
     const profile = getModelProfile(this.config);
-    const apiKey = resolveApiKey(profile);
-    if (!apiKey) {
-      return `API key for model '${profile.model}' is not configured. Configure it and try again.`;
+    const auth = resolveModelAuth(profile);
+    if (!auth) {
+      const codexHint = profile.model.toLowerCase().includes("codex")
+        ? " or login with Codex CLI"
+        : "";
+      return `API key for model '${profile.model}' is not configured. Configure it${codexHint} and try again.`;
     }
 
-    const client = new OpenAI({ apiKey, baseURL: profile.baseUrl });
+    const client = new OpenAI({
+      apiKey: auth.apiKey,
+      baseURL: auth.baseUrl ?? profile.baseUrl,
+    });
 
     const modes: Array<"responses" | "chat" | "completions"> =
       this.modeHint === "responses"
@@ -350,8 +356,8 @@ export class ChatAssistant {
     }
 
     const profile = getModelProfile(this.config);
-    const apiKey = resolveApiKey(profile);
-    if (!apiKey) {
+    const auth = resolveModelAuth(profile);
+    if (!auth) {
       return {
         mode: "chat",
         task: "",
@@ -361,7 +367,10 @@ export class ChatAssistant {
       };
     }
 
-    const client = new OpenAI({ apiKey, baseURL: profile.baseUrl });
+    const client = new OpenAI({
+      apiKey: auth.apiKey,
+      baseURL: auth.baseUrl ?? profile.baseUrl,
+    });
     try {
       const decided = await this.classifyWithModel(
         client,

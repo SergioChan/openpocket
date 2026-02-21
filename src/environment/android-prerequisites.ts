@@ -338,6 +338,17 @@ function resolveBrewBinary(): string | null {
   return firstExecutable(["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]) ?? findInPath("brew");
 }
 
+export function buildAvdManagerOpts(sdkRoot: string, existingOpts: string | undefined): string {
+  const current = (existingOpts ?? "").trim();
+  if (current.includes("-Dcom.android.sdkmanager.toolsdir=")) {
+    return current;
+  }
+
+  const toolsDir = path.join(path.resolve(sdkRoot), "cmdline-tools", "latest");
+  const toolsDirOpt = `"-Dcom.android.sdkmanager.toolsdir=${toolsDir}"`;
+  return current ? `${current} ${toolsDirOpt}` : toolsDirOpt;
+}
+
 function extendProcessPathForBrew(): void {
   const extra = ["/opt/homebrew/bin", "/usr/local/bin"];
   const entries = (process.env.PATH ?? "")
@@ -394,11 +405,13 @@ function resolveAndroidToolEnv(sdkRoot: string, javaHome: string): NodeJS.Proces
   ];
   const basePath = process.env.PATH ?? "";
   const pathEntries = [...extraBins, ...basePath.split(path.delimiter)].filter(Boolean);
+  const avdmanagerOpts = buildAvdManagerOpts(sdkRoot, process.env.AVDMANAGER_OPTS);
   return {
     ...process.env,
     JAVA_HOME: javaHome,
     ANDROID_SDK_ROOT: sdkRoot,
     ANDROID_HOME: sdkRoot,
+    AVDMANAGER_OPTS: avdmanagerOpts,
     PATH: Array.from(new Set(pathEntries)).join(path.delimiter),
   };
 }

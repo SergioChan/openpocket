@@ -92,7 +92,10 @@ export OPENPOCKET_HOME="$HOME/.openpocket"
 export AUTOGLM_API_KEY="<optional>"
 export OPENPOCKET_HUMAN_AUTH_KEY="<optional relay api key>"
 export NGROK_AUTHTOKEN="<optional ngrok token>"
+export CODEX_HOME="$HOME/.codex"              # optional override for Codex CLI credential path
 ```
+
+If you use a Codex subscription, you can also run `codex` login and skip `OPENAI_API_KEY` for codex models.
 
 ## Command Check
 

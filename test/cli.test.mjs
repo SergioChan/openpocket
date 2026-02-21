@@ -178,10 +178,13 @@ test("agent command without API key fails and writes session/memory", () => {
   const home = makeHome("openpocket-ts-agent-");
   const init = runCli(["init"], { OPENPOCKET_HOME: home });
   assert.equal(init.status, 0, init.stderr || init.stdout);
+  const codexHome = path.join(home, "codex-empty");
+  fs.mkdirSync(codexHome, { recursive: true });
 
   const run = runCli(["agent", "Open Chrome"], {
     OPENPOCKET_HOME: home,
     OPENAI_API_KEY: "",
+    CODEX_HOME: codexHome,
   });
 
   assert.equal(run.status, 1);

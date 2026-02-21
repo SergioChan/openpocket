@@ -56,3 +56,20 @@ test("strict mode uses only Google Play system image candidates", () => {
     true,
   );
 });
+
+test("buildAvdManagerOpts pins avdmanager toolsdir to selected SDK root", () => {
+  const { buildAvdManagerOpts } = require("../dist/environment/android-prerequisites.js");
+  assert.equal(typeof buildAvdManagerOpts, "function");
+
+  const sdkRoot = "/tmp/android-sdk";
+  const opts = buildAvdManagerOpts(sdkRoot, "");
+  assert.match(opts, /-Dcom\.android\.sdkmanager\.toolsdir=\/tmp\/android-sdk\/cmdline-tools\/latest/);
+});
+
+test("buildAvdManagerOpts preserves existing flags and avoids duplicate toolsdir", () => {
+  const { buildAvdManagerOpts } = require("../dist/environment/android-prerequisites.js");
+  const sdkRoot = "/tmp/android-sdk";
+  const existing = "-Xmx2048m -Dcom.android.sdkmanager.toolsdir=/already-set";
+  const opts = buildAvdManagerOpts(sdkRoot, existing);
+  assert.equal(opts, existing);
+});

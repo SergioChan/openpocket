@@ -10,6 +10,7 @@ import {
   resolvePath,
 } from "../utils/paths";
 import { ensureWorkspaceBootstrap } from "../memory/workspace";
+import { CODEX_CLI_BASE_URL, readCodexCliCredential } from "./codex-cli";
 
 function defaultConfigObject() {
   return {
@@ -658,12 +659,61 @@ export function getModelProfile(config: OpenPocketConfig, name?: string): ModelP
   return profile;
 }
 
-export function resolveApiKey(profile: ModelProfile): string {
+export type ResolvedModelAuth = {
+  apiKey: string;
+  source: "config" | "env" | "codex-cli-keychain" | "codex-cli-auth-json";
+  baseUrl?: string;
+  preferredMode?: "chat" | "responses" | "completions";
+};
+
+function isOpenAiLikeBaseUrl(baseUrl: string): boolean {
+  const lower = baseUrl.toLowerCase();
+  return lower.includes("openai.com") || lower.includes("chatgpt.com");
+}
+
+function shouldUseCodexCliFallback(profile: ModelProfile): boolean {
+  const model = profile.model.toLowerCase();
+  if (!model.includes("codex")) {
+    return false;
+  }
+  return isOpenAiLikeBaseUrl(profile.baseUrl);
+}
+
+export function resolveModelAuth(profile: ModelProfile): ResolvedModelAuth | null {
   if (profile.apiKey?.trim()) {
-    return profile.apiKey.trim();
+    return {
+      apiKey: profile.apiKey.trim(),
+      source: "config",
+    };
   }
+
   if (profile.apiKeyEnv?.trim()) {
-    return process.env[profile.apiKeyEnv]?.trim() ?? "";
+    const envApiKey = process.env[profile.apiKeyEnv]?.trim();
+    if (envApiKey) {
+      return {
+        apiKey: envApiKey,
+        source: "env",
+      };
+    }
   }
-  return "";
+
+  if (!shouldUseCodexCliFallback(profile)) {
+    return null;
+  }
+
+  const codexCredential = readCodexCliCredential();
+  if (!codexCredential) {
+    return null;
+  }
+
+  return {
+    apiKey: codexCredential.accessToken,
+    source: codexCredential.source === "keychain" ? "codex-cli-keychain" : "codex-cli-auth-json",
+    baseUrl: CODEX_CLI_BASE_URL,
+    preferredMode: "responses",
+  };
+}
+
+export function resolveApiKey(profile: ModelProfile): string {
+  return resolveModelAuth(profile)?.apiKey ?? "";
 }
