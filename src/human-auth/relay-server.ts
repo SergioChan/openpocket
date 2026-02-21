@@ -297,9 +297,10 @@ export class HumanAuthRelayServer {
     button { border: 0; border-radius: 10px; padding: 10px 14px; font-size: 15px; cursor: pointer; }
     #approve { background: #177245; color: #fff; }
     #reject { background: #93332a; color: #fff; }
-    #startCam, #snapCam { background: #123d67; color: #fff; }
+    #startCam, #snapCam, #pickPhoto { background: #123d67; color: #fff; }
     textarea { width: 100%; min-height: 80px; border-radius: 8px; border: 1px solid #c5d2e4; padding: 10px; margin-top: 10px; box-sizing: border-box; }
     video, canvas { width: 100%; border-radius: 10px; margin-top: 10px; background: #0b1118; }
+    #photoPreview { width: 100%; border-radius: 10px; margin-top: 10px; background: #0b1118; }
     .status { margin-top: 14px; font-weight: 600; }
     .muted { color: #4a6279; font-size: 13px; }
   </style>
@@ -323,9 +324,13 @@ export class HumanAuthRelayServer {
       <div class="actions">
         <button id="startCam" type="button">Enable Camera</button>
         <button id="snapCam" type="button">Capture Snapshot</button>
+        <button id="pickPhoto" type="button">Capture/Upload Photo</button>
       </div>
+      <div class="muted">Camera attachment is optional. You can approve/reject without snapshot.</div>
       <video id="video" autoplay playsinline hidden></video>
       <canvas id="canvas" hidden></canvas>
+      <img id="photoPreview" alt="Captured preview" hidden />
+      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden />
 
       <div class="actions">
         <button id="approve" type="button">Approve</button>
@@ -342,17 +347,45 @@ export class HumanAuthRelayServer {
     const noteEl = document.getElementById("note");
     const videoEl = document.getElementById("video");
     const canvasEl = document.getElementById("canvas");
+    const photoInputEl = document.getElementById("photoInput");
+    const photoPreviewEl = document.getElementById("photoPreview");
     let stream = null;
     let artifact = null;
+
+    function humanErrorMessage(err) {
+      const name = err && err.name ? String(err.name) : "";
+      const message = err && err.message ? String(err.message) : String(err || "unknown error");
+      const lowered = (name + " " + message).toLowerCase();
+      if (lowered.includes("notallowed") || lowered.includes("permission denied")) {
+        return "Camera permission denied by this browser context. In Telegram in-app browser this can happen even after Allow. Use Capture/Upload Photo or approve directly.";
+      }
+      if (lowered.includes("notfound") || lowered.includes("device not found")) {
+        return "No camera device available. Use Capture/Upload Photo or approve directly.";
+      }
+      if (lowered.includes("notreadable") || lowered.includes("track start failed")) {
+        return "Camera is busy or blocked by another app. Close other camera apps and retry, or use Capture/Upload Photo.";
+      }
+      return "Failed to open camera: " + message;
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+    }
 
     async function startCamera() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
         videoEl.srcObject = stream;
         videoEl.hidden = false;
+        photoPreviewEl.hidden = true;
         statusEl.textContent = "Camera enabled. Capture if needed, then approve.";
       } catch (err) {
-        statusEl.textContent = "Failed to open camera: " + (err && err.message ? err.message : String(err));
+        statusEl.textContent = humanErrorMessage(err);
       }
     }
 
@@ -369,7 +402,33 @@ export class HumanAuthRelayServer {
       const base64 = dataUrl.split(",")[1] || "";
       artifact = { mimeType: "image/jpeg", base64 };
       canvasEl.hidden = false;
+      photoPreviewEl.hidden = true;
       statusEl.textContent = "Snapshot captured and attached.";
+    }
+
+    async function pickPhoto() {
+      photoInputEl.value = "";
+      photoInputEl.click();
+    }
+
+    async function onPhotoChange() {
+      const file = photoInputEl.files && photoInputEl.files[0];
+      if (!file) {
+        return;
+      }
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        const base64 = dataUrl.split(",")[1] || "";
+        const mimeType = file.type || "image/jpeg";
+        artifact = { mimeType, base64 };
+        canvasEl.hidden = true;
+        videoEl.hidden = true;
+        photoPreviewEl.src = dataUrl;
+        photoPreviewEl.hidden = false;
+        statusEl.textContent = "Photo attached.";
+      } catch (err) {
+        statusEl.textContent = "Failed to attach photo: " + (err && err.message ? err.message : String(err));
+      }
     }
 
     async function submitDecision(approved) {
@@ -403,6 +462,8 @@ export class HumanAuthRelayServer {
 
     document.getElementById("startCam").addEventListener("click", startCamera);
     document.getElementById("snapCam").addEventListener("click", captureSnapshot);
+    document.getElementById("pickPhoto").addEventListener("click", pickPhoto);
+    photoInputEl.addEventListener("change", onPhotoChange);
     document.getElementById("approve").addEventListener("click", () => submitDecision(true));
     document.getElementById("reject").addEventListener("click", () => submitDecision(false));
   </script>
