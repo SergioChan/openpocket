@@ -47,9 +47,10 @@ export interface PermissionLabDeployResult {
   platformVersion: string;
 }
 
-function runCommand(command: string, args: string[]): CommandResult {
+function runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): CommandResult {
   const result = spawnSync(command, args, {
     encoding: "utf-8",
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   return {
@@ -60,8 +61,13 @@ function runCommand(command: string, args: string[]): CommandResult {
   };
 }
 
-function requireCommandOk(command: string, args: string[], label: string): string {
-  const out = runCommand(command, args);
+function requireCommandOk(
+  command: string,
+  args: string[],
+  label: string,
+  env?: NodeJS.ProcessEnv,
+): string {
+  const out = runCommand(command, args, env);
   if (out.status !== 0 || out.error) {
     const detail = [out.error, out.stderr.trim(), out.stdout.trim()].filter(Boolean).join("\n");
     throw new Error(`${label} failed.\n${detail}`.trim());
@@ -182,8 +188,8 @@ function collectFilesBySuffix(rootDir: string, suffix: string): string[] {
   return out.sort((a, b) => a.localeCompare(b));
 }
 
-function resolveKeytool(): string {
-  const javaHome = (process.env.JAVA_HOME || "").trim();
+function resolveKeytool(javaHomeOverride?: string): string {
+  const javaHome = (javaHomeOverride || process.env.JAVA_HOME || "").trim();
   if (javaHome) {
     const keytool = path.join(javaHome, "bin", "keytool");
     if (fs.existsSync(keytool)) {
@@ -197,6 +203,75 @@ function resolveKeytool(): string {
   }
 
   throw new Error("keytool not found. Install a Java JDK (17+) and ensure keytool is in PATH.");
+}
+
+function parseJavaMajor(raw: string): number | null {
+  const quoted = raw.match(/version\s+"([^"]+)"/i)?.[1]?.trim();
+  if (quoted) {
+    const parts = quoted.split(/[._-]/).filter(Boolean);
+    if (parts[0] === "1" && parts[1]) {
+      const major = Number(parts[1]);
+      return Number.isFinite(major) ? major : null;
+    }
+    const major = Number(parts[0]);
+    return Number.isFinite(major) ? major : null;
+  }
+  const openJdk = raw.match(/openjdk\s+(\d+)/i)?.[1];
+  if (openJdk) {
+    const major = Number(openJdk);
+    return Number.isFinite(major) ? major : null;
+  }
+  return null;
+}
+
+function detectJavaHome17Plus(): string | null {
+  const candidates = [
+    process.env.JAVA_HOME || "",
+    "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home",
+    "/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home",
+  ]
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (process.platform === "darwin") {
+    const preferred17 = runCommand("/usr/libexec/java_home", ["-v", "17"]);
+    if (preferred17.status === 0 && preferred17.stdout.trim()) {
+      candidates.unshift(preferred17.stdout.trim());
+    }
+    const preferred = runCommand("/usr/libexec/java_home", []);
+    if (preferred.status === 0 && preferred.stdout.trim()) {
+      candidates.push(preferred.stdout.trim());
+    }
+  }
+
+  const seen = new Set<string>();
+  let bestHome: string | null = null;
+  let bestMajor = 0;
+
+  for (const candidate of candidates) {
+    const home = path.resolve(candidate);
+    if (seen.has(home)) {
+      continue;
+    }
+    seen.add(home);
+
+    const javaBin = path.join(home, "bin", "java");
+    if (!fs.existsSync(javaBin)) {
+      continue;
+    }
+    const info = runCommand(javaBin, ["-version"], process.env);
+    const output = `${info.stdout}\\n${info.stderr}`.trim();
+    const major = parseJavaMajor(output);
+    if (!major || major < 17) {
+      continue;
+    }
+    if (major > bestMajor) {
+      bestMajor = major;
+      bestHome = home;
+    }
+  }
+
+  return bestHome;
 }
 
 function writePermissionLabSource(projectDir: string): void {
@@ -247,6 +322,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.util.SparseArray;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -291,34 +367,48 @@ public class MainActivity extends Activity {
     addPermissionButton(body, "Request Calendar Permission", Manifest.permission.READ_CALENDAR, "calendar");
 
     Button photosButton = createButton("Request Photos Permission");
-    photosButton.setOnClickListener(v -> {
-      if (Build.VERSION.SDK_INT >= 33) {
-        requestPermission(Manifest.permission.READ_MEDIA_IMAGES, "photos");
-      } else {
-        requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, "photos");
+    photosButton.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        if (Build.VERSION.SDK_INT >= 33) {
+          requestPermission(Manifest.permission.READ_MEDIA_IMAGES, "photos");
+        } else {
+          requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, "photos");
+        }
       }
     });
     body.addView(photosButton);
 
     Button notificationButton = createButton("Request Notification Permission");
-    notificationButton.setOnClickListener(v -> {
-      if (Build.VERSION.SDK_INT >= 33) {
-        requestPermission(Manifest.permission.POST_NOTIFICATIONS, "notification");
-      } else {
-        appendLog("Notification runtime permission is only required on Android 13+.");
+    notificationButton.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        if (Build.VERSION.SDK_INT >= 33) {
+          requestPermission(Manifest.permission.POST_NOTIFICATIONS, "notification");
+        } else {
+          appendLog("Notification runtime permission is only required on Android 13+.");
+        }
       }
     });
     body.addView(notificationButton);
 
     Button authDrill = createButton("Trigger Human Auth Drill (2FA style)");
-    authDrill.setOnClickListener(v -> appendLog("2FA drill: ask OpenPocket agent to call request_human_auth with capability=2fa."));
+    authDrill.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        appendLog("2FA drill: ask OpenPocket agent to call request_human_auth with capability=2fa.");
+      }
+    });
     body.addView(authDrill);
 
     Button settings = createButton("Open App Settings");
-    settings.setOnClickListener(v -> {
-      Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-      intent.setData(Uri.parse("package:" + getPackageName()));
-      startActivity(intent);
+    settings.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(Uri.parse("package:" + getPackageName()));
+        startActivity(intent);
+      }
     });
     body.addView(settings);
 
@@ -342,7 +432,12 @@ public class MainActivity extends Activity {
 
   private void addPermissionButton(LinearLayout body, String label, String permission, String capabilityHint) {
     Button button = createButton(label);
-    button.setOnClickListener(v -> requestPermission(permission, capabilityHint));
+    button.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        requestPermission(permission, capabilityHint);
+      }
+    });
     body.addView(button);
   }
 
@@ -474,9 +569,26 @@ export class PermissionLabManager {
     const { androidJar, version: platformVersion } = pickPlatformAndroidJar(sdkRoot);
 
     const aapt2 = path.join(buildToolsDir, "aapt2");
-    const d8 = path.join(buildToolsDir, "d8");
     const zipalign = path.join(buildToolsDir, "zipalign");
     const apksigner = path.join(buildToolsDir, "apksigner");
+    const javaHome = detectJavaHome17Plus();
+    const buildEnv: NodeJS.ProcessEnv = javaHome
+      ? {
+          ...process.env,
+          JAVA_HOME: javaHome,
+          PATH: `${path.join(javaHome, "bin")}${path.delimiter}${process.env.PATH || ""}`,
+        }
+      : process.env;
+    const javaBinary = javaHome ? path.join(javaHome, "bin", "java") : "java";
+    const javacBinary = javaHome ? path.join(javaHome, "bin", "javac") : "javac";
+    const d8JarCandidates = [
+      path.join(buildToolsDir, "lib", "d8.jar"),
+      path.join(buildToolsDir, "d8.jar"),
+    ];
+    const d8Jar = d8JarCandidates.find((candidate) => fs.existsSync(candidate)) || "";
+    if (!d8Jar) {
+      throw new Error(`Unable to locate d8.jar in build-tools: ${buildToolsDir}`);
+    }
 
     const compileResZip = path.join(this.buildDir, "compiled-res.zip");
     const genDir = path.join(this.buildDir, "gen");
@@ -507,6 +619,7 @@ export class PermissionLabManager {
         compileResZip,
       ],
       "aapt2 compile resources",
+      buildEnv,
     );
 
     requireCommandOk(
@@ -524,6 +637,7 @@ export class PermissionLabManager {
         compileResZip,
       ],
       "aapt2 link",
+      buildEnv,
     );
 
     const javaFiles = [
@@ -535,7 +649,7 @@ export class PermissionLabManager {
     }
 
     requireCommandOk(
-      "javac",
+      javacBinary,
       [
         "-encoding",
         "UTF-8",
@@ -552,18 +666,28 @@ export class PermissionLabManager {
         ...javaFiles,
       ],
       "javac compile",
+      buildEnv,
     );
 
+    const classFiles = collectFilesBySuffix(classesDir, ".class");
+    if (classFiles.length === 0) {
+      throw new Error("javac did not produce .class files.");
+    }
+
     requireCommandOk(
-      d8,
+      javaBinary,
       [
+        "-cp",
+        d8Jar,
+        "com.android.tools.r8.D8",
         "--lib",
         androidJar,
         "--output",
         dexDir,
-        classesDir,
+        ...classFiles,
       ],
       "d8 dex",
+      buildEnv,
     );
 
     const classesDex = path.join(dexDir, "classes.dex");
@@ -580,17 +704,19 @@ export class PermissionLabManager {
         classesDex,
       ],
       "zip add classes.dex",
+      buildEnv,
     );
 
     requireCommandOk(
       zipalign,
       ["-f", "4", unsignedApk, alignedApk],
       "zipalign",
+      buildEnv,
     );
 
     const debugKeystore = path.join(this.projectDir, "debug.keystore");
     if (!fs.existsSync(debugKeystore)) {
-      const keytool = resolveKeytool();
+      const keytool = resolveKeytool(javaHome ?? undefined);
       requireCommandOk(
         keytool,
         [
@@ -614,6 +740,7 @@ export class PermissionLabManager {
           "CN=Android Debug,O=Android,C=US",
         ],
         "keytool generate debug keystore",
+        buildEnv,
       );
     }
 
@@ -634,9 +761,10 @@ export class PermissionLabManager {
         alignedApk,
       ],
       "apksigner sign",
+      buildEnv,
     );
 
-    requireCommandOk(apksigner, ["verify", signedApk], "apksigner verify");
+    requireCommandOk(apksigner, ["verify", signedApk], "apksigner verify", buildEnv);
 
     const statusBeforeInstall = this.emulator.status();
     if (statusBeforeInstall.devices.length === 0) {
