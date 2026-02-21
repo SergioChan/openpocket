@@ -283,3 +283,171 @@ test("AgentRuntime auto-triggers human auth on Android permission dialog app", a
     ModelClient.prototype.nextStep = originalNextStep;
   }
 });
+
+test("AgentRuntime applies delegated text artifact after human auth approval", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  const actions = [];
+  const artifactFile = path.join(os.tmpdir(), `openpocket-artifact-text-${Date.now()}.json`);
+  fs.writeFileSync(
+    artifactFile,
+    JSON.stringify({
+      kind: "text",
+      value: "123456",
+      capability: "2fa",
+    }),
+    "utf-8",
+  );
+
+  runtime.adb = {
+    captureScreenSnapshot: () => makeSnapshot(),
+    resolveDeviceId: () => "emulator-5554",
+    executeAction: async (action) => {
+      actions.push(action);
+      return "ok";
+    },
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  let callCount = 0;
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return {
+        thought: "Need OTP from phone",
+        action: {
+          type: "request_human_auth",
+          capability: "2fa",
+          instruction: "Input OTP code.",
+          timeoutSec: 90,
+        },
+        raw: '{"thought":"Need OTP from phone","action":{"type":"request_human_auth","capability":"2fa","instruction":"Input OTP code.","timeoutSec":90}}',
+      };
+    }
+    return {
+      thought: "Done",
+      action: { type: "finish", message: "Completed after OTP delegation" },
+      raw: '{"thought":"Done","action":{"type":"finish","message":"Completed after OTP delegation"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask(
+      "delegated text test",
+      undefined,
+      undefined,
+      async () => ({
+        requestId: "req-text",
+        approved: true,
+        status: "approved",
+        message: "Code confirmed",
+        decidedAt: new Date().toISOString(),
+        artifactPath: artifactFile,
+      }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      actions.some((action) => action.type === "type" && action.text === "123456"),
+      true,
+    );
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+    fs.rmSync(artifactFile, { force: true });
+  }
+});
+
+test("AgentRuntime applies delegated location artifact after human auth approval", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  const adbActions = [];
+  const emulatorCommands = [];
+  const artifactFile = path.join(os.tmpdir(), `openpocket-artifact-geo-${Date.now()}.json`);
+  fs.writeFileSync(
+    artifactFile,
+    JSON.stringify({
+      kind: "geo",
+      lat: 37.785834,
+      lon: -122.406417,
+      capability: "location",
+    }),
+    "utf-8",
+  );
+
+  runtime.adb = {
+    captureScreenSnapshot: () => makeSnapshot(),
+    resolveDeviceId: () => "emulator-5554",
+    executeAction: async (action) => {
+      adbActions.push(action);
+      return "ok";
+    },
+  };
+  runtime.emulator = {
+    runAdb: (args) => {
+      emulatorCommands.push(args);
+      return "ok";
+    },
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  let callCount = 0;
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return {
+        thought: "Need real location",
+        action: {
+          type: "request_human_auth",
+          capability: "location",
+          instruction: "Share current location.",
+          timeoutSec: 90,
+        },
+        raw: '{"thought":"Need real location","action":{"type":"request_human_auth","capability":"location","instruction":"Share current location.","timeoutSec":90}}',
+      };
+    }
+    return {
+      thought: "Done",
+      action: { type: "finish", message: "Completed after delegated location" },
+      raw: '{"thought":"Done","action":{"type":"finish","message":"Completed after delegated location"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask(
+      "delegated geo test",
+      undefined,
+      undefined,
+      async () => ({
+        requestId: "req-geo",
+        approved: true,
+        status: "approved",
+        message: "Location shared",
+        decidedAt: new Date().toISOString(),
+        artifactPath: artifactFile,
+      }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      emulatorCommands.some(
+        (args) =>
+          Array.isArray(args) &&
+          args.includes("emu") &&
+          args.includes("geo") &&
+          args.includes("fix") &&
+          args.includes(String(-122.406417)) &&
+          args.includes(String(37.785834)),
+      ),
+      true,
+    );
+    assert.equal(
+      adbActions.some((action) => action.type === "type"),
+      false,
+    );
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+    fs.rmSync(artifactFile, { force: true });
+  }
+});
