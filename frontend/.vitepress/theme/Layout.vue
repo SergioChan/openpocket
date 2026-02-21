@@ -59,7 +59,7 @@ function supportsCustomCursor() {
   if (typeof window === "undefined") {
     return false;
   }
-  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches && window.innerWidth > 860;
 }
 
 function refreshCustomCursorState() {
