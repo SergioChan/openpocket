@@ -39,8 +39,8 @@ export function buildUserPrompt(
     JSON.stringify(
       {
         currentApp: snapshot.currentApp,
-        width: snapshot.width,
-        height: snapshot.height,
+        width: snapshot.scaledWidth,
+        height: snapshot.scaledHeight,
         deviceId: snapshot.deviceId,
         capturedAt: snapshot.capturedAt,
       },

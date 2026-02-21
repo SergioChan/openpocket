@@ -160,6 +160,14 @@ export interface ScreenSnapshot {
   height: number;
   screenshotBase64: string;
   capturedAt: string;
+  /** Multiply model X coordinates by this to get original-resolution X. */
+  scaleX: number;
+  /** Multiply model Y coordinates by this to get original-resolution Y. */
+  scaleY: number;
+  /** Width of the scaled image the model actually sees. */
+  scaledWidth: number;
+  /** Height of the scaled image the model actually sees. */
+  scaledHeight: number;
 }
 
 export type AgentAction =
