@@ -3,311 +3,121 @@ import path from "node:path";
 
 import type { OpenPocketConfig } from "../types";
 import { ensureDir, nowForFilename, nowIso, timeString, todayString } from "../utils/paths";
+import { loadWorkspaceTemplate } from "./workspace-templates";
 
-function doc(text: string): string {
-  return `${text.trim()}\n`;
-}
+export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
+export const DEFAULT_SOUL_FILENAME = "SOUL.md";
+export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
+export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
+export const DEFAULT_USER_FILENAME = "USER.md";
+export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
+export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
+export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
+export const DEFAULT_PROFILE_ONBOARDING_FILENAME = "PROFILE_ONBOARDING.json";
 
-function jsonDoc(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
-}
+const WORKSPACE_STATE_DIRNAME = ".openpocket";
+const WORKSPACE_STATE_FILENAME = "workspace-state.json";
+const WORKSPACE_STATE_VERSION = 1;
 
-const BOOTSTRAP_FILES: Record<string, string> = {
-  "AGENTS.md": doc(`
-# AGENTS
-
-This workspace defines how OpenPocket should behave.
-
-## Session Start Checklist
-
-Before executing tasks, read:
-
-1. SOUL.md (behavior and tone)
-2. USER.md (user-specific preferences)
-3. IDENTITY.md (agent identity)
-4. TOOLS.md (local environment notes)
-5. HEARTBEAT.md (background checklist)
-6. MEMORY.md (long-term memory)
-7. memory/YYYY-MM-DD.md for today and yesterday if present
-
-## Task Execution Contract
-
-For each step:
-
-1. Identify the active sub-goal.
-2. Choose one deterministic next action.
-3. Validate progress from screenshot + history.
-4. If the last 2 attempts did not progress, switch strategy.
-5. Finish only when the user goal is fully complete.
-
-When information gathering is required, keep running notes in thought and include complete findings in finish.
-
-## Human Authorization
-
-Use request_human_auth when blocked by sensitive checkpoints, including:
-camera, qr, microphone, voice, nfc, sms, 2fa, location, biometric, payment, oauth, permission dialogs.
-
-Human instructions must be explicit and directly executable.
-
-## Safety Boundaries
-
-- Do not perform destructive actions unless the user clearly asked.
-- Prefer reversible actions when possible.
-- Do not expose private data outside the current task scope.
-- If uncertain, ask or take a minimal safe step.
-
-## Memory Discipline
-
-- Record important outcomes in memory/YYYY-MM-DD.md.
-- Keep MEMORY.md concise and durable (preferences, recurring constraints, stable facts).
-- Update memory files after meaningful tasks, not every trivial action.
-
-## Working Style
-
-- Be concise, accurate, and auditable.
-- Avoid repetitive loops.
-- Prefer practical progress over speculative actions.
-`),
-  "SOUL.md": doc(`
-# SOUL
-
-## Core Principles
-
-- Be useful, direct, and calm.
-- Be honest about uncertainty.
-- Favor evidence over assumptions.
-- Respect user intent and boundaries.
-
-## Collaboration Style
-
-- Keep explanations short unless detail is needed.
-- Surface risks before irreversible actions.
-- Escalate blockers clearly.
-
-## Quality Bar
-
-- Do not pretend success; verify.
-- Do not hide failures; report and recover.
-- Do not drift from the task; stay goal-focused.
-`),
-  "USER.md": doc(`
-# USER
-
-Record user-specific preferences and constraints.
-
-## Profile
-
-- Name:
-- Preferred form of address:
-- Timezone:
-- Language preference:
-
-## Interaction Preferences
-
-- Verbosity:
-- Risk tolerance:
-- Confirmation preference for external actions:
-
-## Task Preferences
-
-- Preferred apps/services:
-- Avoided apps/services:
-- Recurring goals:
-
-## Notes
-
-- Add durable preferences here.
-- Keep sensitive details minimal.
-`),
-  "IDENTITY.md": doc(`
-# IDENTITY
-
-## Agent Identity
-
-- Name: OpenPocket
-- Role: Android phone-use automation agent
-- Primary objective: execute user tasks safely and efficiently
-
-## Behavioral Defaults
-
-- Language for model thought/action text: English
-- Planning style: sub-goal driven, one deterministic step at a time
-- Escalation trigger: request_human_auth when real-device authorization is required
-`),
-  "TOOLS.md": doc(`
-# TOOLS
-
-Environment-specific notes for this workspace.
-
-## Device and Runtime
-
-- Preferred device id:
-- Common screen resolution:
-- Stable network assumptions:
-
-## App Notes
-
-- Frequently used package names:
-- Login/account caveats:
-- Known flaky screens or flows:
-
-## Automation Notes
-
-- Safe keyevents:
-- Preferred fallback commands/scripts:
-- Known anti-patterns to avoid:
-`),
-  "HEARTBEAT.md": doc(`
-# HEARTBEAT
-
-Background checks to run periodically when heartbeat is enabled.
-
-## Cadence
-
-- Run light checks first.
-- Skip noisy checks if there is no signal of change.
-
-## Checklist
-
-- Gateway process healthy
-- Emulator/device online
-- Recent task failures requiring attention
-- Queue/backlog requiring user notification
-
-## Reporting Rule
-
-- If no action is needed, report HEARTBEAT_OK.
-- If action is needed, report only the actionable summary.
-`),
-  "MEMORY.md": doc(`
-# MEMORY
-
-Long-term, curated memory for durable context.
-
-## Store Here
-
-- Stable user preferences
-- Reusable constraints and policies
-- Repeated failure patterns and fixes
-- Important environment facts
-
-## Do Not Store Here
-
-- Ephemeral step-by-step logs
-- Large raw dumps
-- Secrets unless explicitly requested
-
-## Maintenance
-
-- Keep entries concise and timestamped when relevant.
-- Remove stale or contradicted items.
-- Sync with daily memory files when new durable facts appear.
-`),
-  "PROFILE_ONBOARDING.json": jsonDoc({
-    version: 1,
-    locales: {
-      zh: {
-        questions: {
-          step1: "先做个简短初始化：我该怎么称呼你？如果你愿意，也可以一次告诉我你希望我叫什么和什么人设。",
-          step2: "收到。那你希望我叫什么名字？",
-          step3: [
-            "最后一步：设定我的人设/语气。",
-            "你可以直接描述，也可以选编号：",
-            "1) 专业可靠：清晰、稳健、少废话",
-            "2) 高效直给：结果导向、节奏快",
-            "3) 温和陪伴：耐心解释、语气柔和",
-            "4) 幽默轻松：轻松自然，但不影响执行",
-            "回复示例：`2` 或 `专业可靠，简洁，必要时幽默`",
-          ].join("\n"),
-        },
-        emptyAnswer: "请用一句话回答，我会帮你写入 profile。",
-        onboardingSaved:
-          "好，我已经写入 USER.md 和 IDENTITY.md。后续我会称呼你为“{userPreferredAddress}”，我的名字是“{assistantName}”，人设是“{assistantPersona}”。",
-        noChange: "这些设定已经是当前值了，不需要改动。",
-        updated: "已更新。{changes}。",
-        changeJoiner: "；",
-        changeTemplates: {
-          userPreferredAddress: "我会称呼你为“{value}”",
-          assistantName: "我的名字改为“{value}”",
-          assistantPersona: "人设改为“{value}”",
-        },
-        fallbacks: {
-          user: "用户",
-          assistant: "OpenPocket",
-          persona: "务实、冷静、可靠",
-        },
-        personaPresets: [
-          {
-            value: "专业可靠：清晰、稳健、少废话",
-            aliases: ["1", "a", "选1", "方案1"],
-          },
-          {
-            value: "高效直给：结果导向、节奏快",
-            aliases: ["2", "b", "选2", "方案2"],
-          },
-          {
-            value: "温和陪伴：耐心解释、语气柔和",
-            aliases: ["3", "c", "选3", "方案3"],
-          },
-          {
-            value: "幽默轻松：轻松自然，但不影响执行",
-            aliases: ["4", "d", "选4", "方案4"],
-          },
-        ],
-      },
-      en: {
-        questions: {
-          step1:
-            "Quick setup before we continue: how would you like me to address you? You can also tell me my name and persona in one message.",
-          step2: "Great. What name would you like to call me?",
-          step3: [
-            "Final step: choose my persona/tone.",
-            "You can describe it freely, or pick one preset:",
-            "1) Professional & reliable: clear, stable, minimal fluff",
-            "2) Fast & direct: action-oriented, concise, high tempo",
-            "3) Warm & supportive: patient guidance, softer tone",
-            "4) Light & humorous: relaxed tone while staying task-focused",
-            "Reply example: `2` or `professional, concise, lightly humorous`",
-          ].join("\n"),
-        },
-        emptyAnswer: "Please answer in one short sentence so I can save your profile.",
-        onboardingSaved:
-          "Done. I saved your profile to USER.md and IDENTITY.md. I will address you as \"{userPreferredAddress}\", and use \"{assistantName}\" with persona \"{assistantPersona}\".",
-        noChange: "These profile settings are already up to date.",
-        updated: "Updated. {changes}.",
-        changeJoiner: "; ",
-        changeTemplates: {
-          userPreferredAddress: "I will address you as \"{value}\"",
-          assistantName: "my name is now \"{value}\"",
-          assistantPersona: "persona updated to \"{value}\"",
-        },
-        fallbacks: {
-          user: "User",
-          assistant: "OpenPocket",
-          persona: "pragmatic, calm, and reliable",
-        },
-        personaPresets: [
-          {
-            value: "professional and reliable: clear, stable, minimal fluff",
-            aliases: ["1", "a", "option1"],
-          },
-          {
-            value: "fast and direct: action-oriented, concise, high tempo",
-            aliases: ["2", "b", "option2"],
-          },
-          {
-            value: "warm and supportive: patient guidance, softer tone",
-            aliases: ["3", "c", "option3"],
-          },
-          {
-            value: "light and humorous: relaxed tone while staying task-focused",
-            aliases: ["4", "d", "option4"],
-          },
-        ],
-      },
-    },
-  }),
+type WorkspaceOnboardingState = {
+  version: typeof WORKSPACE_STATE_VERSION;
+  bootstrapSeededAt?: string;
+  onboardingCompletedAt?: string;
 };
+
+const CORE_TEMPLATE_FILES = [
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_SOUL_FILENAME,
+  DEFAULT_TOOLS_FILENAME,
+  DEFAULT_IDENTITY_FILENAME,
+  DEFAULT_USER_FILENAME,
+  DEFAULT_HEARTBEAT_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_PROFILE_ONBOARDING_FILENAME,
+] as const;
+
+const BRAND_NEW_SENTINEL_FILES = [
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_SOUL_FILENAME,
+  DEFAULT_TOOLS_FILENAME,
+  DEFAULT_IDENTITY_FILENAME,
+  DEFAULT_USER_FILENAME,
+  DEFAULT_HEARTBEAT_FILENAME,
+] as const;
+
+function readTextIfExists(filePath: string): string {
+  if (!fs.existsSync(filePath)) {
+    return "";
+  }
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function writeFileIfMissing(filePath: string, content: string): boolean {
+  if (fs.existsSync(filePath)) {
+    return false;
+  }
+  fs.writeFileSync(filePath, content, "utf-8");
+  return true;
+}
+
+function resolveWorkspaceStatePath(workspaceDir: string): string {
+  return path.join(workspaceDir, WORKSPACE_STATE_DIRNAME, WORKSPACE_STATE_FILENAME);
+}
+
+function readWorkspaceOnboardingState(statePath: string): WorkspaceOnboardingState {
+  if (!fs.existsSync(statePath)) {
+    return { version: WORKSPACE_STATE_VERSION };
+  }
+  try {
+    const raw = fs.readFileSync(statePath, "utf-8");
+    const parsed = JSON.parse(raw) as {
+      bootstrapSeededAt?: unknown;
+      onboardingCompletedAt?: unknown;
+    };
+    return {
+      version: WORKSPACE_STATE_VERSION,
+      bootstrapSeededAt:
+        typeof parsed.bootstrapSeededAt === "string" ? parsed.bootstrapSeededAt : undefined,
+      onboardingCompletedAt:
+        typeof parsed.onboardingCompletedAt === "string" ? parsed.onboardingCompletedAt : undefined,
+    };
+  } catch {
+    return { version: WORKSPACE_STATE_VERSION };
+  }
+}
+
+function writeWorkspaceOnboardingState(
+  statePath: string,
+  state: WorkspaceOnboardingState,
+): void {
+  ensureDir(path.dirname(statePath));
+  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
+}
+
+export function isWorkspaceOnboardingCompleted(workspaceDir: string): boolean {
+  const statePath = resolveWorkspaceStatePath(workspaceDir);
+  const state = readWorkspaceOnboardingState(statePath);
+  return (
+    typeof state.onboardingCompletedAt === "string"
+    && state.onboardingCompletedAt.trim().length > 0
+  );
+}
+
+export function markWorkspaceOnboardingCompleted(workspaceDir: string): void {
+  const statePath = resolveWorkspaceStatePath(workspaceDir);
+  const state = readWorkspaceOnboardingState(statePath);
+  const timestamp = nowIso();
+  const next: WorkspaceOnboardingState = {
+    version: WORKSPACE_STATE_VERSION,
+    bootstrapSeededAt: state.bootstrapSeededAt ?? timestamp,
+    onboardingCompletedAt: timestamp,
+  };
+  writeWorkspaceOnboardingState(statePath, next);
+}
 
 export function ensureWorkspaceBootstrap(workspaceDir: string): void {
   ensureDir(workspaceDir);
@@ -318,11 +128,65 @@ export function ensureWorkspaceBootstrap(workspaceDir: string): void {
   ensureDir(path.join(workspaceDir, "scripts", "runs"));
   ensureDir(path.join(workspaceDir, "cron"));
 
-  for (const [name, content] of Object.entries(BOOTSTRAP_FILES)) {
-    const filePath = path.join(workspaceDir, name);
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, content, "utf-8");
+  const isBrandNewWorkspace = BRAND_NEW_SENTINEL_FILES.every(
+    (name) => !fs.existsSync(path.join(workspaceDir, name)),
+  );
+
+  const templates: Record<string, string> = {};
+  for (const name of [...CORE_TEMPLATE_FILES, DEFAULT_BOOTSTRAP_FILENAME]) {
+    templates[name] = loadWorkspaceTemplate(name);
+  }
+
+  for (const name of CORE_TEMPLATE_FILES) {
+    writeFileIfMissing(path.join(workspaceDir, name), templates[name]);
+  }
+
+  const statePath = resolveWorkspaceStatePath(workspaceDir);
+  let state = readWorkspaceOnboardingState(statePath);
+  let stateDirty = false;
+  const markState = (next: Partial<WorkspaceOnboardingState>) => {
+    state = { ...state, ...next };
+    stateDirty = true;
+  };
+
+  const bootstrapPath = path.join(workspaceDir, DEFAULT_BOOTSTRAP_FILENAME);
+  let bootstrapExists = fs.existsSync(bootstrapPath);
+
+  if (!state.bootstrapSeededAt && bootstrapExists) {
+    markState({ bootstrapSeededAt: nowIso() });
+  }
+
+  if (!state.onboardingCompletedAt && state.bootstrapSeededAt && !bootstrapExists) {
+    markState({ onboardingCompletedAt: nowIso() });
+  }
+
+  if (!state.bootstrapSeededAt && !state.onboardingCompletedAt && !bootstrapExists) {
+    const identityCurrent = readTextIfExists(
+      path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME),
+    ).trim();
+    const userCurrent = readTextIfExists(path.join(workspaceDir, DEFAULT_USER_FILENAME)).trim();
+    const identityTemplate = templates[DEFAULT_IDENTITY_FILENAME].trim();
+    const userTemplate = templates[DEFAULT_USER_FILENAME].trim();
+
+    const legacyOnboardingCompleted =
+      !isBrandNewWorkspace
+      && identityCurrent.length > 0
+      && userCurrent.length > 0
+      && (identityCurrent !== identityTemplate || userCurrent !== userTemplate);
+
+    if (legacyOnboardingCompleted) {
+      markState({ onboardingCompletedAt: nowIso() });
+    } else {
+      writeFileIfMissing(bootstrapPath, templates[DEFAULT_BOOTSTRAP_FILENAME]);
+      bootstrapExists = fs.existsSync(bootstrapPath);
+      if (bootstrapExists && !state.bootstrapSeededAt) {
+        markState({ bootstrapSeededAt: nowIso() });
+      }
     }
+  }
+
+  if (stateDirty) {
+    writeWorkspaceOnboardingState(statePath, state);
   }
 
   const memoryReadme = path.join(workspaceDir, "memory", "README.md");

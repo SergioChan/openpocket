@@ -6,7 +6,12 @@ import test from "node:test";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { ensureWorkspaceBootstrap, WorkspaceStore } = require("../dist/memory/workspace.js");
+const {
+  ensureWorkspaceBootstrap,
+  isWorkspaceOnboardingCompleted,
+  markWorkspaceOnboardingCompleted,
+  WorkspaceStore,
+} = require("../dist/memory/workspace.js");
 
 test("ensureWorkspaceBootstrap creates required layout", () => {
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-workspace-bootstrap-"));
@@ -20,7 +25,9 @@ test("ensureWorkspaceBootstrap creates required layout", () => {
     "TOOLS.md",
     "HEARTBEAT.md",
     "MEMORY.md",
+    "BOOTSTRAP.md",
     "PROFILE_ONBOARDING.json",
+    path.join(".openpocket", "workspace-state.json"),
     path.join("memory", "README.md"),
     path.join("skills", "README.md"),
     path.join("scripts", "README.md"),
@@ -31,6 +38,25 @@ test("ensureWorkspaceBootstrap creates required layout", () => {
   for (const rel of required) {
     assert.equal(fs.existsSync(path.join(workspaceDir, rel)), true, rel);
   }
+});
+
+test("workspace onboarding state marks completion after bootstrap removal", () => {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-workspace-state-"));
+  ensureWorkspaceBootstrap(workspaceDir);
+
+  assert.equal(isWorkspaceOnboardingCompleted(workspaceDir), false);
+  fs.unlinkSync(path.join(workspaceDir, "BOOTSTRAP.md"));
+  ensureWorkspaceBootstrap(workspaceDir);
+  assert.equal(isWorkspaceOnboardingCompleted(workspaceDir), true);
+});
+
+test("markWorkspaceOnboardingCompleted writes completion marker", () => {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-workspace-mark-"));
+  ensureWorkspaceBootstrap(workspaceDir);
+
+  assert.equal(isWorkspaceOnboardingCompleted(workspaceDir), false);
+  markWorkspaceOnboardingCompleted(workspaceDir);
+  assert.equal(isWorkspaceOnboardingCompleted(workspaceDir), true);
 });
 
 test("WorkspaceStore writes session steps final and daily memory", () => {

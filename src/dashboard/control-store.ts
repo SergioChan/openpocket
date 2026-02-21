@@ -120,7 +120,7 @@ export function defaultPromptEntries(workspaceDir: string): PromptFileEntry[] {
     { id: "tools", title: "TOOLS", fileName: "TOOLS.md" },
     { id: "heartbeat", title: "HEARTBEAT", fileName: "HEARTBEAT.md" },
     { id: "memory", title: "MEMORY", fileName: "MEMORY.md" },
-    { id: "profile_onboarding", title: "PROFILE_ONBOARDING", fileName: "PROFILE_ONBOARDING.json" },
+    { id: "bootstrap", title: "BOOTSTRAP", fileName: "BOOTSTRAP.md" },
   ];
   return files.map((file) => ({
     id: file.id,
