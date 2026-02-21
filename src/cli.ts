@@ -185,7 +185,7 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
   }
   if (sub === "show") {
     // eslint-disable-next-line no-console
-    console.log(emulator.showWindow());
+    console.log(await emulator.ensureWindowVisible());
     return 0;
   }
   if (sub === "list-avds") {

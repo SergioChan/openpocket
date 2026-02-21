@@ -414,7 +414,7 @@ export class TelegramGateway {
     }
 
     if (text.startsWith("/showvm")) {
-      await this.bot.sendMessage(chatId, this.emulator.showWindow());
+      await this.bot.sendMessage(chatId, await this.emulator.ensureWindowVisible());
       return;
     }
 

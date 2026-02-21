@@ -145,6 +145,17 @@ export class EmulatorManager {
     return this.status();
   }
 
+  private async waitForShutdown(timeoutMs: number): Promise<boolean> {
+    const startAt = Date.now();
+    while (Date.now() - startAt < timeoutMs) {
+      if (this.emulatorDevices().length === 0) {
+        return true;
+      }
+      await sleep(500);
+    }
+    return this.emulatorDevices().length === 0;
+  }
+
   async start(headless?: boolean): Promise<string> {
     const timeoutMs = Math.max(20, this.config.emulator.bootTimeoutSec) * 1000;
     const status = this.status();
@@ -237,6 +248,74 @@ export class EmulatorManager {
       stdio: "ignore",
     });
     return "Android Emulator window activated.";
+  }
+
+  private hasVisibleWindowMac(): boolean {
+    if (process.platform !== "darwin") {
+      return false;
+    }
+    try {
+      const output = spawnSync(
+        "osascript",
+        ["-e", 'tell application "Android Emulator" to get count of windows'],
+        {
+          encoding: "utf-8",
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      );
+      if (output.status !== 0) {
+        return false;
+      }
+      const count = Number.parseInt(String(output.stdout ?? "").trim(), 10);
+      return Number.isFinite(count) && count > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForVisibleWindowMac(timeoutMs: number): Promise<boolean> {
+    const startAt = Date.now();
+    while (Date.now() - startAt < timeoutMs) {
+      if (this.hasVisibleWindowMac()) {
+        return true;
+      }
+      await sleep(200);
+    }
+    return this.hasVisibleWindowMac();
+  }
+
+  /**
+   * Ensures the emulator is interactable in a desktop window.
+   * If the process is currently headless (-no-window), it is restarted in windowed mode.
+   */
+  async ensureWindowVisible(): Promise<string> {
+    if (process.platform !== "darwin") {
+      return this.showWindow();
+    }
+
+    const status = this.status();
+    if (status.devices.length === 0) {
+      const startMessage = await this.start(false);
+      const showMessage = this.showWindow();
+      return `${startMessage}; ${showMessage}`;
+    }
+
+    const showMessage = this.showWindow();
+    const becameVisible = await this.waitForVisibleWindowMac(1500);
+    if (becameVisible) {
+      return showMessage;
+    }
+
+    const stopMessage = this.stop();
+    await this.waitForShutdown(15000);
+    const startMessage = await this.start(false);
+    const showAfterRestart = this.showWindow();
+    return [
+      "Emulator was running in headless mode; restarted in windowed mode.",
+      stopMessage,
+      startMessage,
+      showAfterRestart,
+    ].join(" ");
   }
 
   captureScreenshot(outputPath?: string, preferredDeviceId?: string): string {

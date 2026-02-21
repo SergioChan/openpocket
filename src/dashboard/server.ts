@@ -960,11 +960,11 @@ export class DashboardServer {
 
           <div class="card">
             <h3>Android Emulator</h3>
-            <p class="hint">Control emulator lifecycle and visibility while tasks continue in background.</p>
+            <p class="hint">Control emulator lifecycle and visibility while tasks continue in background. Show can auto-switch from headless to windowed mode.</p>
             <div class="row">
               <button class="btn primary" data-emu-action="start">Start</button>
               <button class="btn warn" data-emu-action="stop">Stop</button>
-              <button class="btn" data-emu-action="show">Show</button>
+              <button class="btn" data-emu-action="show">Show / Interact</button>
               <button class="btn" data-emu-action="hide">Hide</button>
               <button class="btn" id="emu-refresh-btn">Refresh Status</button>
             </div>
@@ -2053,7 +2053,7 @@ export class DashboardServer {
       }
 
       if (method === "POST" && url.pathname === "/api/emulator/show") {
-        const message = this.emulator.showWindow();
+        const message = await this.emulator.ensureWindowVisible();
         this.log(`emulator show ${message}`);
         sendJson(res, 200, { ok: true, message });
         return;
