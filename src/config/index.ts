@@ -23,6 +23,7 @@ function defaultConfigObject() {
       androidSdkRoot: process.env.ANDROID_SDK_ROOT ?? "",
       headless: false,
       bootTimeoutSec: 180,
+      extraArgs: [] as string[],
     },
     telegram: {
       botToken: "",
@@ -240,6 +241,7 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
     avd_name: "avdName",
     android_sdk_root: "androidSdkRoot",
     boot_timeout_sec: "bootTimeoutSec",
+    extra_args: "extraArgs",
   };
   for (const [oldKey, newKey] of Object.entries(emulatorMap)) {
     if (oldKey in emulator && !(newKey in emulator)) {
@@ -495,6 +497,11 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
       androidSdkRoot: String(emulator.androidSdkRoot ?? ""),
       headless: Boolean(emulator.headless),
       bootTimeoutSec: Number(emulator.bootTimeoutSec ?? 180),
+      extraArgs: Array.isArray(emulator.extraArgs)
+        ? emulator.extraArgs
+          .map((item) => String(item).trim())
+          .filter((item) => item.length > 0)
+        : [],
     },
     telegram: {
       botToken: String(telegram.botToken ?? ""),

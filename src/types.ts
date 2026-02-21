@@ -3,6 +3,7 @@ export interface EmulatorConfig {
   androidSdkRoot: string;
   headless: boolean;
   bootTimeoutSec: number;
+  extraArgs: string[];
 }
 
 export interface TelegramConfig {

@@ -188,6 +188,13 @@ export class EmulatorManager {
     if (useHeadless) {
       args.push("-no-window");
     }
+    if (Array.isArray(this.config.emulator.extraArgs)) {
+      args.push(
+        ...this.config.emulator.extraArgs
+          .map((item) => String(item).trim())
+          .filter((item) => item.length > 0),
+      );
+    }
 
     ensureDir(path.dirname(this.logFile));
     const marker = `\n=== ${nowForFilename()} start ${this.emulatorBinary()} ${args.join(" ")} ===\n`;
