@@ -324,6 +324,36 @@ Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 The legacy native macOS panel has been removed from the repository.
 Use `openpocket dashboard start` (or `openpocket gateway start`, which auto-starts dashboard).
 
+## Web Dashboard
+
+The local Web dashboard is now the primary control surface.
+
+### Startup behavior
+
+1. `openpocket gateway start` auto-starts dashboard and prints dashboard URL.
+2. `openpocket dashboard start` starts dashboard only (no Telegram gateway).
+
+Default dashboard config:
+
+```json
+"dashboard": {
+  "enabled": true,
+  "host": "127.0.0.1",
+  "port": 51888,
+  "autoOpenBrowser": false
+}
+```
+
+### Runtime page layout
+
+- Left column: Gateway status, emulator controls, and core path config.
+- Right column: large emulator preview pane for tap/text control.
+
+### Auto refresh behavior
+
+- Preview auto-refresh updates image/metadata silently.
+- It does not spam status text with repeated "Refreshing emulator preview..." messages.
+
 ## Human Authorization Modes
 
 OpenPocket supports three human-auth configurations:
