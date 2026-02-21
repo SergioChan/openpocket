@@ -215,7 +215,6 @@ test("help output uses onboard as primary command and lists legacy aliases", () 
   assert.match(result.stdout, /\bsetup\b/);
   assert.match(result.stdout, /gateway \[start\|telegram\]/);
   assert.match(result.stdout, /dashboard start/);
-  assert.match(result.stdout, /panel start/);
 });
 
 test("telegram setup requires interactive terminal", () => {

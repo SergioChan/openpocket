@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import * as readline from "node:readline";
@@ -20,13 +19,6 @@ import { ScriptExecutor } from "./tools/script-executor";
 import { runSetupWizard } from "./onboarding/setup-wizard";
 import { installCliShortcut } from "./install/cli-shortcut";
 import { ensureAndroidPrerequisites } from "./environment/android-prerequisites";
-
-const DEFAULT_PANEL_RELEASE_URL = "https://github.com/SergioChan/openpocket/releases/latest";
-
-type GithubReleaseAsset = {
-  name: string;
-  browser_download_url: string;
-};
 
 function printHelp(): void {
   // eslint-disable-next-line no-console
@@ -51,7 +43,6 @@ Usage:
   openpocket [--config <path>] gateway [start|telegram]
   openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
-  openpocket panel start
 
 Legacy aliases (deprecated):
   openpocket [--config <path>] init
@@ -68,108 +59,7 @@ Examples:
   openpocket gateway start
   openpocket dashboard start
   openpocket human-auth-relay start --port 8787
-  openpocket panel start
 `);
-}
-
-function getPanelReleaseUrl(): string {
-  const fromEnv = process.env.OPENPOCKET_PANEL_RELEASE_URL?.trim();
-  if (fromEnv) {
-    return fromEnv;
-  }
-
-  try {
-    const packageJsonPath = path.resolve(__dirname, "..", "package.json");
-    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as {
-      homepage?: string;
-      repository?: string | { url?: string };
-    };
-    if (pkg.homepage?.trim()) {
-      return pkg.homepage.includes("/releases")
-        ? pkg.homepage
-        : `${pkg.homepage.replace(/\/$/, "")}/releases/latest`;
-    }
-    const repoUrlRaw =
-      typeof pkg.repository === "string"
-        ? pkg.repository
-        : pkg.repository?.url;
-    const repoUrl = repoUrlRaw?.replace(/^git\+/, "").replace(/\.git$/, "");
-    if (repoUrl?.includes("github.com")) {
-      const normalized = repoUrl.replace(/^git@github.com:/, "https://github.com/");
-      return `${normalized.replace(/\/$/, "")}/releases/latest`;
-    }
-  } catch {
-    // ignore and fallback
-  }
-
-  return DEFAULT_PANEL_RELEASE_URL;
-}
-
-function resolveInstalledPanelApp(): string | null {
-  const home = process.env.HOME ?? "";
-  const candidates = [
-    "/Applications/OpenPocket Control Panel.app",
-    path.join(home, "Applications", "OpenPocket Control Panel.app"),
-    "/Applications/OpenPocketMenuBar.app",
-    path.join(home, "Applications", "OpenPocketMenuBar.app"),
-  ].filter(Boolean);
-
-  for (const appPath of candidates) {
-    if (fs.existsSync(appPath)) {
-      return appPath;
-    }
-  }
-  return null;
-}
-
-function installedPanelExecutable(appPath: string): string | null {
-  const names = ["OpenPocketMenuBar", "OpenPocket Control Panel"];
-  for (const name of names) {
-    const candidate = path.join(appPath, "Contents", "MacOS", name);
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function panelProcessRunning(executablePath: string): boolean {
-  const probe = spawnSync("/usr/bin/pgrep", ["-f", executablePath], { stdio: "ignore" });
-  return (probe.status ?? 1) === 0;
-}
-
-function openPanelApp(appPath: string, launchArgs: string[] = []): boolean {
-  const executable = installedPanelExecutable(appPath);
-  if (executable && panelProcessRunning(executable)) {
-    return true;
-  }
-
-  const openArgs = [appPath];
-  if (launchArgs.length > 0) {
-    openArgs.push("--args", ...launchArgs);
-  }
-  const result = spawnSync("/usr/bin/open", openArgs, { encoding: "utf-8", stdio: "pipe" });
-  if ((result.status ?? 1) !== 0) {
-    const detail = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
-    // eslint-disable-next-line no-console
-    console.error(`[OpenPocket][panel] /usr/bin/open failed (exit ${result.status}): ${detail || "(no output)"}`);
-    return false;
-  }
-
-  // /usr/bin/open returns immediately. Wait a moment and verify the process actually started.
-  if (executable) {
-    spawnSync("/bin/sleep", ["1.5"]);
-    if (!panelProcessRunning(executable)) {
-      // eslint-disable-next-line no-console
-      console.error("[OpenPocket][panel] Panel app was launched but the process is no longer running. It may have crashed at startup.");
-      return false;
-    }
-  }
-  return true;
-}
-
-function openReleasePage(url: string): void {
-  spawnSync("/usr/bin/open", [url], { stdio: "ignore" });
 }
 
 function openUrlInBrowser(url: string): void {
@@ -233,192 +123,6 @@ function standaloneDashboardGatewayStatus(): DashboardGatewayStatus {
     managed: false,
     note: pids.length > 0 ? `detected gateway pid(s): ${pids.join(", ")}` : "no gateway process detected",
   };
-}
-
-function parseGithubRepoFromReleaseUrl(releaseUrl: string): { owner: string; repo: string } | null {
-  const match = releaseUrl.match(/github\.com\/([^/]+)\/([^/]+)/i);
-  if (!match?.[1] || !match?.[2]) {
-    return null;
-  }
-  return {
-    owner: match[1],
-    repo: match[2].replace(/\.git$/i, ""),
-  };
-}
-
-function fetchLatestGithubReleaseAssets(releaseUrl: string): GithubReleaseAsset[] {
-  const parsed = parseGithubRepoFromReleaseUrl(releaseUrl);
-  if (!parsed) {
-    throw new Error(`Cannot parse GitHub repo from URL: ${releaseUrl}`);
-  }
-
-  const apiUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases/latest`;
-  const response = spawnSync(
-    "/usr/bin/curl",
-    [
-      "-fsSL",
-      "-H",
-      "Accept: application/vnd.github+json",
-      "-H",
-      "User-Agent: openpocket-cli",
-      apiUrl,
-    ],
-    { encoding: "utf-8" },
-  );
-  if ((response.status ?? 1) !== 0) {
-    throw new Error(`Failed to query GitHub releases API: ${response.stderr || "curl exited with error"}`);
-  }
-
-  const parsedJson = JSON.parse(response.stdout) as { assets?: unknown };
-  if (!Array.isArray(parsedJson.assets)) {
-    return [];
-  }
-
-  return parsedJson.assets
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
-      const item = entry as { name?: unknown; browser_download_url?: unknown };
-      const name = typeof item.name === "string" ? item.name : "";
-      const browserDownloadUrl =
-        typeof item.browser_download_url === "string" ? item.browser_download_url : "";
-      if (!name || !browserDownloadUrl) {
-        return null;
-      }
-      return {
-        name,
-        browser_download_url: browserDownloadUrl,
-      } satisfies GithubReleaseAsset;
-    })
-    .filter((asset): asset is GithubReleaseAsset => Boolean(asset));
-}
-
-function pickPanelReleaseAsset(assets: GithubReleaseAsset[]): GithubReleaseAsset | null {
-  const scored = assets
-    .filter((asset) => asset.name.toLowerCase().endsWith(".zip"))
-    .map((asset) => {
-      const lower = asset.name.toLowerCase();
-      let score = 0;
-      if (lower.includes("panel") || lower.includes("menubar")) {
-        score += 8;
-      }
-      if (lower.includes("mac") || lower.includes("darwin") || lower.includes("osx")) {
-        score += 5;
-      }
-      if (lower.includes("control")) {
-        score += 2;
-      }
-      if (lower.includes("linux") || lower.includes("windows") || lower.includes("win")) {
-        score -= 10;
-      }
-      return {
-        asset,
-        score,
-        hasPanelName: lower.includes("panel") || lower.includes("menubar"),
-        hasMacHint: lower.includes("mac") || lower.includes("darwin") || lower.includes("osx"),
-      };
-    })
-    .filter((item) => item.hasPanelName && item.hasMacHint)
-    .sort((a, b) => b.score - a.score);
-
-  return scored[0]?.asset ?? null;
-}
-
-function findAppBundle(rootDir: string): string | null {
-  if (!fs.existsSync(rootDir)) {
-    return null;
-  }
-  const stack = [rootDir];
-  while (stack.length > 0) {
-    const current = stack.pop() as string;
-    const entries = fs.readdirSync(current, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-      const absolute = path.join(current, entry.name);
-      if (entry.name.endsWith(".app")) {
-        return absolute;
-      }
-      stack.push(absolute);
-    }
-  }
-  return null;
-}
-
-function installPanelFromRelease(
-  releaseUrl: string,
-  log?: (line: string) => void,
-): string {
-  if (process.platform !== "darwin") {
-    throw new Error("Panel auto-install is supported on macOS only.");
-  }
-
-  log?.("1/4 Pull panel package from GitHub release");
-  const assets = fetchLatestGithubReleaseAssets(releaseUrl);
-  const picked = pickPanelReleaseAsset(assets);
-  if (!picked) {
-    throw new Error("No macOS .zip panel asset found in latest release.");
-  }
-
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openpocket-panel-install-"));
-  try {
-    const zipPath = path.join(tmpDir, picked.name);
-    const download = spawnSync("/usr/bin/curl", ["-fL", picked.browser_download_url, "-o", zipPath], {
-      encoding: "utf-8",
-      stdio: "pipe",
-    });
-    if ((download.status ?? 1) !== 0) {
-      throw new Error(`Failed to download ${picked.name}: ${download.stderr || "curl exited with error"}`);
-    }
-
-    log?.("2/4 Unpack panel ZIP");
-    const unpackDir = path.join(tmpDir, "unpacked");
-    fs.mkdirSync(unpackDir, { recursive: true });
-    const unpack = spawnSync("/usr/bin/ditto", ["-x", "-k", zipPath, unpackDir], {
-      encoding: "utf-8",
-      stdio: "pipe",
-    });
-    if ((unpack.status ?? 1) !== 0) {
-      throw new Error(`Failed to unpack ${picked.name}: ${unpack.stderr || "ditto exited with error"}`);
-    }
-
-    const appBundle = findAppBundle(unpackDir);
-    if (!appBundle) {
-      throw new Error(`No .app bundle found in ${picked.name}`);
-    }
-
-    const home = process.env.HOME?.trim();
-    if (!home) {
-      throw new Error("HOME is not set; cannot install panel app.");
-    }
-    log?.("3/4 Install panel app bundle");
-    const appsDir = path.join(home, "Applications");
-    fs.mkdirSync(appsDir, { recursive: true });
-    const targetApp = path.join(appsDir, path.basename(appBundle));
-    fs.rmSync(targetApp, { recursive: true, force: true });
-    const copy = spawnSync("/usr/bin/ditto", [appBundle, targetApp], {
-      encoding: "utf-8",
-      stdio: "pipe",
-    });
-    if ((copy.status ?? 1) !== 0) {
-      throw new Error(`Failed to install app bundle: ${copy.stderr || "ditto exited with error"}`);
-    }
-
-    spawnSync("/usr/bin/xattr", ["-dr", "com.apple.quarantine", targetApp], { stdio: "ignore" });
-    log?.("4/4 Verify panel installation");
-    if (!fs.existsSync(targetApp)) {
-      throw new Error(`Panel install verification failed: ${targetApp} not found.`);
-    }
-    const installed = resolveInstalledPanelApp();
-    if (!installed) {
-      throw new Error("Panel install verification failed: app bundle is not discoverable.");
-    }
-    return installed;
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
 }
 
 function takeOption(args: string[], name: string): { value: string | null; rest: string[] } {
@@ -1134,54 +838,6 @@ async function runTelegramSetupCommand(
   }
 }
 
-async function runPanelCommand(configPath: string | undefined, args: string[]): Promise<number> {
-  const sub = (args[0] ?? "start").trim();
-  if (sub !== "start") {
-    throw new Error(`Unknown panel subcommand: ${sub}. Use: panel start`);
-  }
-
-  if (process.platform !== "darwin") {
-    throw new Error("OpenPocket menu bar panel is supported on macOS only.");
-  }
-
-  const launchArgs: string[] = [];
-  const resolvedConfigPath = configPath?.trim() ? path.resolve(configPath.trim()) : "";
-  if (resolvedConfigPath) {
-    launchArgs.push("--config-path", resolvedConfigPath);
-  }
-  const repoRoot = path.resolve(__dirname, "..");
-  launchArgs.push("--repo-root", repoRoot);
-  const localLauncher = path.join(repoRoot, "openpocket");
-  if (fs.existsSync(localLauncher)) {
-    launchArgs.push("--cli-path", localLauncher);
-  }
-
-  const installedApp = resolveInstalledPanelApp();
-  if (installedApp) {
-    if (openPanelApp(installedApp, launchArgs)) {
-      // eslint-disable-next-line no-console
-      console.log(`OpenPocket Control Panel opened: ${installedApp}`);
-      return 0;
-    }
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][panel] Installed app could not be opened. Reinstalling: ${installedApp}`);
-  }
-
-  const releaseUrl = getPanelReleaseUrl();
-  // eslint-disable-next-line no-console
-  console.log("OpenPocket panel is required and not installed. Installing from GitHub Release...");
-  const installedFromRelease = installPanelFromRelease(releaseUrl, (line) => {
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][panel-install] ${line}`);
-  });
-  if (!openPanelApp(installedFromRelease, launchArgs)) {
-    throw new Error(`Panel installed but failed to open: ${installedFromRelease}`);
-  }
-  // eslint-disable-next-line no-console
-  console.log(`OpenPocket Control Panel installed and opened: ${installedFromRelease}`);
-  return 0;
-}
-
 async function runDashboardCommand(configPath: string | undefined, args: string[]): Promise<number> {
   const sub = (args[0] ?? "start").trim();
   if (sub !== "start") {
@@ -1347,10 +1003,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (command === "telegram") {
     return runTelegramSetupCommand(configPath ?? undefined, rest.slice(1));
-  }
-
-  if (command === "panel") {
-    return runPanelCommand(configPath ?? undefined, rest.slice(1));
   }
 
   if (command === "dashboard") {

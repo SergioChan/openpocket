@@ -33,7 +33,7 @@ Status snapshot (February 2026):
 
 - A stronger long-horizon memory system.
 - Phone-use-specific prompt engineering and evaluation.
-- Cross-platform runtime/panel support beyond macOS-first workflows.
+- Cross-platform runtime/web-dashboard support beyond macOS-first workflows.
 
 ## Quick Start
 
@@ -312,7 +312,6 @@ Command prefix by install mode:
 ./openpocket gateway start
 ./openpocket dashboard start
 ./openpocket human-auth-relay start
-./openpocket panel start
 ```
 
 `human-auth-relay start` is mainly a standalone debug mode. In normal gateway usage, local relay/tunnel startup is handled automatically from config.
@@ -322,13 +321,8 @@ Use `dashboard start` when you want to run only the dashboard process.
 
 Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
-`openpocket panel start` is still available on macOS as the native control-surface fallback.
-
-`openpocket panel start` uses this order:
-
-1. Open an already-installed panel app from `/Applications` or `~/Applications`.
-2. If running from a source clone with `apps/openpocket-menubar`, build and launch from source.
-3. If neither is available (typical npm install), open GitHub Releases and guide PKG installation.
+The legacy native macOS panel has been removed from the repository.
+Use `openpocket dashboard start` (or `openpocket gateway start`, which auto-starts dashboard).
 
 ## Human Authorization Modes
 
@@ -401,7 +395,6 @@ npm run docs:preview
 - [`/src`](./src): runtime source code (agent, gateway, device, tools, onboarding, dashboard)
 - [`/frontend`](./frontend): standalone frontend site (homepage + docs)
 - [`/test`](./test): runtime contract and integration tests
-- [`/apps/openpocket-menubar`](./apps/openpocket-menubar): native macOS menu bar control panel
 - [`/dist`](./dist): build output
 
 ## Development
