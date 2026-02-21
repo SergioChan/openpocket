@@ -161,7 +161,7 @@ test("ChatAssistant runs profile onboarding when identity and user are empty", a
   const first = await assistant.decide(7, "hello");
   assert.equal(first.mode, "chat");
   assert.equal(first.reason, "profile_onboarding");
-  assert.match(first.reply, /what would you like me to call you/i);
+  assert.match(first.reply, /how would you like me to address you/i);
 
   const second = await assistant.decide(7, "Sergio");
   assert.match(second.reply, /what name would you like to call me/i);
@@ -177,5 +177,29 @@ test("ChatAssistant runs profile onboarding when identity and user are empty", a
   assert.match(identityBody, /Name: Pocket/);
   assert.match(identityBody, /Persona: Pragmatic, calm, and direct/);
   assert.match(userBody, /Preferred form of address: Sergio/);
+  assert.match(userBody, /Preferred assistant name: Pocket/);
+});
+
+test("ChatAssistant onboarding follows Chinese and supports one-shot multi-field answer", async () => {
+  const { assistant, cfg } = createAssistant({ keepProfileEmpty: true });
+
+  const first = await assistant.decide(9, "你好");
+  assert.equal(first.mode, "chat");
+  assert.equal(first.reason, "profile_onboarding");
+  assert.match(first.reply, /我该怎么称呼你/);
+
+  const done = await assistant.decide(
+    9,
+    "你可以叫我小陈，你就叫Pocket，人设：冷静务实",
+  );
+  assert.equal(done.mode, "chat");
+  assert.equal(done.reason, "profile_onboarding");
+  assert.match(done.reply, /已经写入 USER\.md 和 IDENTITY\.md/);
+
+  const identityBody = fs.readFileSync(path.join(cfg.workspaceDir, "IDENTITY.md"), "utf-8");
+  const userBody = fs.readFileSync(path.join(cfg.workspaceDir, "USER.md"), "utf-8");
+  assert.match(identityBody, /Name: Pocket/);
+  assert.match(identityBody, /Persona: 冷静务实/);
+  assert.match(userBody, /Preferred form of address: 小陈/);
   assert.match(userBody, /Preferred assistant name: Pocket/);
 });

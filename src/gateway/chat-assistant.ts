@@ -13,9 +13,11 @@ interface ChatTurn {
 }
 
 type OnboardingStep = 1 | 2 | 3;
+type OnboardingLocale = "zh" | "en";
 
 interface ProfileOnboardingState {
   step: OnboardingStep;
+  locale: OnboardingLocale;
   userPreferredAddress?: string;
   assistantName?: string;
   assistantPersona?: string;
@@ -158,14 +160,114 @@ export class ChatAssistant {
     return this.needsIdentityOnboarding() || this.needsUserOnboarding();
   }
 
-  private questionForStep(step: OnboardingStep): string {
+  private detectOnboardingLocale(input: string): OnboardingLocale {
+    // Use a simple CJK signal so onboarding language follows the user's first message.
+    return /[\u4e00-\u9fff]/.test(input) ? "zh" : "en";
+  }
+
+  private questionForStep(step: OnboardingStep, locale: OnboardingLocale): string {
+    if (locale === "zh") {
+      if (step === 1) {
+        return "先做个简短初始化：我该怎么称呼你？如果你愿意，也可以一次告诉我你希望我叫什么和什么人设。";
+      }
+      if (step === 2) {
+        return "收到。那你希望我叫什么名字？";
+      }
+      return "最后一个：你希望我采用什么样的人设/语气？";
+    }
+
     if (step === 1) {
-      return "Quick onboarding before we continue: what would you like me to call you?";
+      return "Quick setup before we continue: how would you like me to address you? You can also tell me my name and persona in one message.";
     }
     if (step === 2) {
       return "Great. What name would you like to call me?";
     }
     return "Got it. What persona should I keep (tone/style/traits)?";
+  }
+
+  private pickFallback(locale: OnboardingLocale, key: "user" | "assistant" | "persona"): string {
+    if (locale === "zh") {
+      if (key === "user") return "用户";
+      if (key === "assistant") return "OpenPocket";
+      return "务实、冷静、可靠";
+    }
+    if (key === "user") return "User";
+    if (key === "assistant") return "OpenPocket";
+    return "pragmatic, calm, and reliable";
+  }
+
+  private extractByPatterns(input: string, patterns: RegExp[]): string {
+    for (const pattern of patterns) {
+      const match = input.match(pattern);
+      if (!match?.[1]) {
+        continue;
+      }
+      const value = this.normalizeOneLine(match[1].replace(/^["'“”‘’]+|["'“”‘’]+$/g, ""));
+      if (value) {
+        return value;
+      }
+    }
+    return "";
+  }
+
+  private parseOnboardingFields(input: string): Partial<Pick<ProfileOnboardingState, "userPreferredAddress" | "assistantName" | "assistantPersona">> {
+    const out: Partial<Pick<ProfileOnboardingState, "userPreferredAddress" | "assistantName" | "assistantPersona">> = {};
+    const normalized = this.normalizeOneLine(input);
+    if (!normalized) {
+      return out;
+    }
+
+    const userPreferredAddress = this.extractByPatterns(normalized, [
+      /(?:叫我|称呼我|你可以叫我|喊我)\s*[:：]?\s*([^,，。;；\n]+)/i,
+      /(?:call me|address me as|you can call me)\s+([^,.;\n]+)/i,
+    ]);
+    const assistantName = this.extractByPatterns(normalized, [
+      /(?:你叫|你就叫|称呼你为|我叫你|我希望你叫)\s*[:：]?\s*([^,，。;；\n]+)/i,
+      /(?:call you|your name is|i want to call you)\s+([^,.;\n]+)/i,
+    ]);
+    const assistantPersona = this.extractByPatterns(normalized, [
+      /(?:人设|风格|语气|设定)\s*[:：]?\s*([^。;；\n]+)/i,
+      /(?:persona|tone|style)\s*(?:is|:)?\s*([^.;\n]+)/i,
+    ]);
+
+    if (userPreferredAddress) {
+      out.userPreferredAddress = userPreferredAddress;
+    }
+    if (assistantName) {
+      out.assistantName = assistantName;
+    }
+    if (assistantPersona) {
+      out.assistantPersona = assistantPersona;
+    }
+
+    return out;
+  }
+
+  private applyThreePartFallback(state: ProfileOnboardingState, answer: string): void {
+    if (state.step !== 1) {
+      return;
+    }
+    if (state.userPreferredAddress || state.assistantName || state.assistantPersona) {
+      return;
+    }
+    const parts = answer
+      .split(/[,\n;；|]/)
+      .map((v) => this.normalizeOneLine(v))
+      .filter(Boolean);
+    if (parts.length !== 3) {
+      return;
+    }
+    if (parts.some((part) => part.length > 80)) {
+      return;
+    }
+    [state.userPreferredAddress, state.assistantName, state.assistantPersona] = parts;
+  }
+
+  private firstMissingStep(state: ProfileOnboardingState): OnboardingStep | null {
+    if (!state.userPreferredAddress) return 1;
+    if (!state.assistantName) return 2;
+    if (!state.assistantPersona) return 3;
+    return null;
   }
 
   private buildIdentityFromAnswers(params: {
@@ -235,35 +337,67 @@ export class ChatAssistant {
       return null;
     }
 
-    if (!current) {
-      const state: ProfileOnboardingState = { step: 1 };
-      this.profileOnboarding.set(chatId, state);
-      return this.questionForStep(1);
-    }
-
     const answer = this.normalizeOneLine(inputText);
-    if (!answer) {
-      return "Please answer in one short sentence so I can save your profile.";
+    if (!current) {
+      const locale = this.detectOnboardingLocale(inputText);
+      const state: ProfileOnboardingState = {
+        step: 1,
+        locale,
+      };
+
+      if (answer) {
+        const parsed = this.parseOnboardingFields(answer);
+        if (parsed.userPreferredAddress) state.userPreferredAddress = parsed.userPreferredAddress;
+        if (parsed.assistantName) state.assistantName = parsed.assistantName;
+        if (parsed.assistantPersona) state.assistantPersona = parsed.assistantPersona;
+        this.applyThreePartFallback(state, answer);
+        const firstMissing = this.firstMissingStep(state);
+        if (firstMissing) {
+          state.step = firstMissing;
+          this.profileOnboarding.set(chatId, state);
+          return this.questionForStep(firstMissing, state.locale);
+        }
+        this.profileOnboarding.set(chatId, state);
+      } else {
+        this.profileOnboarding.set(chatId, state);
+        return this.questionForStep(1, locale);
+      }
+    } else if (!answer) {
+      return current.locale === "zh"
+        ? "请用一句话回答，我会帮你写入 profile。"
+        : "Please answer in one short sentence so I can save your profile.";
+    } else {
+      const parsed = this.parseOnboardingFields(answer);
+
+      if (parsed.userPreferredAddress) current.userPreferredAddress = parsed.userPreferredAddress;
+      if (parsed.assistantName) current.assistantName = parsed.assistantName;
+      if (parsed.assistantPersona) current.assistantPersona = parsed.assistantPersona;
+      this.applyThreePartFallback(current, answer);
+
+      // If user answered naturally without keywords, map answer to current step.
+      if (current.step === 1 && !current.userPreferredAddress) {
+        current.userPreferredAddress = answer;
+      } else if (current.step === 2 && !current.assistantName) {
+        current.assistantName = answer;
+      } else if (current.step === 3 && !current.assistantPersona) {
+        current.assistantPersona = answer;
+      }
+
+      const firstMissing = this.firstMissingStep(current);
+      if (firstMissing) {
+        current.step = firstMissing;
+        this.profileOnboarding.set(chatId, current);
+        return this.questionForStep(firstMissing, current.locale);
+      }
     }
 
-    if (current.step === 1) {
-      current.userPreferredAddress = answer;
-      current.step = 2;
-      this.profileOnboarding.set(chatId, current);
-      return this.questionForStep(2);
+    const finalized = this.profileOnboarding.get(chatId);
+    if (!finalized) {
+      return null;
     }
-
-    if (current.step === 2) {
-      current.assistantName = answer;
-      current.step = 3;
-      this.profileOnboarding.set(chatId, current);
-      return this.questionForStep(3);
-    }
-
-    current.assistantPersona = answer;
-    const userPreferredAddress = current.userPreferredAddress ?? "User";
-    const assistantName = current.assistantName ?? "OpenPocket";
-    const assistantPersona = current.assistantPersona;
+    const userPreferredAddress = finalized.userPreferredAddress ?? this.pickFallback(finalized.locale, "user");
+    const assistantName = finalized.assistantName ?? this.pickFallback(finalized.locale, "assistant");
+    const assistantPersona = finalized.assistantPersona ?? this.pickFallback(finalized.locale, "persona");
 
     this.writeTextSafe(
       this.profileFilePath("IDENTITY.md"),
@@ -281,7 +415,10 @@ export class ChatAssistant {
       }),
     );
     this.profileOnboarding.delete(chatId);
-    return `Perfect. I saved your profile to USER.md and IDENTITY.md. I'll address you as "${userPreferredAddress}" and use "${assistantName}" with persona "${assistantPersona}".`;
+    if (finalized.locale === "zh") {
+      return `好，我已经写入 USER.md 和 IDENTITY.md。后续我会称呼你为“${userPreferredAddress}”，我的名字是“${assistantName}”，人设是“${assistantPersona}”。`;
+    }
+    return `Done. I saved your profile to USER.md and IDENTITY.md. I will address you as "${userPreferredAddress}", and use "${assistantName}" with persona "${assistantPersona}".`;
   }
 
   private systemPrompt(): string {
