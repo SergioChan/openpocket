@@ -4,14 +4,16 @@ This page explains how OpenPocket constructs prompts and routes user messages.
 
 ## System Prompt
 
-`buildSystemPrompt(skillsSummary)` generates an instruction block with:
+`buildSystemPrompt(skillsSummary, workspaceContext)` generates a structured instruction block with:
 
-- strict JSON-only output requirement
-- allowed `action.type` list
-- explicit `request_human_auth` policy for real-device authorization checkpoints
-- safety and execution rules
-- English-only output text rule (`thought` and action text fields)
+- tool catalog and argument expectations
+- mandatory planning loop for every step
+- execution policy (deterministic, bounded, anti-loop)
+- explicit `request_human_auth` policy and capability set
+- completion policy (`finish` with full summary)
+- output discipline (one tool call per step, English text fields)
 - loaded skill summary text
+- optional injected workspace context (`AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`)
 
 Prompt templates are documented in [Prompt Templates](../reference/prompt-templates.md).
 
@@ -23,19 +25,16 @@ Per step, `buildUserPrompt(task, step, snapshot, history)` includes:
 - step number
 - structured screen metadata (`currentApp`, `width`, `height`, `deviceId`, `capturedAt`)
 - recent execution history (last 8 lines)
-- explicit instruction to return one JSON object
+- decision checklist (sub-goal, evidence, anti-loop alternative, auth escalation, finish criteria)
+- explicit instruction to call exactly one tool
 
 The screenshot image itself is attached in model request payload as base64 PNG.
 
 ## Output Contract
 
-Expected output shape:
+Runtime uses function/tool calling, then converts tool call args into an internal `AgentAction`.
 
-```json
-{"thought":"...","action":{"type":"..."}}
-```
-
-If model output is invalid JSON or has unknown action type, runtime normalizes to safe fallback `wait` action.
+If args are malformed or action type is unknown, runtime normalizes to safe fallback `wait` action.
 
 ## Telegram Routing
 

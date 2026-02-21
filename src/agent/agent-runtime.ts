@@ -29,6 +29,18 @@ const AUTO_PERMISSION_DIALOG_PACKAGES = [
   "packageinstaller",
 ];
 
+const SYSTEM_PROMPT_CONTEXT_FILES = [
+  "AGENTS.md",
+  "SOUL.md",
+  "USER.md",
+  "IDENTITY.md",
+  "TOOLS.md",
+  "HEARTBEAT.md",
+  "MEMORY.md",
+] as const;
+const SYSTEM_PROMPT_MAX_CHARS_PER_FILE = 4_000;
+const SYSTEM_PROMPT_MAX_CHARS_TOTAL = 18_000;
+
 type DelegationApplyResult = {
   message: string;
   templateHint: string | null;
@@ -134,6 +146,51 @@ export class AgentRuntime {
     } catch {
       return null;
     }
+  }
+
+  private buildWorkspacePromptContext(): string {
+    const blocks: string[] = [];
+    let remaining = SYSTEM_PROMPT_MAX_CHARS_TOTAL;
+
+    for (const name of SYSTEM_PROMPT_CONTEXT_FILES) {
+      if (remaining <= 256) {
+        break;
+      }
+      const filePath = path.join(this.config.workspaceDir, name);
+      if (!fs.existsSync(filePath)) {
+        continue;
+      }
+
+      let raw = "";
+      try {
+        raw = fs.readFileSync(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+
+      const normalized = raw.replace(/\r\n/g, "\n").trim();
+      if (!normalized) {
+        continue;
+      }
+
+      const perFileLimit = Math.min(SYSTEM_PROMPT_MAX_CHARS_PER_FILE, remaining);
+      const truncated = normalized.length > perFileLimit;
+      const snippet = truncated
+        ? `${normalized.slice(0, Math.max(0, perFileLimit - 24)).trimEnd()}\n...[truncated]`
+        : normalized;
+
+      blocks.push(`### ${name}\n${snippet}`);
+      remaining -= snippet.length;
+    }
+
+    if (blocks.length === 0) {
+      return "";
+    }
+
+    return [
+      "Instruction priority inside workspace context: AGENTS.md > SOUL.md > other files.",
+      ...blocks,
+    ].join("\n\n");
   }
 
   private isImageArtifactPath(artifactPath: string): boolean {
@@ -342,7 +399,8 @@ export class AgentRuntime {
       const history: string[] = [];
       const traces: StepTrace[] = [];
       const skillsSummary = this.skillLoader.summaryText();
-      const systemPrompt = buildSystemPrompt(skillsSummary);
+      const workspacePromptContext = this.buildWorkspacePromptContext();
+      const systemPrompt = buildSystemPrompt(skillsSummary, workspacePromptContext);
 
       for (let step = 1; step <= this.config.agent.maxSteps; step += 1) {
         if (this.stopRequested) {
