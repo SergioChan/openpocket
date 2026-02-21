@@ -53,6 +53,24 @@ Recommended scenario matrix:
 - `--case location` for geo delegation
 - `--case sms` or `--case 2fa` for text/code delegation
 
+## Automated Agent E2E (Local)
+
+Use the integration harness to validate natural-language planning -> emulator actions -> session assertions.
+
+```bash
+npm run build
+OPENPOCKET_E2E_HOME=/tmp/openpocket-e2e-report node test/integration/docker-agent-e2e.mjs
+```
+
+Expected outcome:
+
+1. mock model server starts locally
+2. emulator boots and is detected by `adb`
+3. task session contains expected action chain and `status: SUCCESS`
+4. script exits with `E2E assertions passed`
+
+This test uses a local mock model endpoint and does not require external model API keys.
+
 ## Monitoring
 
 - gateway terminal logs show accepted task, step progress, and final status

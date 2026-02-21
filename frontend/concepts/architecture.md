@@ -35,10 +35,13 @@ flowchart LR
 ## Runtime Planes
 
 - Control plane: `runGatewayLoop`, `TelegramGateway`, `HeartbeatRunner`, and `CronService` keep long-running operations stable.
+- Local control surface: `DashboardServer` exposes Web control APIs and runtime status views.
 - Intelligence plane: `AgentRuntime` + `ModelClient` produce next-step actions from multimodal context.
+- Extensibility plane: `SkillLoader` and `ScriptExecutor` extend deterministic task execution with workspace skills and controlled scripts.
 - Execution plane: `AdbRuntime` drives the local emulator and captures snapshots for each step.
+- Device lifecycle: `EmulatorManager` handles emulator start/stop/status and screenshot commands used by CLI/gateway surfaces.
 - Persistence plane: sessions, memory, screenshots, and script artifacts are written under `OPENPOCKET_HOME`.
-- Human-authorization plane: `HumanAuthBridge` blocks task progress when approval is required and resumes after a decision.
+- Human-authorization plane: `HumanAuthBridge` blocks task progress when approval is required and resumes after a decision; `LocalHumanAuthStack` auto-starts relay/tunnel services when gateway boots.
 
 ## Primary Task Loop
 

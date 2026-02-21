@@ -94,5 +94,9 @@ interface ScreenSnapshot {
   height: number;
   screenshotBase64: string;
   capturedAt: string;
+  scaleX: number;
+  scaleY: number;
+  scaledWidth: number;
+  scaledHeight: number;
 }
 ```

@@ -83,6 +83,7 @@ Optional:
 
 ```bash
 export OPENPOCKET_HOME="$HOME/.openpocket"
+export BLOCKRUN_API_KEY="<optional>"          # required if using Blockrun profiles
 export AUTOGLM_API_KEY="<optional>"
 export OPENPOCKET_HUMAN_AUTH_KEY="<optional relay api key>"
 export NGROK_AUTHTOKEN="<optional ngrok token>"

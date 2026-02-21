@@ -14,7 +14,8 @@ This page is the source-of-truth documentation for current default config values
     "avdName": "OpenPocket_AVD",
     "androidSdkRoot": "<ANDROID_SDK_ROOT env or empty string>",
     "headless": false,
-    "bootTimeoutSec": 180
+    "bootTimeoutSec": 180,
+    "extraArgs": []
   },
   "telegram": {
     "botToken": "",
@@ -69,6 +70,12 @@ This page is the source-of-truth documentation for current default config values
     "enabled": true,
     "tickSec": 10,
     "jobsFile": "<absolute OPENPOCKET_HOME>/workspace/cron/jobs.json"
+  },
+  "dashboard": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 51888,
+    "autoOpenBrowser": false
   },
   "humanAuth": {
     "enabled": false,
@@ -129,6 +136,42 @@ This page is the source-of-truth documentation for current default config values
       "apiKeyEnv": "OPENROUTER_API_KEY",
       "maxTokens": 4096,
       "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "blockrun/gpt-4o": {
+      "baseUrl": "https://api.blockrun.ai/v1",
+      "model": "openai/gpt-4o",
+      "apiKey": "",
+      "apiKeyEnv": "BLOCKRUN_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "blockrun/claude-sonnet-4": {
+      "baseUrl": "https://api.blockrun.ai/v1",
+      "model": "anthropic/claude-sonnet-4",
+      "apiKey": "",
+      "apiKeyEnv": "BLOCKRUN_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": "medium",
+      "temperature": null
+    },
+    "blockrun/gemini-2.0-flash": {
+      "baseUrl": "https://api.blockrun.ai/v1",
+      "model": "google/gemini-2.0-flash-exp",
+      "apiKey": "",
+      "apiKeyEnv": "BLOCKRUN_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": null,
+      "temperature": null
+    },
+    "blockrun/deepseek-chat": {
+      "baseUrl": "https://api.blockrun.ai/v1",
+      "model": "deepseek/deepseek-chat",
+      "apiKey": "",
+      "apiKeyEnv": "BLOCKRUN_API_KEY",
+      "maxTokens": 4096,
+      "reasoningEffort": null,
       "temperature": null
     },
     "autoglm-phone": {

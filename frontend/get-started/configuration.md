@@ -44,7 +44,7 @@ For human-auth relay:
 The loader accepts old keys and maps them automatically, including:
 
 - top-level: `project_name`, `workspace_dir`, `state_dir`, `default_model`, `script_executor`
-- top-level (also): `heartbeat_config`, `cron_config`
+- top-level (also): `heartbeat_config`, `cron_config`, `dashboard_config`, `human_auth`
 - nested: `avd_name`, `android_sdk_root`, `bot_token`, `max_steps`, `save_step_screenshots`, `allowed_commands`, `base_url`, `api_key`, `reasoning_effort`, etc.
 
 After `onboard`, saved config uses camelCase keys.
