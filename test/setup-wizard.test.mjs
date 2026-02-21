@@ -103,6 +103,21 @@ function withTempHome(prefix, fn) {
   }
 }
 
+function withTempCodexHome(prefix, fn) {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const prev = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    return fn(codexHome);
+  } finally {
+    if (prev === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = prev;
+    }
+  }
+}
+
 test("setup wizard aborts when consent is not accepted", async () => {
   await withTempHome("openpocket-setup-consent-", async () => {
     const cfg = loadConfig();
@@ -242,5 +257,54 @@ test("setup wizard normalizes invalid telegram botTokenEnv name", async () => {
 
     const savedCfg = JSON.parse(fs.readFileSync(cfg.configPath, "utf-8"));
     assert.equal(savedCfg.telegram.botTokenEnv, "TELEGRAM_BOT_TOKEN");
+  });
+});
+
+test("setup wizard supports codex cli auth option in model selection", async () => {
+  await withTempHome("openpocket-setup-codex-cli-auth-", async () => {
+    await withTempCodexHome("openpocket-codex-home-", async (codexHome) => {
+      const cfg = loadConfig();
+      let loginCalled = 0;
+      const prompter = new FakePrompter({
+        confirms: [true],
+        selects: ["gpt-5.2-codex::codex-cli", "skip", "keep", "skip", "disabled"],
+        texts: [],
+        pauseCount: 0,
+      });
+      const emulator = new FakeEmulator();
+
+      await runSetupWizard(cfg, {
+        prompter,
+        emulator,
+        skipTtyCheck: true,
+        printHeader: false,
+        codexCliLoginRunner: async () => {
+          loginCalled += 1;
+          fs.writeFileSync(
+            path.join(codexHome, "auth.json"),
+            JSON.stringify({
+              tokens: {
+                access_token: "codex-access-token",
+                refresh_token: "codex-refresh-token",
+              },
+            }),
+            "utf-8",
+          );
+          return {
+            ok: true,
+            detail: "codex login simulated",
+          };
+        },
+      });
+
+      assert.equal(loginCalled, 1);
+
+      const statePath = path.join(cfg.stateDir, "onboarding.json");
+      assert.equal(fs.existsSync(statePath), true);
+      const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      assert.equal(state.modelProfile, "gpt-5.2-codex");
+      assert.equal(state.apiKeySource, "codex-cli");
+      assert.equal(typeof state.apiKeyConfiguredAt, "string");
+    });
   });
 });
