@@ -13,6 +13,8 @@ import { EmulatorManager } from "./device/emulator-manager";
 import { TelegramGateway } from "./gateway/telegram-gateway";
 import { runGatewayLoop } from "./gateway/run-loop";
 import { DashboardServer, type DashboardGatewayStatus } from "./dashboard/server";
+import { HumanAuthBridge } from "./human-auth/bridge";
+import { LocalHumanAuthStack } from "./human-auth/local-stack";
 import { HumanAuthRelayServer } from "./human-auth/relay-server";
 import { SkillLoader } from "./skills/skill-loader";
 import { ScriptExecutor } from "./tools/script-executor";
@@ -20,6 +22,7 @@ import { runSetupWizard } from "./onboarding/setup-wizard";
 import { installCliShortcut } from "./install/cli-shortcut";
 import { ensureAndroidPrerequisites } from "./environment/android-prerequisites";
 import { PermissionLabManager } from "./test/permission-lab";
+import type { OpenPocketConfig } from "./types";
 
 function printHelp(): void {
   // eslint-disable-next-line no-console
@@ -43,7 +46,7 @@ Usage:
   openpocket [--config <path>] telegram setup|whoami
   openpocket [--config <path>] gateway [start|telegram]
   openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
-  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean] [--send] [--chat <id>]
+  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task|run|cases] [--device <id>] [--clean] [--case <id>] [--send] [--chat <id>] [--model <name>]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
 
 Legacy aliases (deprecated):
@@ -63,7 +66,8 @@ Examples:
   openpocket dashboard start
   openpocket test permission-app deploy
   openpocket test permission-app task
-  openpocket test permission-app task --send --chat <id>
+  openpocket test permission-app cases
+  openpocket test permission-app task --case camera --send --chat <id>
   openpocket human-auth-relay start --port 8787
 `);
 }
@@ -614,6 +618,57 @@ function resolveTelegramTokenSource(cfg: ReturnType<typeof loadConfig>): {
   return { envName, token: "", source: `missing (${envName})` };
 }
 
+function resolveTelegramChatId(cfg: OpenPocketConfig, chatIdRaw: string | null): number {
+  if (chatIdRaw !== null) {
+    const parsed = Number(chatIdRaw);
+    if (!Number.isFinite(parsed)) {
+      throw new Error("Chat ID must be a number.");
+    }
+    return Math.trunc(parsed);
+  }
+  if (cfg.telegram.allowedChatIds.length === 1) {
+    return cfg.telegram.allowedChatIds[0];
+  }
+  if (cfg.telegram.allowedChatIds.length > 1) {
+    throw new Error(
+      `Multiple allowed chat IDs configured (${cfg.telegram.allowedChatIds.join(", ")}). Use --chat <id>.`,
+    );
+  }
+  throw new Error("No default chat ID found. Use --chat <id> or configure telegram.allowedChatIds.");
+}
+
+type TelegramSendMessageParams = {
+  chat_id: number;
+  text: string;
+  reply_markup?: {
+    inline_keyboard: Array<Array<{ text: string; url?: string }>>;
+  };
+};
+
+async function sendTelegramMessage(token: string, payload: TelegramSendMessageParams): Promise<void> {
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Telegram send failed (${response.status}): ${bodyText.slice(0, 300)}`);
+  }
+  let apiPayload: { ok?: boolean; description?: string } = {};
+  try {
+    apiPayload = JSON.parse(bodyText) as { ok?: boolean; description?: string };
+  } catch {
+    apiPayload = {};
+  }
+  if (apiPayload.ok === false) {
+    throw new Error(`Telegram send failed: ${apiPayload.description ?? "unknown error"}`);
+  }
+}
+
 type TelegramChatCandidate = {
   id: number;
   type: string;
@@ -1162,11 +1217,165 @@ async function runHumanAuthRelayCommand(
   return 0;
 }
 
+async function runPermissionLabScenario(params: {
+  config: OpenPocketConfig;
+  scenarioId: string | null;
+  deviceId: string | null;
+  chatIdRaw: string | null;
+  modelName: string | null;
+  clean: boolean;
+}): Promise<number> {
+  const tokenInfo = resolveTelegramTokenSource(params.config);
+  if (!tokenInfo.token) {
+    throw new Error(`Telegram bot token is empty. Set config.telegram.botToken or env ${tokenInfo.envName}.`);
+  }
+  const chatId = resolveTelegramChatId(params.config, params.chatIdRaw);
+
+  if (!params.config.humanAuth.enabled) {
+    throw new Error("Human auth is disabled. Enable config.humanAuth.enabled before running permission-app scenarios.");
+  }
+
+  const runtimeConfig = JSON.parse(JSON.stringify(params.config)) as OpenPocketConfig;
+  const scenarioManager = new PermissionLabManager(runtimeConfig);
+  const scenario = scenarioManager.resolveScenario(params.scenarioId);
+  if (params.deviceId?.trim()) {
+    runtimeConfig.agent.deviceId = params.deviceId.trim();
+  }
+
+  if (runtimeConfig.humanAuth.useLocalRelay) {
+    runtimeConfig.humanAuth.localRelayPort = 0;
+    runtimeConfig.humanAuth.relayBaseUrl = "";
+    runtimeConfig.humanAuth.publicBaseUrl = "";
+    const stateName = path.basename(runtimeConfig.humanAuth.localRelayStateFile || "relay-state.json");
+    runtimeConfig.humanAuth.localRelayStateFile = path.join(
+      runtimeConfig.stateDir,
+      "human-auth",
+      `permissionlab-${Date.now()}-${stateName}`,
+    );
+  }
+
+  const permissionLab = new PermissionLabManager(runtimeConfig);
+  const agent = new AgentRuntime(runtimeConfig);
+  const humanAuth = new HumanAuthBridge(runtimeConfig);
+  const localStack = new LocalHumanAuthStack(runtimeConfig, (line) => {
+    // eslint-disable-next-line no-console
+    console.log(line);
+  });
+  let localStackStarted = false;
+
+  try {
+    if (runtimeConfig.humanAuth.useLocalRelay) {
+      // eslint-disable-next-line no-console
+      console.log("[OpenPocket][test] Starting local human-auth relay stack...");
+      const started = await localStack.start();
+      runtimeConfig.humanAuth.relayBaseUrl = started.relayBaseUrl;
+      runtimeConfig.humanAuth.publicBaseUrl = started.publicBaseUrl;
+      localStackStarted = true;
+      // eslint-disable-next-line no-console
+      console.log(`[OpenPocket][test] Human-auth relay: ${started.relayBaseUrl}`);
+      // eslint-disable-next-line no-console
+      console.log(`[OpenPocket][test] Human-auth public URL: ${started.publicBaseUrl}`);
+    } else if (!runtimeConfig.humanAuth.relayBaseUrl.trim()) {
+      throw new Error(
+        "Human auth relay URL is empty. Set config.humanAuth.relayBaseUrl or enable config.humanAuth.useLocalRelay.",
+      );
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Scenario: ${scenario.id} (${scenario.title})`);
+    // eslint-disable-next-line no-console
+    console.log("[OpenPocket][test] Building and deploying PermissionLab for scenario run...");
+    const deployed = await permissionLab.deploy({
+      deviceId: params.deviceId ?? undefined,
+      launch: false,
+      clean: params.clean,
+    });
+    runtimeConfig.agent.deviceId = deployed.deviceId;
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Device: ${deployed.deviceId}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Install: ${deployed.installOutput || "ok"}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Reset: ${permissionLab.reset(deployed.deviceId)}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Launch: ${permissionLab.launch(deployed.deviceId)}`);
+
+    const task = permissionLab.agentTaskForScenario(scenario.id);
+    await sendTelegramMessage(tokenInfo.token, {
+      chat_id: chatId,
+      text: [
+        `[PermissionLab] Case started: ${scenario.id}`,
+        `Button: ${scenario.buttonLabel}`,
+        "Agent is now running in emulator. You will receive a link only when human authorization is required.",
+      ].join("\n"),
+    });
+
+    const result = await agent.runTask(
+      task,
+      params.modelName?.trim() ? params.modelName.trim() : undefined,
+      undefined,
+      async (request) => {
+        const timeoutSec = Math.max(30, Math.round(request.timeoutSec));
+        return humanAuth.requestAndWait(
+          {
+            chatId,
+            task,
+            request: { ...request, timeoutSec },
+          },
+          async (opened) => {
+            const lines = [
+              `[PermissionLab] Human authorization required (${request.capability})`,
+              `Case: ${scenario.id}`,
+              `Request ID: ${opened.requestId}`,
+              `Current app: ${request.currentApp}`,
+              `Instruction: ${request.instruction}`,
+              `Reason: ${request.reason || "no reason provided"}`,
+              `Expires at: ${opened.expiresAt}`,
+            ];
+            const payload: TelegramSendMessageParams = {
+              chat_id: chatId,
+              text: lines.join("\n"),
+            };
+            if (opened.openUrl) {
+              payload.reply_markup = {
+                inline_keyboard: [[{ text: "Open Human Auth", url: opened.openUrl }]],
+              };
+            } else {
+              payload.text += "\nWeb link unavailable. Check human-auth relay configuration.";
+            }
+            await sendTelegramMessage(tokenInfo.token, payload);
+          },
+        );
+      },
+    );
+
+    await sendTelegramMessage(tokenInfo.token, {
+      chat_id: chatId,
+      text: result.ok
+        ? `[PermissionLab] Case ${scenario.id} completed.\nResult: ${result.message || "Completed."}`
+        : `[PermissionLab] Case ${scenario.id} failed.\nReason: ${result.message || "Unknown error."}`,
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Scenario completed. ok=${result.ok}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Result: ${result.message}`);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][test] Session: ${result.sessionPath}`);
+    return result.ok ? 0 : 1;
+  } finally {
+    if (localStackStarted) {
+      await localStack.stop();
+      // eslint-disable-next-line no-console
+      console.log("[OpenPocket][test] Local human-auth relay stack stopped.");
+    }
+  }
+}
+
 async function runTestCommand(configPath: string | undefined, args: string[]): Promise<number> {
   const target = (args[0] ?? "").trim();
   if (target !== "permission-app") {
     throw new Error(
-      "Unknown test target. Use: test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean]",
+      "Unknown test target. Use: test permission-app [deploy|install|launch|reset|uninstall|task|run|cases] [--device <id>] [--clean]",
     );
   }
 
@@ -1174,7 +1383,9 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   const sendToTelegram = args.includes("--send");
   const withoutFlags = args.filter((item) => item !== "--clean" && item !== "--send");
   const { value: deviceId, rest: afterDevice } = takeOption(withoutFlags.slice(1), "--device");
-  const { value: chatIdRaw, rest } = takeOption(afterDevice, "--chat");
+  const { value: chatIdRaw, rest: afterChat } = takeOption(afterDevice, "--chat");
+  const { value: scenarioIdRaw, rest: afterScenario } = takeOption(afterChat, "--case");
+  const { value: modelNameRaw, rest } = takeOption(afterScenario, "--model");
   if (rest.length > 1) {
     throw new Error(`Unexpected test arguments: ${rest.slice(1).join(" ")}`);
   }
@@ -1182,67 +1393,49 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
 
   const cfg = loadConfig(configPath);
   const permissionLab = new PermissionLabManager(cfg);
+  const scenarioId = scenarioIdRaw?.trim() || null;
+  const modelName = modelNameRaw?.trim() || null;
+
+  if (action === "cases") {
+    const scenarios = permissionLab.listScenarios();
+    // eslint-disable-next-line no-console
+    console.log("Permission-app scenarios:");
+    for (const scenario of scenarios) {
+      // eslint-disable-next-line no-console
+      console.log(`- ${scenario.id}: ${scenario.title} | button="${scenario.buttonLabel}" | ${scenario.summary}`);
+    }
+    return 0;
+  }
 
   if (action === "task") {
-    const taskText = permissionLab.recommendedTelegramTask();
+    const taskText = permissionLab.recommendedTelegramTask(scenarioId);
     if (!sendToTelegram) {
       // eslint-disable-next-line no-console
       console.log(taskText);
       // eslint-disable-next-line no-console
-      console.log("Tip: add `--send` (and optionally `--chat <id>`) to send this prompt to Telegram directly.");
+      console.log("Tip: add `--send` to run this scenario end-to-end (agent auto-click + Telegram human-auth link).");
       return 0;
     }
 
-    const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
-    const token = cfg.telegram.botToken.trim() || (process.env[envName]?.trim() ?? "");
-    if (!token) {
-      throw new Error(`Telegram bot token is empty. Set config.telegram.botToken or env ${envName}.`);
-    }
-
-    let chatId: number | null = null;
-    if (chatIdRaw !== null) {
-      const parsed = Number(chatIdRaw);
-      if (!Number.isFinite(parsed)) {
-        throw new Error("Chat ID must be a number.");
-      }
-      chatId = Math.trunc(parsed);
-    } else if (cfg.telegram.allowedChatIds.length === 1) {
-      chatId = cfg.telegram.allowedChatIds[0];
-    } else if (cfg.telegram.allowedChatIds.length > 1) {
-      throw new Error(
-        `Multiple allowed chat IDs configured (${cfg.telegram.allowedChatIds.join(", ")}). Use --chat <id>.`,
-      );
-    } else {
-      throw new Error("No default chat ID found. Use --chat <id> or configure telegram.allowedChatIds.");
-    }
-
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: taskText,
-      }),
+    return runPermissionLabScenario({
+      config: cfg,
+      scenarioId,
+      deviceId: deviceId ?? null,
+      chatIdRaw,
+      modelName,
+      clean: hasClean,
     });
+  }
 
-    const bodyText = await response.text();
-    if (!response.ok) {
-      throw new Error(`Telegram send failed (${response.status}): ${bodyText.slice(0, 300)}`);
-    }
-    let apiPayload: { ok?: boolean; description?: string } = {};
-    try {
-      apiPayload = JSON.parse(bodyText) as { ok?: boolean; description?: string };
-    } catch {
-      apiPayload = {};
-    }
-    if (apiPayload.ok === false) {
-      throw new Error(`Telegram send failed: ${apiPayload.description ?? "unknown error"}`);
-    }
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] PermissionLab prompt sent to Telegram chat ${chatId}.`);
-    return 0;
+  if (action === "run") {
+    return runPermissionLabScenario({
+      config: cfg,
+      scenarioId,
+      deviceId: deviceId ?? null,
+      chatIdRaw,
+      modelName,
+      clean: hasClean,
+    });
   }
 
   if (action === "deploy" || action === "install") {
@@ -1271,7 +1464,7 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
     // eslint-disable-next-line no-console
     console.log("[OpenPocket][test] Suggested Telegram task:");
     // eslint-disable-next-line no-console
-    console.log(permissionLab.recommendedTelegramTask());
+    console.log(permissionLab.recommendedTelegramTask(scenarioId));
     return 0;
   }
 
@@ -1294,7 +1487,7 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   }
 
   throw new Error(
-    `Unknown permission-app action: ${action}. Use deploy|install|launch|reset|uninstall|task`,
+    `Unknown permission-app action: ${action}. Use deploy|install|launch|reset|uninstall|task|run|cases`,
   );
 }
 

@@ -424,17 +424,35 @@ Optional commands:
 openpocket test permission-app launch
 openpocket test permission-app reset
 openpocket test permission-app uninstall
+openpocket test permission-app cases
 openpocket test permission-app task
-openpocket test permission-app task --send --chat <your_chat_id>
+openpocket test permission-app run --case camera --chat <your_chat_id>
+openpocket test permission-app task --case camera --send --chat <your_chat_id>
 ```
 
-### 3) Send task in Telegram
+### 3) Trigger scenario run (agent auto-clicks button)
 
-Use the generated prompt from `openpocket test permission-app task`, or send this directly:
+Recommended command:
 
-```text
-/run Open app OpenPocket PermissionLab. Tap one permission button (Camera, SMS, Location, Contacts, etc.). If a system permission/auth wall appears, do not bypass in emulator. Call request_human_auth and wait for my approval from Telegram link. After I approve/reject on phone, continue and report result.
+```bash
+openpocket test permission-app run --case camera --chat <your_chat_id>
 ```
+
+Or use `task --send` (same execution path, keeps backward compatibility):
+
+```bash
+openpocket test permission-app task --case camera --send --chat <your_chat_id>
+```
+
+Available scenario IDs: `camera`, `microphone`, `location`, `contacts`, `sms`,
+`calendar`, `photos`, `notification`, `2fa`.
+
+In this mode, OpenPocket will:
+
+1. build/install/reset/launch PermissionLab
+2. run the agent with a scenario-specific task
+3. ask the agent to tap the exact scenario button
+4. send Telegram only when human authorization is actually required
 
 ### 4) Approve from phone
 

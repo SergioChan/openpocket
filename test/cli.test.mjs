@@ -290,6 +290,20 @@ test("test permission-app task prints recommended telegram flow", () => {
   assert.match(run.stdout, /--send/);
 });
 
+test("test permission-app task supports scenario-specific prompt", () => {
+  const run = runCli(["test", "permission-app", "task", "--case", "location"]);
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /Request Location Permission/);
+  assert.match(run.stdout, /request_human_auth/i);
+});
+
+test("test permission-app cases prints scenario list", () => {
+  const run = runCli(["test", "permission-app", "cases"]);
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /camera/i);
+  assert.match(run.stdout, /2fa/i);
+});
+
 test("test command validates unknown target", () => {
   const run = runCli(["test", "unknown-target"]);
   assert.equal(run.status, 1);
@@ -323,4 +337,17 @@ test("test permission-app task --send requires chat id when allowlist is empty",
   });
   assert.equal(run.status, 1);
   assert.match(run.stderr, /No default chat ID found/);
+});
+
+test("test permission-app run requires telegram token", () => {
+  const home = makeHome("openpocket-ts-test-run-token-");
+  const init = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const run = runCli(["test", "permission-app", "run"], {
+    OPENPOCKET_HOME: home,
+    TELEGRAM_BOT_TOKEN: "",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Telegram bot token is empty/);
 });

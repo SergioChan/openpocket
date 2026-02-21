@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import type { OpenPocketConfig } from "../types";
+import type { HumanAuthCapability, OpenPocketConfig } from "../types";
 import { EmulatorManager } from "../device/emulator-manager";
 import { ensureDir } from "../utils/paths";
 
@@ -20,6 +20,82 @@ const REQUESTED_PERMISSIONS = [
   "android.permission.READ_MEDIA_IMAGES",
   "android.permission.READ_EXTERNAL_STORAGE",
 ] as const;
+
+export interface PermissionLabScenario {
+  id: string;
+  title: string;
+  buttonLabel: string;
+  capability: HumanAuthCapability;
+  summary: string;
+}
+
+const DEFAULT_PERMISSION_LAB_SCENARIO_ID = "camera";
+
+const PERMISSION_LAB_SCENARIOS: PermissionLabScenario[] = [
+  {
+    id: "camera",
+    title: "Camera Permission",
+    buttonLabel: "Request Camera Permission",
+    capability: "camera",
+    summary: "Trigger Android runtime camera permission dialog.",
+  },
+  {
+    id: "microphone",
+    title: "Microphone Permission",
+    buttonLabel: "Request Microphone Permission",
+    capability: "permission",
+    summary: "Trigger Android runtime microphone permission dialog.",
+  },
+  {
+    id: "location",
+    title: "Location Permission",
+    buttonLabel: "Request Location Permission",
+    capability: "location",
+    summary: "Trigger Android runtime location permission dialog.",
+  },
+  {
+    id: "contacts",
+    title: "Contacts Permission",
+    buttonLabel: "Request Contacts Permission",
+    capability: "contacts",
+    summary: "Trigger Android runtime contacts permission dialog.",
+  },
+  {
+    id: "sms",
+    title: "SMS Permission",
+    buttonLabel: "Request SMS Permission",
+    capability: "sms",
+    summary: "Trigger Android runtime SMS permission dialog.",
+  },
+  {
+    id: "calendar",
+    title: "Calendar Permission",
+    buttonLabel: "Request Calendar Permission",
+    capability: "calendar",
+    summary: "Trigger Android runtime calendar permission dialog.",
+  },
+  {
+    id: "photos",
+    title: "Photos Permission",
+    buttonLabel: "Request Photos Permission",
+    capability: "files",
+    summary: "Trigger Android runtime photos/media permission dialog.",
+  },
+  {
+    id: "notification",
+    title: "Notification Permission",
+    buttonLabel: "Request Notification Permission",
+    capability: "notification",
+    summary: "Trigger Android 13+ notification runtime permission dialog.",
+  },
+  {
+    id: "2fa",
+    title: "2FA Human Auth Drill",
+    buttonLabel: "Trigger Human Auth Drill (2FA style)",
+    capability: "2fa",
+    summary: "No system dialog; force request_human_auth(2fa) after tapping drill button.",
+  },
+];
 
 type CommandResult = {
   status: number;
@@ -526,13 +602,46 @@ export class PermissionLabManager {
     return path.join(this.projectDir, "build");
   }
 
-  recommendedTelegramTask(): string {
+  listScenarios(): PermissionLabScenario[] {
+    return PERMISSION_LAB_SCENARIOS.map((item) => ({ ...item }));
+  }
+
+  resolveScenario(scenarioId?: string | null): PermissionLabScenario {
+    const normalized = (scenarioId ?? DEFAULT_PERMISSION_LAB_SCENARIO_ID).trim().toLowerCase();
+    const found = PERMISSION_LAB_SCENARIOS.find((item) => item.id === normalized);
+    if (!found) {
+      const supported = PERMISSION_LAB_SCENARIOS.map((item) => item.id).join(", ");
+      throw new Error(`Unknown permission-app scenario: ${scenarioId ?? "(empty)"}. Supported: ${supported}`);
+    }
+    return { ...found };
+  }
+
+  agentTaskForScenario(scenarioId?: string | null): string {
+    const scenario = this.resolveScenario(scenarioId);
+    if (scenario.id === "2fa") {
+      return [
+        "Open app OpenPocket PermissionLab.",
+        `Tap button "${scenario.buttonLabel}" exactly once.`,
+        "Then call request_human_auth with capability=2fa and instruction='Please complete 2FA approval on your real phone.'",
+        "Wait for my decision from Telegram web link before doing anything else.",
+        "After approval or rejection arrives, report the final result and whether the flow resumed.",
+      ].join(" ");
+    }
+
     return [
-      "/run Open app OpenPocket PermissionLab.",
-      "Tap one permission button (Camera, SMS, Location, Contacts, etc.).",
-      "If a system permission/auth wall appears, do not bypass in emulator.",
-      "Call request_human_auth and wait for my approval from Telegram link.",
-      "After I approve/reject on phone, continue and report result.",
+      "Open app OpenPocket PermissionLab.",
+      `Tap button "${scenario.buttonLabel}" exactly once.`,
+      "If a system permission/auth dialog appears, do not approve or reject inside emulator.",
+      "Immediately call request_human_auth and wait for my decision from Telegram web link.",
+      "After I approve/reject on phone, continue and report final permission outcome (GRANTED/DENIED/already granted).",
+    ].join(" ");
+  }
+
+  recommendedTelegramTask(scenarioId?: string | null): string {
+    const task = this.agentTaskForScenario(scenarioId);
+    return [
+      "/run",
+      task,
     ].join(" ");
   }
 
