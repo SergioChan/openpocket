@@ -77,13 +77,15 @@ test("control store provides defaults and persists onboarding/control files", ()
 
 test("default prompt entries include core prompt files", () => {
   const entries = defaultPromptEntries("/tmp/openpocket-workspace");
-  assert.equal(entries.length, 7);
+  assert.equal(entries.length, 8);
   assert.equal(entries[0].id, "agents");
   assert.match(entries[0].path, /AGENTS\.md$/);
+  assert.equal(entries[7].id, "profile_onboarding");
+  assert.match(entries[7].path, /PROFILE_ONBOARDING\.json$/);
 
   const onboarding = defaultOnboardingState();
   assert.equal(onboarding.updatedAt.length > 0, true);
 
   const control = defaultControlSettings({ workspaceDir: "/tmp/openpocket-workspace" });
-  assert.equal(control.promptFiles.length, 7);
+  assert.equal(control.promptFiles.length, 8);
 });

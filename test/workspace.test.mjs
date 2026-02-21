@@ -20,6 +20,7 @@ test("ensureWorkspaceBootstrap creates required layout", () => {
     "TOOLS.md",
     "HEARTBEAT.md",
     "MEMORY.md",
+    "PROFILE_ONBOARDING.json",
     path.join("memory", "README.md"),
     path.join("skills", "README.md"),
     path.join("scripts", "README.md"),

@@ -8,6 +8,10 @@ function doc(text: string): string {
   return `${text.trim()}\n`;
 }
 
+function jsonDoc(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 const BOOTSTRAP_FILES: Record<string, string> = {
   "AGENTS.md": doc(`
 # AGENTS
@@ -199,6 +203,110 @@ Long-term, curated memory for durable context.
 - Remove stale or contradicted items.
 - Sync with daily memory files when new durable facts appear.
 `),
+  "PROFILE_ONBOARDING.json": jsonDoc({
+    version: 1,
+    locales: {
+      zh: {
+        questions: {
+          step1: "先做个简短初始化：我该怎么称呼你？如果你愿意，也可以一次告诉我你希望我叫什么和什么人设。",
+          step2: "收到。那你希望我叫什么名字？",
+          step3: [
+            "最后一步：设定我的人设/语气。",
+            "你可以直接描述，也可以选编号：",
+            "1) 专业可靠：清晰、稳健、少废话",
+            "2) 高效直给：结果导向、节奏快",
+            "3) 温和陪伴：耐心解释、语气柔和",
+            "4) 幽默轻松：轻松自然，但不影响执行",
+            "回复示例：`2` 或 `专业可靠，简洁，必要时幽默`",
+          ].join("\n"),
+        },
+        emptyAnswer: "请用一句话回答，我会帮你写入 profile。",
+        onboardingSaved:
+          "好，我已经写入 USER.md 和 IDENTITY.md。后续我会称呼你为“{userPreferredAddress}”，我的名字是“{assistantName}”，人设是“{assistantPersona}”。",
+        noChange: "这些设定已经是当前值了，不需要改动。",
+        updated: "已更新。{changes}。",
+        changeJoiner: "；",
+        changeTemplates: {
+          userPreferredAddress: "我会称呼你为“{value}”",
+          assistantName: "我的名字改为“{value}”",
+          assistantPersona: "人设改为“{value}”",
+        },
+        fallbacks: {
+          user: "用户",
+          assistant: "OpenPocket",
+          persona: "务实、冷静、可靠",
+        },
+        personaPresets: [
+          {
+            value: "专业可靠：清晰、稳健、少废话",
+            aliases: ["1", "a", "选1", "方案1"],
+          },
+          {
+            value: "高效直给：结果导向、节奏快",
+            aliases: ["2", "b", "选2", "方案2"],
+          },
+          {
+            value: "温和陪伴：耐心解释、语气柔和",
+            aliases: ["3", "c", "选3", "方案3"],
+          },
+          {
+            value: "幽默轻松：轻松自然，但不影响执行",
+            aliases: ["4", "d", "选4", "方案4"],
+          },
+        ],
+      },
+      en: {
+        questions: {
+          step1:
+            "Quick setup before we continue: how would you like me to address you? You can also tell me my name and persona in one message.",
+          step2: "Great. What name would you like to call me?",
+          step3: [
+            "Final step: choose my persona/tone.",
+            "You can describe it freely, or pick one preset:",
+            "1) Professional & reliable: clear, stable, minimal fluff",
+            "2) Fast & direct: action-oriented, concise, high tempo",
+            "3) Warm & supportive: patient guidance, softer tone",
+            "4) Light & humorous: relaxed tone while staying task-focused",
+            "Reply example: `2` or `professional, concise, lightly humorous`",
+          ].join("\n"),
+        },
+        emptyAnswer: "Please answer in one short sentence so I can save your profile.",
+        onboardingSaved:
+          "Done. I saved your profile to USER.md and IDENTITY.md. I will address you as \"{userPreferredAddress}\", and use \"{assistantName}\" with persona \"{assistantPersona}\".",
+        noChange: "These profile settings are already up to date.",
+        updated: "Updated. {changes}.",
+        changeJoiner: "; ",
+        changeTemplates: {
+          userPreferredAddress: "I will address you as \"{value}\"",
+          assistantName: "my name is now \"{value}\"",
+          assistantPersona: "persona updated to \"{value}\"",
+        },
+        fallbacks: {
+          user: "User",
+          assistant: "OpenPocket",
+          persona: "pragmatic, calm, and reliable",
+        },
+        personaPresets: [
+          {
+            value: "professional and reliable: clear, stable, minimal fluff",
+            aliases: ["1", "a", "option1"],
+          },
+          {
+            value: "fast and direct: action-oriented, concise, high tempo",
+            aliases: ["2", "b", "option2"],
+          },
+          {
+            value: "warm and supportive: patient guidance, softer tone",
+            aliases: ["3", "c", "option3"],
+          },
+          {
+            value: "light and humorous: relaxed tone while staying task-focused",
+            aliases: ["4", "d", "option4"],
+          },
+        ],
+      },
+    },
+  }),
 };
 
 export function ensureWorkspaceBootstrap(workspaceDir: string): void {

@@ -112,11 +112,20 @@ export function defaultOnboardingState(): OnboardingStateFile {
 }
 
 export function defaultPromptEntries(workspaceDir: string): PromptFileEntry[] {
-  const names = ["AGENTS", "SOUL", "USER", "IDENTITY", "TOOLS", "HEARTBEAT", "MEMORY"];
-  return names.map((name) => ({
-    id: name.toLowerCase(),
-    title: name,
-    path: path.join(workspaceDir, `${name}.md`),
+  const files = [
+    { id: "agents", title: "AGENTS", fileName: "AGENTS.md" },
+    { id: "soul", title: "SOUL", fileName: "SOUL.md" },
+    { id: "user", title: "USER", fileName: "USER.md" },
+    { id: "identity", title: "IDENTITY", fileName: "IDENTITY.md" },
+    { id: "tools", title: "TOOLS", fileName: "TOOLS.md" },
+    { id: "heartbeat", title: "HEARTBEAT", fileName: "HEARTBEAT.md" },
+    { id: "memory", title: "MEMORY", fileName: "MEMORY.md" },
+    { id: "profile_onboarding", title: "PROFILE_ONBOARDING", fileName: "PROFILE_ONBOARDING.json" },
+  ];
+  return files.map((file) => ({
+    id: file.id,
+    title: file.title,
+    path: path.join(workspaceDir, file.fileName),
   }));
 }
 

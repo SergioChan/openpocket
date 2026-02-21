@@ -14,6 +14,7 @@ interface ChatTurn {
 
 type OnboardingStep = 1 | 2 | 3;
 type OnboardingLocale = "zh" | "en";
+type OnboardingProfileField = "userPreferredAddress" | "assistantName" | "assistantPersona";
 
 interface ProfileOnboardingState {
   step: OnboardingStep;
@@ -28,6 +29,142 @@ interface ProfileSnapshot {
   assistantName: string;
   assistantPersona: string;
 }
+
+interface OnboardingPreset {
+  value: string;
+  aliases: string[];
+}
+
+interface OnboardingLocaleTemplate {
+  questions: Record<OnboardingStep, string>;
+  emptyAnswer: string;
+  onboardingSaved: string;
+  noChange: string;
+  updated: string;
+  changeJoiner: string;
+  changeTemplates: Record<OnboardingProfileField, string>;
+  fallbacks: {
+    user: string;
+    assistant: string;
+    persona: string;
+  };
+  personaPresets: OnboardingPreset[];
+}
+
+interface OnboardingTemplate {
+  version: number;
+  locales: Record<OnboardingLocale, OnboardingLocaleTemplate>;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const PROFILE_ONBOARDING_TEMPLATE_FILE = "PROFILE_ONBOARDING.json";
+
+const DEFAULT_ONBOARDING_TEMPLATE: OnboardingTemplate = {
+  version: 1,
+  locales: {
+    zh: {
+      questions: {
+        1: "先做个简短初始化：我该怎么称呼你？如果你愿意，也可以一次告诉我你希望我叫什么和什么人设。",
+        2: "收到。那你希望我叫什么名字？",
+        3: [
+          "最后一步：设定我的人设/语气。",
+          "你可以直接描述，也可以选编号：",
+          "1) 专业可靠：清晰、稳健、少废话",
+          "2) 高效直给：结果导向、节奏快",
+          "3) 温和陪伴：耐心解释、语气柔和",
+          "4) 幽默轻松：轻松自然，但不影响执行",
+          "回复示例：`2` 或 `专业可靠，简洁，必要时幽默`",
+        ].join("\n"),
+      },
+      emptyAnswer: "请用一句话回答，我会帮你写入 profile。",
+      onboardingSaved:
+        "好，我已经写入 USER.md 和 IDENTITY.md。后续我会称呼你为“{userPreferredAddress}”，我的名字是“{assistantName}”，人设是“{assistantPersona}”。",
+      noChange: "这些设定已经是当前值了，不需要改动。",
+      updated: "已更新。{changes}。",
+      changeJoiner: "；",
+      changeTemplates: {
+        userPreferredAddress: "我会称呼你为“{value}”",
+        assistantName: "我的名字改为“{value}”",
+        assistantPersona: "人设改为“{value}”",
+      },
+      fallbacks: {
+        user: "用户",
+        assistant: "OpenPocket",
+        persona: "务实、冷静、可靠",
+      },
+      personaPresets: [
+        {
+          value: "专业可靠：清晰、稳健、少废话",
+          aliases: ["1", "a", "选1", "方案1"],
+        },
+        {
+          value: "高效直给：结果导向、节奏快",
+          aliases: ["2", "b", "选2", "方案2"],
+        },
+        {
+          value: "温和陪伴：耐心解释、语气柔和",
+          aliases: ["3", "c", "选3", "方案3"],
+        },
+        {
+          value: "幽默轻松：轻松自然，但不影响执行",
+          aliases: ["4", "d", "选4", "方案4"],
+        },
+      ],
+    },
+    en: {
+      questions: {
+        1: "Quick setup before we continue: how would you like me to address you? You can also tell me my name and persona in one message.",
+        2: "Great. What name would you like to call me?",
+        3: [
+          "Final step: choose my persona/tone.",
+          "You can describe it freely, or pick one preset:",
+          "1) Professional & reliable: clear, stable, minimal fluff",
+          "2) Fast & direct: action-oriented, concise, high tempo",
+          "3) Warm & supportive: patient guidance, softer tone",
+          "4) Light & humorous: relaxed tone while staying task-focused",
+          "Reply example: `2` or `professional, concise, lightly humorous`",
+        ].join("\n"),
+      },
+      emptyAnswer: "Please answer in one short sentence so I can save your profile.",
+      onboardingSaved:
+        "Done. I saved your profile to USER.md and IDENTITY.md. I will address you as \"{userPreferredAddress}\", and use \"{assistantName}\" with persona \"{assistantPersona}\".",
+      noChange: "These profile settings are already up to date.",
+      updated: "Updated. {changes}.",
+      changeJoiner: "; ",
+      changeTemplates: {
+        userPreferredAddress: "I will address you as \"{value}\"",
+        assistantName: "my name is now \"{value}\"",
+        assistantPersona: "persona updated to \"{value}\"",
+      },
+      fallbacks: {
+        user: "User",
+        assistant: "OpenPocket",
+        persona: "pragmatic, calm, and reliable",
+      },
+      personaPresets: [
+        {
+          value: "professional and reliable: clear, stable, minimal fluff",
+          aliases: ["1", "a", "option1"],
+        },
+        {
+          value: "fast and direct: action-oriented, concise, high tempo",
+          aliases: ["2", "b", "option2"],
+        },
+        {
+          value: "warm and supportive: patient guidance, softer tone",
+          aliases: ["3", "c", "option3"],
+        },
+        {
+          value: "light and humorous: relaxed tone while staying task-focused",
+          aliases: ["4", "d", "option4"],
+        },
+      ],
+    },
+  },
+};
 
 export interface ChatDecision {
   mode: "task" | "chat";
@@ -88,6 +225,9 @@ export class ChatAssistant {
   private readonly profileOnboarding = new Map<number, ProfileOnboardingState>();
   private readonly pendingProfileUpdates =
     new Map<number, { assistantName: string; locale: OnboardingLocale }>();
+  private onboardingTemplateCache:
+    | { mtimeMs: number; template: OnboardingTemplate }
+    | null = null;
   private modeHint: "responses" | "chat" | "completions" = "responses";
 
   constructor(config: OpenPocketConfig) {
@@ -108,8 +248,12 @@ export class ChatAssistant {
     return payload;
   }
 
-  private profileFilePath(name: "IDENTITY.md" | "USER.md"): string {
+  private workspaceFilePath(name: string): string {
     return path.join(this.config.workspaceDir, name);
+  }
+
+  private profileFilePath(name: "IDENTITY.md" | "USER.md"): string {
+    return this.workspaceFilePath(name);
   }
 
   private readTextSafe(filePath: string): string {
@@ -136,6 +280,164 @@ export class ChatAssistant {
       .replace(/[。！？.!?]+$/g, "")
       .replace(/\s*(吧|呀|呢|啦|喔|哦|好吗|可以吗)\s*$/i, "")
       .trim();
+  }
+
+  private readStringOrFallback(value: unknown, fallback: string): string {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+    const normalized = value.trim();
+    return normalized || fallback;
+  }
+
+  private readQuestionOrFallback(
+    questions: Record<string, unknown>,
+    step: OnboardingStep,
+    fallback: string,
+  ): string {
+    const key = `step${step}`;
+    if (typeof questions[key] === "string") {
+      return this.readStringOrFallback(questions[key], fallback);
+    }
+    if (typeof questions[String(step)] === "string") {
+      return this.readStringOrFallback(questions[String(step)], fallback);
+    }
+    return fallback;
+  }
+
+  private mergePersonaPresets(
+    value: unknown,
+    fallback: OnboardingPreset[],
+  ): OnboardingPreset[] {
+    if (!Array.isArray(value)) {
+      return fallback;
+    }
+    const parsed = value
+      .map((item) => {
+        if (!isObject(item)) {
+          return null;
+        }
+        const presetValue = this.readStringOrFallback(item.value, "");
+        if (!presetValue) {
+          return null;
+        }
+        const aliasesRaw = Array.isArray(item.aliases)
+          ? item.aliases.map((alias) => this.readStringOrFallback(alias, "")).filter(Boolean)
+          : [];
+        const aliases = Array.from(
+          new Set([presetValue, ...aliasesRaw].map((alias) => alias.toLowerCase())),
+        );
+        return {
+          value: presetValue,
+          aliases,
+        };
+      })
+      .filter((item): item is OnboardingPreset => Boolean(item));
+    if (parsed.length === 0) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  private mergeLocaleTemplate(
+    localeRaw: unknown,
+    fallback: OnboardingLocaleTemplate,
+  ): OnboardingLocaleTemplate {
+    if (!isObject(localeRaw)) {
+      return fallback;
+    }
+
+    const rawQuestions = isObject(localeRaw.questions) ? localeRaw.questions : {};
+    const rawChangeTemplates = isObject(localeRaw.changeTemplates)
+      ? localeRaw.changeTemplates
+      : {};
+    const rawFallbacks = isObject(localeRaw.fallbacks) ? localeRaw.fallbacks : {};
+
+    return {
+      questions: {
+        1: this.readQuestionOrFallback(rawQuestions, 1, fallback.questions[1]),
+        2: this.readQuestionOrFallback(rawQuestions, 2, fallback.questions[2]),
+        3: this.readQuestionOrFallback(rawQuestions, 3, fallback.questions[3]),
+      },
+      emptyAnswer: this.readStringOrFallback(localeRaw.emptyAnswer, fallback.emptyAnswer),
+      onboardingSaved: this.readStringOrFallback(localeRaw.onboardingSaved, fallback.onboardingSaved),
+      noChange: this.readStringOrFallback(localeRaw.noChange, fallback.noChange),
+      updated: this.readStringOrFallback(localeRaw.updated, fallback.updated),
+      changeJoiner: this.readStringOrFallback(localeRaw.changeJoiner, fallback.changeJoiner),
+      changeTemplates: {
+        userPreferredAddress: this.readStringOrFallback(
+          rawChangeTemplates.userPreferredAddress,
+          fallback.changeTemplates.userPreferredAddress,
+        ),
+        assistantName: this.readStringOrFallback(
+          rawChangeTemplates.assistantName,
+          fallback.changeTemplates.assistantName,
+        ),
+        assistantPersona: this.readStringOrFallback(
+          rawChangeTemplates.assistantPersona,
+          fallback.changeTemplates.assistantPersona,
+        ),
+      },
+      fallbacks: {
+        user: this.readStringOrFallback(rawFallbacks.user, fallback.fallbacks.user),
+        assistant: this.readStringOrFallback(
+          rawFallbacks.assistant,
+          fallback.fallbacks.assistant,
+        ),
+        persona: this.readStringOrFallback(rawFallbacks.persona, fallback.fallbacks.persona),
+      },
+      personaPresets: this.mergePersonaPresets(localeRaw.personaPresets, fallback.personaPresets),
+    };
+  }
+
+  private loadOnboardingTemplate(): OnboardingTemplate {
+    const filePath = this.workspaceFilePath(PROFILE_ONBOARDING_TEMPLATE_FILE);
+    let mtimeMs = -1;
+    try {
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile()) {
+        return DEFAULT_ONBOARDING_TEMPLATE;
+      }
+      mtimeMs = stat.mtimeMs;
+    } catch {
+      return DEFAULT_ONBOARDING_TEMPLATE;
+    }
+
+    if (this.onboardingTemplateCache && this.onboardingTemplateCache.mtimeMs === mtimeMs) {
+      return this.onboardingTemplateCache.template;
+    }
+
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(this.readTextSafe(filePath));
+    } catch {
+      parsed = null;
+    }
+
+    const rawLocales = isObject(parsed) && isObject(parsed.locales) ? parsed.locales : {};
+    const merged: OnboardingTemplate = {
+      version:
+        typeof (parsed as { version?: unknown })?.version === "number"
+          ? (parsed as { version: number }).version
+          : DEFAULT_ONBOARDING_TEMPLATE.version,
+      locales: {
+        zh: this.mergeLocaleTemplate(rawLocales.zh, DEFAULT_ONBOARDING_TEMPLATE.locales.zh),
+        en: this.mergeLocaleTemplate(rawLocales.en, DEFAULT_ONBOARDING_TEMPLATE.locales.en),
+      },
+    };
+    this.onboardingTemplateCache = {
+      mtimeMs,
+      template: merged,
+    };
+    return merged;
+  }
+
+  private localeTemplate(locale: OnboardingLocale): OnboardingLocaleTemplate {
+    return this.loadOnboardingTemplate().locales[locale];
+  }
+
+  private renderTemplate(template: string, values: Record<string, string>): string {
+    return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key: string) => values[key] ?? "");
   }
 
   private extractBulletValue(content: string, key: string): string {
@@ -210,50 +512,14 @@ export class ChatAssistant {
   }
 
   private questionForStep(step: OnboardingStep, locale: OnboardingLocale): string {
-    if (locale === "zh") {
-      if (step === 1) {
-        return "先做个简短初始化：我该怎么称呼你？如果你愿意，也可以一次告诉我你希望我叫什么和什么人设。";
-      }
-      if (step === 2) {
-        return "收到。那你希望我叫什么名字？";
-      }
-      return [
-        "最后一步：设定我的人设/语气。",
-        "你可以直接描述，也可以选编号：",
-        "1) 专业可靠：清晰、稳健、少废话",
-        "2) 高效直给：结果导向、节奏快",
-        "3) 温和陪伴：耐心解释、语气柔和",
-        "4) 幽默轻松：轻松自然，但不影响执行",
-        "回复示例：`2` 或 `专业可靠，简洁，必要时幽默`",
-      ].join("\n");
-    }
-
-    if (step === 1) {
-      return "Quick setup before we continue: how would you like me to address you? You can also tell me my name and persona in one message.";
-    }
-    if (step === 2) {
-      return "Great. What name would you like to call me?";
-    }
-    return [
-      "Final step: choose my persona/tone.",
-      "You can describe it freely, or pick one preset:",
-      "1) Professional & reliable: clear, stable, minimal fluff",
-      "2) Fast & direct: action-oriented, concise, high tempo",
-      "3) Warm & supportive: patient guidance, softer tone",
-      "4) Light & humorous: relaxed tone while staying task-focused",
-      "Reply example: `2` or `professional, concise, lightly humorous`",
-    ].join("\n");
+    return this.localeTemplate(locale).questions[step];
   }
 
   private pickFallback(locale: OnboardingLocale, key: "user" | "assistant" | "persona"): string {
-    if (locale === "zh") {
-      if (key === "user") return "用户";
-      if (key === "assistant") return "OpenPocket";
-      return "务实、冷静、可靠";
-    }
-    if (key === "user") return "User";
-    if (key === "assistant") return "OpenPocket";
-    return "pragmatic, calm, and reliable";
+    const fallbacks = this.localeTemplate(locale).fallbacks;
+    if (key === "user") return fallbacks.user;
+    if (key === "assistant") return fallbacks.assistant;
+    return fallbacks.persona;
   }
 
   private extractByPatterns(input: string, patterns: RegExp[]): string {
@@ -307,40 +573,12 @@ export class ChatAssistant {
 
   private personaPresetFromAnswer(answer: string, locale: OnboardingLocale): string {
     const normalized = this.normalizeOneLine(answer).toLowerCase();
-    const presetMapZh: Record<string, string> = {
-      "1": "专业可靠：清晰、稳健、少废话",
-      "2": "高效直给：结果导向、节奏快",
-      "3": "温和陪伴：耐心解释、语气柔和",
-      "4": "幽默轻松：轻松自然，但不影响执行",
-      a: "专业可靠：清晰、稳健、少废话",
-      b: "高效直给：结果导向、节奏快",
-      c: "温和陪伴：耐心解释、语气柔和",
-      d: "幽默轻松：轻松自然，但不影响执行",
-      "选1": "专业可靠：清晰、稳健、少废话",
-      "选2": "高效直给：结果导向、节奏快",
-      "选3": "温和陪伴：耐心解释、语气柔和",
-      "选4": "幽默轻松：轻松自然，但不影响执行",
-      "方案1": "专业可靠：清晰、稳健、少废话",
-      "方案2": "高效直给：结果导向、节奏快",
-      "方案3": "温和陪伴：耐心解释、语气柔和",
-      "方案4": "幽默轻松：轻松自然，但不影响执行",
-    };
-    const presetMapEn: Record<string, string> = {
-      "1": "professional and reliable: clear, stable, minimal fluff",
-      "2": "fast and direct: action-oriented, concise, high tempo",
-      "3": "warm and supportive: patient guidance, softer tone",
-      "4": "light and humorous: relaxed tone while staying task-focused",
-      a: "professional and reliable: clear, stable, minimal fluff",
-      b: "fast and direct: action-oriented, concise, high tempo",
-      c: "warm and supportive: patient guidance, softer tone",
-      d: "light and humorous: relaxed tone while staying task-focused",
-      option1: "professional and reliable: clear, stable, minimal fluff",
-      option2: "fast and direct: action-oriented, concise, high tempo",
-      option3: "warm and supportive: patient guidance, softer tone",
-      option4: "light and humorous: relaxed tone while staying task-focused",
-    };
-    const table = locale === "zh" ? presetMapZh : presetMapEn;
-    return table[normalized] ?? "";
+    for (const preset of this.localeTemplate(locale).personaPresets) {
+      if (preset.aliases.includes(normalized)) {
+        return preset.value;
+      }
+    }
+    return "";
   }
 
   private resolvePersonaAnswer(answer: string, locale: OnboardingLocale): string {
@@ -532,6 +770,7 @@ export class ChatAssistant {
     }
 
     const locale = this.detectOnboardingLocale(inputText);
+    const template = this.localeTemplate(locale);
     const current = this.readProfileSnapshot(locale);
     const next: ProfileSnapshot = {
       userPreferredAddress: parsed.userPreferredAddress ?? current.userPreferredAddress,
@@ -542,25 +781,31 @@ export class ChatAssistant {
     };
 
     const assistantNameChanged = next.assistantName !== current.assistantName;
-    const updatesZh: string[] = [];
-    const updatesEn: string[] = [];
+    const updates: string[] = [];
     if (next.userPreferredAddress !== current.userPreferredAddress) {
-      updatesZh.push(`我会称呼你为“${next.userPreferredAddress}”`);
-      updatesEn.push(`I will address you as "${next.userPreferredAddress}"`);
+      updates.push(
+        this.renderTemplate(template.changeTemplates.userPreferredAddress, {
+          value: next.userPreferredAddress,
+        }),
+      );
     }
     if (assistantNameChanged) {
-      updatesZh.push(`我的名字改为“${next.assistantName}”`);
-      updatesEn.push(`my name is now "${next.assistantName}"`);
+      updates.push(
+        this.renderTemplate(template.changeTemplates.assistantName, {
+          value: next.assistantName,
+        }),
+      );
     }
     if (next.assistantPersona !== current.assistantPersona) {
-      updatesZh.push(`人设改为“${next.assistantPersona}”`);
-      updatesEn.push(`persona updated to "${next.assistantPersona}"`);
+      updates.push(
+        this.renderTemplate(template.changeTemplates.assistantPersona, {
+          value: next.assistantPersona,
+        }),
+      );
     }
 
-    if (updatesZh.length === 0) {
-      return locale === "zh"
-        ? "这些设定已经是当前值了，不需要改动。"
-        : "These profile settings are already up to date.";
+    if (updates.length === 0) {
+      return template.noChange;
     }
 
     this.writeProfileSnapshot(next);
@@ -571,10 +816,9 @@ export class ChatAssistant {
       });
     }
 
-    if (locale === "zh") {
-      return `已更新。${updatesZh.join("；")}。`;
-    }
-    return `Updated. ${updatesEn.join("; ")}.`;
+    return this.renderTemplate(template.updated, {
+      changes: updates.join(template.changeJoiner),
+    });
   }
 
   private applyProfileOnboarding(chatId: number, inputText: string): string | null {
@@ -612,9 +856,7 @@ export class ChatAssistant {
         return this.questionForStep(1, locale);
       }
     } else if (!answer) {
-      return current.locale === "zh"
-        ? "请用一句话回答，我会帮你写入 profile。"
-        : "Please answer in one short sentence so I can save your profile.";
+      return this.localeTemplate(current.locale).emptyAnswer;
     } else {
       const parsed = this.parseOnboardingFields(answer);
 
@@ -670,10 +912,11 @@ export class ChatAssistant {
       locale: finalized.locale,
     });
     this.profileOnboarding.delete(chatId);
-    if (finalized.locale === "zh") {
-      return `好，我已经写入 USER.md 和 IDENTITY.md。后续我会称呼你为“${userPreferredAddress}”，我的名字是“${assistantName}”，人设是“${assistantPersona}”。`;
-    }
-    return `Done. I saved your profile to USER.md and IDENTITY.md. I will address you as "${userPreferredAddress}", and use "${assistantName}" with persona "${assistantPersona}".`;
+    return this.renderTemplate(this.localeTemplate(finalized.locale).onboardingSaved, {
+      userPreferredAddress,
+      assistantName,
+      assistantPersona,
+    });
   }
 
   private systemPrompt(): string {

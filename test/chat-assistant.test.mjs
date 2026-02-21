@@ -218,6 +218,44 @@ test("ChatAssistant onboarding accepts persona preset index", async () => {
   assert.match(identityBody, /Persona: fast and direct/);
 });
 
+test("ChatAssistant onboarding reads question copy and presets from PROFILE_ONBOARDING.json", async () => {
+  const { assistant, cfg } = createAssistant({ keepProfileEmpty: true });
+
+  fs.writeFileSync(
+    path.join(cfg.workspaceDir, "PROFILE_ONBOARDING.json"),
+    `${JSON.stringify({
+      version: 1,
+      locales: {
+        zh: {
+          questions: {
+            step1: "【自定义Q1】先告诉我怎么称呼你",
+            step2: "【自定义Q2】你希望我叫什么",
+            step3: "【自定义Q3】选一个语气编号",
+          },
+          personaPresets: [
+            {
+              value: "冷静执行：只给结论和下一步",
+              aliases: ["9"],
+            },
+          ],
+        },
+      },
+    }, null, 2)}\n`,
+    "utf-8",
+  );
+
+  const first = await assistant.decide(16, "你好");
+  assert.match(first.reply, /自定义Q1/);
+  const second = await assistant.decide(16, "Sergio");
+  assert.match(second.reply, /自定义Q2/);
+  const third = await assistant.decide(16, "Jarvis");
+  assert.match(third.reply, /自定义Q3/);
+  await assistant.decide(16, "9");
+
+  const identityBody = fs.readFileSync(path.join(cfg.workspaceDir, "IDENTITY.md"), "utf-8");
+  assert.match(identityBody, /Persona: 冷静执行：只给结论和下一步/);
+});
+
 test("ChatAssistant onboarding triggers on default scaffold with blank profile fields", async () => {
   const { assistant, cfg } = createAssistant({ withApiKey: true });
 
