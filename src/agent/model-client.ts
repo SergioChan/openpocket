@@ -34,7 +34,7 @@ export class ModelClient {
     this.profile = profile;
     this.client = new OpenAI({ apiKey, baseURL: options?.baseUrl ?? profile.baseUrl });
     if (options?.preferredMode) {
-      this.modeHint = options.preferredMode;
+      this.modeHint = options.preferredMode === "completions" ? "chat" : options.preferredMode;
     }
   }
 
