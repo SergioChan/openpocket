@@ -2067,7 +2067,7 @@ export class DashboardServer {
       }
 
       if (method === "GET" && url.pathname === "/api/emulator/preview") {
-        const snapshot = this.adb.captureScreenSnapshot(this.config.agent.deviceId);
+        const snapshot = await this.adb.captureScreenSnapshot(this.config.agent.deviceId);
         this.previewCache = snapshot;
         sendJson(res, 200, snapshot);
         return;

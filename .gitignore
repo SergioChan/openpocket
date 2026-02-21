@@ -15,3 +15,6 @@ frontend/.vitepress/.temp/
 
 # local debug captures
 debug_screen_*.png
+
+# local databases
+*.sqlite

@@ -18,6 +18,7 @@ import { SkillLoader } from "../skills/skill-loader";
 import { ScriptExecutor } from "../tools/script-executor";
 import { ModelClient } from "./model-client";
 import { buildSystemPrompt } from "./prompts";
+import { scaleCoordinates, drawDebugMarker } from "../utils/image-scale";
 
 const AUTO_PERMISSION_DIALOG_PACKAGES = [
   "permissioncontroller",
@@ -71,8 +72,8 @@ export class AgentRuntime {
     return this.skillLoader.loadAll();
   }
 
-  captureManualScreenshot(): string {
-    const snapshot = this.adb.captureScreenSnapshot(this.config.agent.deviceId);
+  async captureManualScreenshot(): Promise<string> {
+    const snapshot = await this.adb.captureScreenSnapshot(this.config.agent.deviceId);
     return this.screenshotStore.save(
       Buffer.from(snapshot.screenshotBase64, "base64"),
       {
@@ -169,7 +170,7 @@ export class AgentRuntime {
           };
         }
 
-        const snapshot = this.adb.captureScreenSnapshot(this.config.agent.deviceId);
+        const snapshot = await this.adb.captureScreenSnapshot(this.config.agent.deviceId, profile.model);
         shouldReturnHome = true;
         let screenshotPath: string | null = null;
         if (this.config.screenshots.saveStepScreenshots) {
@@ -454,6 +455,50 @@ export class AgentRuntime {
           continue;
         }
 
+        // Save debug screenshot with marker overlay before scaling coordinates.
+        if (
+          this.config.screenshots.saveStepScreenshots &&
+          (output.action.type === "tap" || output.action.type === "swipe")
+        ) {
+          try {
+            const scaledBuf = Buffer.from(snapshot.screenshotBase64, "base64");
+            const annotated = await drawDebugMarker(scaledBuf, output.action);
+            this.screenshotStore.save(annotated, {
+              sessionId: session.id,
+              step,
+              currentApp: `${snapshot.currentApp}-debug`,
+            });
+          } catch {
+            // Debug overlay is best-effort; don't break the task loop.
+          }
+        }
+
+        // Scale model-returned coordinates back to original device resolution.
+        if (output.action.type === "tap") {
+          const scaled = scaleCoordinates(
+            output.action.x, output.action.y,
+            snapshot.scaleX, snapshot.scaleY,
+            snapshot.width, snapshot.height,
+          );
+          output.action.x = scaled.x;
+          output.action.y = scaled.y;
+        } else if (output.action.type === "swipe") {
+          const p1 = scaleCoordinates(
+            output.action.x1, output.action.y1,
+            snapshot.scaleX, snapshot.scaleY,
+            snapshot.width, snapshot.height,
+          );
+          const p2 = scaleCoordinates(
+            output.action.x2, output.action.y2,
+            snapshot.scaleX, snapshot.scaleY,
+            snapshot.width, snapshot.height,
+          );
+          output.action.x1 = p1.x;
+          output.action.y1 = p1.y;
+          output.action.x2 = p2.x;
+          output.action.y2 = p2.y;
+        }
+
         let executionResult = "";
         try {
           if (output.action.type === "run_script") {
@@ -495,7 +540,7 @@ export class AgentRuntime {
         });
 
         history.push(
-          `step ${step}: app=${snapshot.currentApp} action=${output.action.type} result=${executionResult}`,
+          `step ${step}: app=${snapshot.currentApp} thought="${output.thought}" action=${output.action.type} result=${executionResult}`,
         );
 
         if (this.config.agent.verbose) {

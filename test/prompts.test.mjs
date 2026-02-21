@@ -5,12 +5,14 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { buildSystemPrompt, buildUserPrompt } = require("../dist/agent/prompts.js");
 
-test("buildSystemPrompt includes English rules and skills", () => {
+test("buildSystemPrompt includes planning rules and skills", () => {
   const prompt = buildSystemPrompt("- skill-a\n- skill-b");
   assert.match(prompt, /You are OpenPocket/);
-  assert.match(prompt, /Allowed action.type values/);
+  assert.match(prompt, /Planning:/);
+  assert.match(prompt, /sub-goals/);
+  assert.match(prompt, /calling tools/);
   assert.match(prompt, /Available skills/);
-  assert.match(prompt, /Write thought and all action text fields in English/);
+  assert.match(prompt, /Write thought and all text fields in English/);
   assert.match(prompt, /skill-a/);
 });
 
@@ -26,6 +28,10 @@ test("buildUserPrompt keeps only recent 8 history items", () => {
       height: 2400,
       capturedAt: new Date().toISOString(),
       screenshotBase64: "abc",
+      scaleX: 1,
+      scaleY: 1,
+      scaledWidth: 1080,
+      scaledHeight: 2400,
     },
     history,
   );

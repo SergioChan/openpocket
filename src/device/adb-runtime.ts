@@ -1,5 +1,6 @@
 import type { AgentAction, OpenPocketConfig, ScreenSnapshot } from "../types";
 import { nowIso } from "../utils/paths";
+import { scaleScreenshot } from "../utils/image-scale";
 import { sleep } from "../utils/time";
 import { EmulatorManager } from "./emulator-manager";
 
@@ -75,7 +76,7 @@ export class AdbRuntime {
     throw new Error("No running emulator device found.");
   }
 
-  captureScreenSnapshot(preferred?: string | null): ScreenSnapshot {
+  async captureScreenSnapshot(preferred?: string | null, modelName?: string): Promise<ScreenSnapshot> {
     const deviceId = this.resolveDeviceId(preferred);
 
     const { data } = this.emulator.captureScreenshotBuffer(deviceId);
@@ -90,13 +91,19 @@ export class AdbRuntime {
       currentApp = "unknown";
     }
 
+    const scaled = await scaleScreenshot(data, modelName);
+
     return {
       deviceId,
       currentApp,
       width,
       height,
-      screenshotBase64: data.toString("base64"),
+      screenshotBase64: scaled.data.toString("base64"),
       capturedAt: nowIso(),
+      scaleX: scaled.scaleX,
+      scaleY: scaled.scaleY,
+      scaledWidth: scaled.width,
+      scaledHeight: scaled.height,
     };
   }
 

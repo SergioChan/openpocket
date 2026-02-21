@@ -419,7 +419,7 @@ export class TelegramGateway {
     }
 
     if (text.startsWith("/screen")) {
-      const screenshotPath = this.agent.captureManualScreenshot();
+      const screenshotPath = await this.agent.captureManualScreenshot();
       this.log(`manual screenshot chat=${chatId} path=${screenshotPath}`);
       await this.bot.sendMessage(chatId, "Screenshot saved in local storage.");
       return;

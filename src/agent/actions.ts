@@ -33,10 +33,25 @@ export function normalizeAction(input: unknown): AgentAction {
   const type = String(input.type ?? "").trim();
 
   if (type === "tap") {
+    let x = toNumber(input.x, NaN);
+    let y = toNumber(input.y, NaN);
+    // Some models return coordinates as an array: coordinate: [x, y] or position: [x, y]
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      const arr = Array.isArray(input.coordinate) ? input.coordinate
+        : Array.isArray(input.position) ? input.position
+        : null;
+      if (arr && arr.length >= 2) {
+        x = toNumber(arr[0], 0);
+        y = toNumber(arr[1], 0);
+      } else {
+        x = Number.isFinite(x) ? x : 0;
+        y = Number.isFinite(y) ? y : 0;
+      }
+    }
     return {
       type,
-      x: toNumber(input.x, 0),
-      y: toNumber(input.y, 0),
+      x,
+      y,
       reason: input.reason ? String(input.reason) : undefined,
     };
   }
