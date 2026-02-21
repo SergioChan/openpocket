@@ -278,11 +278,28 @@ Example config template:
 
 - [`openpocket.config.example.json`](./openpocket.config.example.json)
 
+### Supported Model Providers
+
+OpenPocket supports multiple AI model providers through OpenAI-compatible APIs:
+
+**OpenAI** - Direct access to GPT models (gpt-5.2-codex, gpt-5.3-codex)
+
+**OpenRouter** - Multi-provider routing for Claude models (claude-sonnet-4.6, claude-opus-4.6)
+
+**BlockRun** - Pay-per-request micropayments with no subscriptions
+- Ideal for always-on agents with cost-effective pricing
+- Access to 30+ models: GPT-4o, Claude Sonnet 4, Gemini 2.0 Flash, DeepSeek
+- Model IDs: `blockrun/gpt-4o`, `blockrun/claude-sonnet-4`, `blockrun/gemini-2.0-flash`, `blockrun/deepseek-chat`
+- Get started at [docs.blockrun.ai](https://docs.blockrun.ai)
+
+**AutoGLM** - Phone-optimized multilingual model (autoglm-phone)
+
 Common environment variables:
 
 ```bash
 export OPENAI_API_KEY="<your_openai_key>"
 export OPENROUTER_API_KEY="<your_openrouter_key>"
+export BLOCKRUN_API_KEY="<your_blockrun_key>"
 export AUTOGLM_API_KEY="<your_autoglm_key>"
 export TELEGRAM_BOT_TOKEN="<your_telegram_bot_token>"
 export OPENPOCKET_HUMAN_AUTH_KEY="<your_human_auth_relay_key>"
