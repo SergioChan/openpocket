@@ -229,6 +229,27 @@ test("telegram setup requires interactive terminal", () => {
   assert.match(run.stderr, /interactive terminal/i);
 });
 
+test("telegram whoami prints allow policy without requiring token", () => {
+  const home = makeHome("openpocket-ts-telegram-whoami-");
+  const init = runCli(["init"], { OPENPOCKET_HOME: home });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+
+  const run = runCli(["telegram", "whoami"], {
+    OPENPOCKET_HOME: home,
+    TELEGRAM_BOT_TOKEN: "",
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /allow policy/i);
+  assert.match(run.stdout, /allow_all/i);
+});
+
+test("telegram command validates unknown subcommand", () => {
+  const run = runCli(["telegram", "noop"]);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Unknown telegram subcommand/);
+  assert.match(run.stderr, /setup\|whoami/);
+});
+
 test("gateway start command is accepted (reaches token validation)", () => {
   const home = makeHome("openpocket-ts-gateway-start-");
   const init = runCli(["init"], { OPENPOCKET_HOME: home });

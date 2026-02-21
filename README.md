@@ -325,6 +325,7 @@ Command prefix by install mode:
 ./openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
 ./openpocket script run --text "echo hello"
 ./openpocket telegram setup
+./openpocket telegram whoami
 ./openpocket skills list
 ./openpocket gateway start
 ./openpocket dashboard start
@@ -387,6 +388,12 @@ When the agent emits `request_human_auth`, Telegram users can:
 - or run fallback commands:
   - `/auth approve <request-id> [note]`
   - `/auth reject <request-id> [note]`
+
+To inspect current chat allow policy and discover recent chat IDs for your bot:
+
+```bash
+openpocket telegram whoami
+```
 
 When a running task enters Android system permission UI
 (`permissioncontroller` / `packageinstaller`), OpenPocket now auto-triggers
