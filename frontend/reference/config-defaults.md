@@ -196,9 +196,9 @@ ngrok authtoken precedence:
 1. `humanAuth.tunnel.ngrok.authtoken`
 2. env from `humanAuth.tunnel.ngrok.authtokenEnv`
 
-## Legacy Keys
+## Backward Compatibility Keys
 
-The loader maps legacy snake_case keys (top-level and nested) to camelCase keys before merge.
+The loader maps compatibility snake_case keys (top-level and nested) to camelCase keys before merge.
 
 Examples:
 

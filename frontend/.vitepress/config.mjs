@@ -301,14 +301,6 @@ const baseSidebar = [
       { text: "Troubleshooting", link: "/ops/troubleshooting" },
     ],
   },
-  {
-    text: "Legacy",
-    collapsed: true,
-    items: [
-      { text: "Implementation Plan", link: "/implementation-plan" },
-      { text: "MVP Runbook (Legacy Entry)", link: "/mvp-runbook" },
-    ],
-  },
 ];
 
 export default withMermaid(defineConfig({

@@ -18,7 +18,7 @@ openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <por
 openpocket panel start
 ```
 
-Legacy aliases (deprecated):
+Deprecated aliases:
 
 ```text
 openpocket [--config <path>] init
@@ -67,15 +67,15 @@ Interactive onboarding wizard flow:
 - configures human-auth bridge mode (`ngrok` / `LAN` / disabled)
 - writes onboarding state to `state/onboarding.json`
 
-## Legacy: `init`
+## `init` (deprecated alias)
 
-- deprecated compatibility alias
+- compatibility alias
 - in interactive terminals: behaves like `onboard`
 - in non-interactive terminals: runs bootstrap only (config + workspace + env doctor), without prompts
 
-## Legacy: `setup`
+## `setup` (deprecated alias)
 
-- deprecated compatibility alias
+- compatibility alias
 - behaves like `onboard`
 
 ## `agent`

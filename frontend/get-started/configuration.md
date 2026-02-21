@@ -1,6 +1,6 @@
 # Configuration
 
-OpenPocket loads config from JSON, merges with defaults, normalizes legacy keys, and writes a resolved runtime structure.
+OpenPocket loads config from JSON, merges with defaults, normalizes compatibility keys, and writes a resolved runtime structure.
 
 ## File Location
 
@@ -17,7 +17,7 @@ Resolution order:
 At startup, config handling does the following:
 
 1. Parse JSON from config path.
-2. Convert legacy `snake_case` keys to `camelCase` keys.
+2. Convert compatibility `snake_case` keys to `camelCase` keys.
 3. Deep-merge with default config object.
 4. Normalize model profiles and typed fields.
 5. Resolve paths (`~` and relative paths to absolute).
@@ -39,7 +39,7 @@ For human-auth relay:
 - else use env from `humanAuth.apiKeyEnv` (default `OPENPOCKET_HUMAN_AUTH_KEY`)
 - if both are empty, relay still works in no-auth mode (recommended only for trusted local setups)
 
-## Legacy Keys
+## Backward Compatibility Keys
 
 The loader accepts old keys and maps them automatically, including:
 
@@ -47,7 +47,7 @@ The loader accepts old keys and maps them automatically, including:
 - top-level (also): `heartbeat_config`, `cron_config`
 - nested: `avd_name`, `android_sdk_root`, `bot_token`, `max_steps`, `save_step_screenshots`, `allowed_commands`, `base_url`, `api_key`, `reasoning_effort`, etc.
 
-After `onboard` (or legacy `init`), saved config uses camelCase keys.
+After `onboard`, saved config uses camelCase keys.
 
 ## Validation
 

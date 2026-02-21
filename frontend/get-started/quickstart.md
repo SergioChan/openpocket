@@ -74,8 +74,6 @@ If you explicitly want a user-local PATH command without npm global install:
 ./openpocket install-cli
 ```
 
-Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
-
 ## Env Vars
 
 ```bash

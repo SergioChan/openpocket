@@ -4,7 +4,7 @@ OpenPocket persists execution traces into markdown files under workspace.
 
 ## Bootstrap
 
-On onboard/load (or legacy init), OpenPocket ensures these directories:
+On `onboard` / config load (including deprecated `init` alias), OpenPocket ensures these directories:
 
 - `workspace/memory`
 - `workspace/sessions`
