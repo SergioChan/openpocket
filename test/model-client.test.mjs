@@ -25,6 +25,10 @@ function makeSnapshot() {
     height: 2400,
     screenshotBase64: "abc",
     capturedAt: new Date().toISOString(),
+    scaleX: 1,
+    scaleY: 1,
+    scaledWidth: 1080,
+    scaledHeight: 2400,
   };
 }
 
@@ -40,13 +44,14 @@ test("ModelClient falls back from chat to responses", async () => {
     },
     responses: {
       create: async () => ({
-        output_text: '{"thought":"done","action":{"type":"finish","message":"ok"}}',
+        output: [
+          {
+            type: "function_call",
+            name: "finish",
+            arguments: '{"thought":"done","message":"ok"}',
+          },
+        ],
       }),
-    },
-    completions: {
-      create: async () => {
-        throw new Error("not needed");
-      },
     },
   };
 
@@ -64,7 +69,7 @@ test("ModelClient falls back from chat to responses", async () => {
   assert.equal(client.modeHint, "responses");
 });
 
-test("ModelClient converts invalid JSON output into wait action", async () => {
+test("ModelClient parses chat tool call correctly", async () => {
   const client = new ModelClient(makeProfile(), "dummy");
   client.client = {
     chat: {
@@ -73,7 +78,14 @@ test("ModelClient converts invalid JSON output into wait action", async () => {
           choices: [
             {
               message: {
-                content: "this is not json",
+                tool_calls: [
+                  {
+                    function: {
+                      name: "tap",
+                      arguments: '{"thought":"tapping button","x":540,"y":1200}',
+                    },
+                  },
+                ],
               },
             },
           ],
@@ -81,11 +93,6 @@ test("ModelClient converts invalid JSON output into wait action", async () => {
       },
     },
     responses: {
-      create: async () => {
-        throw new Error("not needed");
-      },
-    },
-    completions: {
       create: async () => {
         throw new Error("not needed");
       },
@@ -100,7 +107,38 @@ test("ModelClient converts invalid JSON output into wait action", async () => {
     history: [],
   });
 
-  assert.equal(out.action.type, "wait");
-  assert.match(out.action.reason, /model output was not valid JSON/);
-  assert.match(out.thought, /not json/);
+  assert.equal(out.action.type, "tap");
+  assert.equal(out.action.x, 540);
+  assert.equal(out.action.y, 1200);
+  assert.equal(out.thought, "tapping button");
+});
+
+test("ModelClient fails when no tool call is returned", async () => {
+  const client = new ModelClient(makeProfile(), "dummy");
+  client.client = {
+    chat: {
+      completions: {
+        create: async () => ({
+          choices: [{ message: { content: "no tool call here" } }],
+        }),
+      },
+    },
+    responses: {
+      create: async () => ({
+        output: [{ type: "text", text: "no tool call here either" }],
+      }),
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      client.nextStep({
+        systemPrompt: "system",
+        task: "task",
+        step: 2,
+        snapshot: makeSnapshot(),
+        history: [],
+      }),
+    /All model endpoints failed/,
+  );
 });

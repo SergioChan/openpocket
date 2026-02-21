@@ -20,6 +20,8 @@ function makeSnapshot() {
     capturedAt: new Date().toISOString(),
     scaleX: 1,
     scaleY: 1,
+    scaledWidth: 1080,
+    scaledHeight: 2400,
   };
 }
 
