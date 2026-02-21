@@ -620,34 +620,71 @@ h1, h2, h3, h4, h5, h6,
 .op-arch {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 20px;
   width: 100%;
+}
+
+.op-arch-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.op-arch-track {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px dashed rgba(0, 0, 0, 0.14);
+}
+
+.op-arch-track-label {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7a7a7a;
 }
 
 .op-arch-flow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
   width: 100%;
 }
 
 .op-arch-group {
-  display: flex;
-  align-items: center;
+  will-change: opacity, transform;
 }
 
 .op-arch-node {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 46px;
-  padding: 12px 40px;
+  height: 42px;
+  padding: 10px 24px;
   border-radius: 10px;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 15px;
+  line-height: 22px;
   font-weight: 500;
   white-space: nowrap;
   transition: border-color 0.25s ease;
+}
+
+.op-arch-node--compact {
+  height: 38px;
+  padding: 8px 16px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
 }
 
 .op-arch-node:hover {
@@ -675,7 +712,8 @@ h1, h2, h3, h4, h5, h6,
 .op-arch-stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .op-arch-arrow {
@@ -685,6 +723,7 @@ h1, h2, h3, h4, h5, h6,
   font-weight: 400;
   color: #707070;
   flex-shrink: 0;
+  padding: 0 2px;
 }
 
 /* ============================================
@@ -796,6 +835,8 @@ h1, h2, h3, h4, h5, h6,
 .dark .op-workflow-step p        { color: #c8cdd8 !important; }
 
 /* Architecture */
+.dark .op-arch-track             { background: rgba(255, 255, 255, 0.02) !important; border-color: rgba(255, 255, 255, 0.15) !important; }
+.dark .op-arch-track-label       { color: #95a2b8 !important; }
 .dark .op-arch-node--gray        { background: rgba(255, 255, 255, 0.04) !important; border-color: rgba(255, 255, 255, 0.12) !important; color: #f0f2f7 !important; }
 .dark .op-arch-node--blue        { background: rgba(43, 127, 255, 0.12) !important; border-color: rgba(43, 127, 255, 0.5) !important; color: #6da8ff !important; }
 .dark .op-arch-node--orange      { background: rgba(255, 138, 0, 0.12) !important; border-color: rgba(255, 179, 71, 0.5) !important; color: #ffb347 !important; }
@@ -903,7 +944,8 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-step-title { font-size: 44px !important; line-height: 52px !important; }
   .op-workflow-step-num   { font-size: 26px !important; }
   .op-workflow-grid       { gap: 32px; }
-  .op-arch-flow           { flex-wrap: wrap; justify-content: center; }
+  .op-arch-track          { padding: 12px; }
+  .op-arch-flow           { justify-content: flex-start; }
   .VPNavBar .container    { padding: 0 32px !important; }
 }
 
@@ -924,7 +966,8 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-grid       { flex-direction: column; gap: 28px; }
   .op-workflow-step-title { font-size: 36px !important; line-height: 44px !important; }
   .op-workflow-step-num   { font-size: 22px !important; }
-  .op-arch-flow           { flex-direction: column; align-items: center; gap: 12px; }
+  .op-arch-track-label    { font-size: 11px; line-height: 15px; }
+  .op-arch-flow           { flex-direction: column; align-items: flex-start; gap: 10px; }
   .op-arch-arrow          { font-size: 0; }
   .op-arch-arrow::after   { content: '\2193'; font-size: 16px; }
   .op-hero-actions        { flex-wrap: wrap; }
@@ -956,7 +999,10 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-step p     { font-size: 13px; line-height: 18px; }
   .op-usecase-card        { padding: 12px 14px !important; font-size: 14px !important; }
   .op-usecase-icon        { width: 32px !important; height: 32px !important; min-width: 32px; min-height: 32px; }
-  .op-arch-node           { padding: 10px 16px !important; font-size: 13px !important; }
+  .op-arch-track          { padding: 10px; border-radius: 12px; }
+  .op-arch-node           { padding: 8px 12px !important; font-size: 12px !important; line-height: 18px !important; height: 34px !important; }
+  .op-arch-node--compact  { padding: 8px 12px !important; font-size: 12px !important; line-height: 18px !important; height: 34px !important; }
+  .op-arch-arrow::after   { font-size: 14px; }
   .VPNavBar .container    { padding: 0 16px !important; }
 }
 

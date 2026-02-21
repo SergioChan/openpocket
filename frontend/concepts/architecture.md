@@ -1,95 +1,84 @@
 # Architecture
 
-OpenPocket is a local-first phone-use runtime centered on a local Android emulator.
+OpenPocket is a local-first phone-use runtime that executes automation on a local Android emulator and keeps state auditable on disk.
 
-## Topology
+## End-to-End Topology
 
-```text
-User (CLI / Telegram / Panel)
-           |
-           v
-Gateway / Command Router
-           |
-           v
-AgentRuntime + HeartbeatRunner + CronService + HumanAuthBridge
-   |          |          |            |              |
-   v          v          v            v              v
-ModelClient AdbRuntime SkillLoader ScriptExecutor LocalHumanAuthStack
-    |          |                                       |
-    v          v                                       v
- LLM APIs   Android Emulator (local adb target)   HumanAuthRelay + Optional ngrok tunnel
+```mermaid
+flowchart LR
+  U["User Surfaces<br/>CLI / Telegram / Dashboard"] --> G["Gateway Runtime<br/>runGatewayLoop"]
+  G --> A["Agent Runtime"]
+  A --> D["ADB Runtime"]
+  D --> E["Android Emulator"]
+
+  G --> TG["Telegram Gateway"]
+  G --> H["HeartbeatRunner"]
+  G --> C["CronService"]
+
+  A --> M["Model Client"]
+  M --> P["LLM Providers<br/>OpenAI / OpenRouter / Blockrun / AutoGLM"]
+
+  A --> SK["Skill Loader"]
+  A --> SE["Script Executor"]
+  A --> S["Session + Memory + Screenshot Stores"]
+  D --> S
+  SE --> S
+
+  A --> HB["HumanAuthBridge"]
+  HB --> R["Local HumanAuthRelayServer"]
+  R --> N["ngrok Tunnel (optional)"]
+  N --> PH["Phone Approval Page"]
+  PH --> R
+  R --> HB
 ```
+
+## Runtime Planes
+
+- Control plane: `runGatewayLoop`, `TelegramGateway`, `HeartbeatRunner`, and `CronService` keep long-running operations stable.
+- Intelligence plane: `AgentRuntime` + `ModelClient` produce next-step actions from multimodal context.
+- Execution plane: `AdbRuntime` drives the local emulator and captures snapshots for each step.
+- Persistence plane: sessions, memory, screenshots, and script artifacts are written under `OPENPOCKET_HOME`.
+- Human-authorization plane: `HumanAuthBridge` blocks task progress when approval is required and resumes after a decision.
+
+## Primary Task Loop
+
+1. Receive task from CLI, Telegram, or dashboard.
+2. Create session context and resolve model profile.
+3. For each step, capture device state and ask the model for one normalized action.
+4. Execute action through `adb` or `ScriptExecutor`.
+5. Persist step output and optional screenshot artifacts.
+6. Stop on `finish`, step limit, error, or explicit user stop.
+7. Finalize session and append daily memory.
+
+## Human Authorization Flow
+
+1. Agent emits `request_human_auth` when blocked by real-device checks or sensitive checkpoints.
+2. `HumanAuthBridge` creates a request on `HumanAuthRelayServer`.
+3. Relay returns one-time approval URL and poll token.
+4. Gateway sends the URL to Telegram.
+5. User approves or rejects from phone browser.
+6. Relay status is polled and mapped back to agent decision.
+7. Agent resumes execution or exits based on decision.
+
+Detailed token model and delegation payloads are in [Remote Human Authorization](./remote-human-authorization.md).
 
 ## Why Local Emulator
 
-- automation does not consume runtime resources on the user’s main phone
-- execution remains local instead of running on a hosted cloud phone service
-- task artifacts and permissions stay under local control
+- No hosted cloud phone runtime is required.
+- Your device control and artifacts remain local.
+- Human and agent can hand off control on the same emulator session.
 
-## Control Modes
+## Model Compatibility
 
-OpenPocket supports two complementary control paths on the same runtime:
+Endpoint fallback order:
 
-- **Human direct control**: users can directly operate the local emulator.
-- **Agent control**: agent actions operate the local emulator via `adb`.
+- Task loop (`ModelClient`): `chat` -> `responses` -> `completions`
+- Chat assistant (`ChatAssistant`): `responses` -> `chat` -> `completions`
 
-This makes human-agent handoff practical for real app workflows.
+This keeps providers with partial endpoint support usable without changing user workflow.
 
-For authorization checkpoints, gateway also supports a third interaction surface:
+## Current Extension Direction
 
-- **Remote auth handoff**: one-time web link approval (plus Telegram fallback commands) when `request_human_auth` is emitted.
-
-Detailed protocol, token model, and delegation application matrix are documented in [Remote Human Authorization](./remote-human-authorization.md).
-
-## Components
-
-- `AgentRuntime`: orchestrates task loop, step execution, and session/memory persistence.
-- `ModelClient`: builds multimodal prompts, calls model endpoints, parses normalized actions.
-- `AdbRuntime`: captures snapshots and executes mobile actions (`tap`, `swipe`, `type`, etc.).
-- `EmulatorManager`: manages emulator lifecycle (`start`, `stop`, `status`, `screenshot`).
-- `WorkspaceStore`: writes auditable session and daily memory files.
-- `SkillLoader`: loads markdown skills from workspace/local/bundled sources.
-- `ScriptExecutor`: validates and executes `run_script` with allowlist and safety controls.
-- `TelegramGateway`: routes chat/task commands and sends progress.
-- `HeartbeatRunner`: emits liveness snapshots and stuck-task warnings.
-- `CronService`: triggers scheduled tasks from `workspace/cron/jobs.json`.
-- `runGatewayLoop`: robust long-running gateway loop with graceful restart/stop behavior.
-- `HumanAuthBridge`: blocks task flow on `request_human_auth` and waits for human approval.
-- `HumanAuthRelayServer`: serves one-time approval web links and polling APIs for unblock flows.
-- `LocalHumanAuthStack`: auto-starts local relay (and optional ngrok tunnel) when gateway boots.
-
-## Task Flow
-
-1. Create a session markdown file.
-2. Resolve model profile and credentials.
-3. For each step:
-   - capture emulator snapshot
-   - optionally persist screenshot
-   - request next action from model
-   - execute action via `adb` or script runner
-   - append step history to session
-   - emit progress callback when configured
-4. Stop on `finish`, step cap, error, or explicit user stop.
-5. Finalize session and append one daily memory entry.
-6. Optionally return emulator to home screen.
-
-## Model Fallback
-
-OpenPocket attempts provider endpoints in fallback order:
-
-- task loop (`ModelClient`): `chat` -> `responses` -> `completions`
-- chat assistant (`ChatAssistant`): `responses` -> `chat` -> `completions`
-
-This keeps runtime compatibility across providers with partial endpoint support.
-
-## Persistence
-
-- runtime state is stored under `OPENPOCKET_HOME`
-- task execution is auditable through session/memory/script artifacts
-- screenshot storage uses configured retention limits
-
-## Near-Term Extensions
-
-Planned next step:
-
-- richer remote phone controls beyond auth approvals (pause/resume/retry/session-level controls)
+- Richer remote controls beyond approval-only flows.
+- Stronger long-horizon memory retrieval and compaction.
+- More deterministic scenario-driven integration tests for gateway + human-auth + emulator loops.
