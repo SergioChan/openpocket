@@ -823,6 +823,34 @@ export class DashboardServer {
       grid-template-columns: minmax(260px, 34%) 1fr;
       gap: 10px;
     }
+    .runtime-layout {
+      display: grid;
+      grid-template-columns: minmax(340px, 32%) minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .runtime-left {
+      display: grid;
+      gap: 12px;
+    }
+    .runtime-right {
+      min-width: 0;
+    }
+    .runtime-preview-card {
+      min-height: 78vh;
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      gap: 10px;
+    }
+    .runtime-preview-wrap {
+      min-height: 58vh;
+      max-height: none;
+      height: 100%;
+    }
+    .runtime-preview-wrap #preview-image {
+      max-height: calc(78vh - 190px);
+      max-width: 100%;
+    }
     .list-box {
       width: 100%;
       min-height: 250px;
@@ -853,6 +881,18 @@ export class DashboardServer {
       }
       .split {
         grid-template-columns: 1fr;
+      }
+      .runtime-layout {
+        grid-template-columns: 1fr;
+      }
+      .runtime-preview-card {
+        min-height: auto;
+      }
+      .runtime-preview-wrap {
+        min-height: 340px;
+      }
+      .runtime-preview-wrap #preview-image {
+        max-height: 60vh;
       }
       .layout {
         padding: 12px;
@@ -887,65 +927,69 @@ export class DashboardServer {
     <div class="status-line" id="status-line"></div>
 
     <section class="tab-panel active" data-panel="runtime">
-      <div class="grid cols-2">
-        <div class="card">
-          <h3>Gateway</h3>
-          <p class="hint">Gateway is managed by CLI in integrated mode. Runtime status refreshes automatically.</p>
-          <div class="row">
-            <button class="btn" id="runtime-refresh-btn">Refresh Runtime</button>
+      <div class="runtime-layout">
+        <div class="runtime-left">
+          <div class="card">
+            <h3>Gateway</h3>
+            <p class="hint">Gateway is managed by CLI in integrated mode. Runtime status refreshes automatically.</p>
+            <div class="row">
+              <button class="btn" id="runtime-refresh-btn">Refresh Runtime</button>
+            </div>
+            <div class="kv" id="gateway-kv"></div>
           </div>
-          <div class="kv" id="gateway-kv"></div>
+
+          <div class="card">
+            <h3>Android Emulator</h3>
+            <p class="hint">Control emulator lifecycle and visibility while tasks continue in background.</p>
+            <div class="row">
+              <button class="btn primary" data-emu-action="start">Start</button>
+              <button class="btn warn" data-emu-action="stop">Stop</button>
+              <button class="btn" data-emu-action="show">Show</button>
+              <button class="btn" data-emu-action="hide">Hide</button>
+              <button class="btn" id="emu-refresh-btn">Refresh Status</button>
+            </div>
+            <div class="kv" id="emulator-kv"></div>
+          </div>
+
+          <div class="card">
+            <h3>Core Paths</h3>
+            <div class="grid cols-2">
+              <div>
+                <label for="workspace-input">Workspace</label>
+                <input type="text" id="workspace-input" />
+              </div>
+              <div>
+                <label for="state-input">State</label>
+                <input type="text" id="state-input" />
+              </div>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <button class="btn primary" id="save-core-paths-btn">Save Config</button>
+            </div>
+          </div>
         </div>
 
-        <div class="card">
-          <h3>Android Emulator</h3>
-          <p class="hint">Control emulator lifecycle and visibility while tasks continue in background.</p>
-          <div class="row">
-            <button class="btn primary" data-emu-action="start">Start</button>
-            <button class="btn warn" data-emu-action="stop">Stop</button>
-            <button class="btn" data-emu-action="show">Show</button>
-            <button class="btn" data-emu-action="hide">Hide</button>
-            <button class="btn" id="emu-refresh-btn">Refresh Status</button>
+        <div class="runtime-right">
+          <div class="card runtime-preview-card">
+            <h3>Emulator Screen Preview</h3>
+            <div class="row">
+              <button class="btn" id="preview-refresh-btn">Refresh Preview</button>
+              <label class="row">
+                <input type="checkbox" id="preview-auto" />
+                <span>Auto refresh (2s)</span>
+              </label>
+              <span class="kv" id="preview-meta"></span>
+            </div>
+            <div class="row">
+              <input type="text" id="emulator-text-input" placeholder="Type text to active input field" />
+              <button class="btn" id="emulator-text-send">Send Text</button>
+            </div>
+            <div class="preview-wrap runtime-preview-wrap">
+              <img id="preview-image" alt="Emulator preview" />
+              <div class="preview-empty" id="preview-empty">Preview unavailable. Start emulator and click Refresh Preview.</div>
+            </div>
+            <div class="hint">Click on preview image to send tap. Coordinates are mapped to device pixels.</div>
           </div>
-          <div class="kv" id="emulator-kv"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Emulator Screen Preview</h3>
-        <div class="row">
-          <button class="btn" id="preview-refresh-btn">Refresh Preview</button>
-          <label class="row">
-            <input type="checkbox" id="preview-auto" />
-            <span>Auto refresh (2s)</span>
-          </label>
-          <span class="kv" id="preview-meta"></span>
-        </div>
-        <div class="row" style="margin-top:10px;">
-          <input type="text" id="emulator-text-input" placeholder="Type text to active input field" />
-          <button class="btn" id="emulator-text-send">Send Text</button>
-        </div>
-        <div class="preview-wrap" style="margin-top:10px;">
-          <img id="preview-image" alt="Emulator preview" />
-          <div class="preview-empty" id="preview-empty">Preview unavailable. Start emulator and click Refresh Preview.</div>
-        </div>
-        <div class="hint">Click on preview image to send tap. Coordinates are mapped to device pixels.</div>
-      </div>
-
-      <div class="card">
-        <h3>Core Paths</h3>
-        <div class="grid cols-2">
-          <div>
-            <label for="workspace-input">Workspace</label>
-            <input type="text" id="workspace-input" />
-          </div>
-          <div>
-            <label for="state-input">State</label>
-            <input type="text" id="state-input" />
-          </div>
-        </div>
-        <div class="row" style="margin-top:10px;">
-          <button class="btn primary" id="save-core-paths-btn">Save Config</button>
         </div>
       </div>
     </section>
