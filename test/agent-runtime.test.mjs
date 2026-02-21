@@ -284,6 +284,155 @@ test("AgentRuntime auto-triggers human auth on Android permission dialog app", a
   }
 });
 
+test("AgentRuntime maps approved permission decision to permission dialog tap", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  const actions = [];
+  const uiDumpXml = [
+    "<hierarchy rotation=\"0\">",
+    "<node index=\"0\" text=\"Don't allow\" resource-id=\"com.android.permissioncontroller:id/permission_deny_button\" class=\"android.widget.Button\" package=\"com.android.permissioncontroller\" clickable=\"true\" enabled=\"true\" bounds=\"[56,2100][520,2200]\" />",
+    "<node index=\"1\" text=\"Allow\" resource-id=\"com.android.permissioncontroller:id/permission_allow_button\" class=\"android.widget.Button\" package=\"com.android.permissioncontroller\" clickable=\"true\" enabled=\"true\" bounds=\"[560,2100][1024,2200]\" />",
+    "</hierarchy>",
+  ].join("");
+
+  runtime.adb = {
+    captureScreenSnapshot: () => ({
+      ...makeSnapshot(),
+      currentApp: "com.android.permissioncontroller",
+    }),
+    resolveDeviceId: () => "emulator-5554",
+    executeAction: async (action) => {
+      actions.push(action);
+      return "ok";
+    },
+  };
+  runtime.emulator = {
+    runAdb: (args) => {
+      if (Array.isArray(args) && args.includes("cat")) {
+        return uiDumpXml;
+      }
+      return "ok";
+    },
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  let callCount = 0;
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return {
+        thought: "Need permission decision",
+        action: {
+          type: "request_human_auth",
+          capability: "permission",
+          instruction: "Please decide this permission.",
+          timeoutSec: 90,
+        },
+        raw: '{"thought":"Need permission decision","action":{"type":"request_human_auth","capability":"permission","instruction":"Please decide this permission.","timeoutSec":90}}',
+      };
+    }
+    return {
+      thought: "Done",
+      action: { type: "finish", message: "Completed after permission decision" },
+      raw: '{"thought":"Done","action":{"type":"finish","message":"Completed after permission decision"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask(
+      "permission decision tap test",
+      undefined,
+      undefined,
+      async () => ({
+        requestId: "req-perm-tap",
+        approved: true,
+        status: "approved",
+        message: "Approved from phone",
+        decidedAt: new Date().toISOString(),
+        artifactPath: null,
+      }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      actions.some(
+        (action) =>
+          action.type === "tap"
+          && action.reason === "human_auth_permission_approve"
+          && action.x >= 760
+          && action.y >= 2100,
+      ),
+      true,
+    );
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+  }
+});
+
+test("AgentRuntime applies OTP code from manual approval note when no artifact is provided", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  const actions = [];
+
+  runtime.adb = {
+    captureScreenSnapshot: () => makeSnapshot(),
+    resolveDeviceId: () => "emulator-5554",
+    executeAction: async (action) => {
+      actions.push(action);
+      return "ok";
+    },
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  let callCount = 0;
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return {
+        thought: "Need OTP code",
+        action: {
+          type: "request_human_auth",
+          capability: "2fa",
+          instruction: "Please provide current OTP.",
+          timeoutSec: 90,
+        },
+        raw: '{"thought":"Need OTP code","action":{"type":"request_human_auth","capability":"2fa","instruction":"Please provide current OTP.","timeoutSec":90}}',
+      };
+    }
+    return {
+      thought: "Done",
+      action: { type: "finish", message: "Completed after OTP note" },
+      raw: '{"thought":"Done","action":{"type":"finish","message":"Completed after OTP note"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask(
+      "otp note fallback test",
+      undefined,
+      undefined,
+      async () => ({
+        requestId: "req-otp-note",
+        approved: true,
+        status: "approved",
+        message: "123456",
+        decidedAt: new Date().toISOString(),
+        artifactPath: null,
+      }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      actions.some((action) => action.type === "type" && action.text === "123456"),
+      true,
+    );
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+  }
+});
+
 test("AgentRuntime applies delegated text artifact after human auth approval", async () => {
   const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
   const actions = [];

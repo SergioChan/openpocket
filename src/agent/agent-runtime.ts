@@ -29,6 +29,44 @@ const AUTO_PERMISSION_DIALOG_PACKAGES = [
   "packageinstaller",
 ];
 
+const PERMISSION_APPROVE_TEXT_HINTS = [
+  "while using",
+  "only this time",
+  "allow all the time",
+  "allow",
+  "continue",
+  "ok",
+  "yes",
+  "grant",
+  "permit",
+];
+
+const PERMISSION_DENY_TEXT_HINTS = [
+  "don't allow",
+  "dont allow",
+  "deny",
+  "not now",
+  "cancel",
+  "no",
+];
+
+const PERMISSION_APPROVE_ID_HINTS = [
+  "allow",
+  "grant",
+  "positive",
+  "continue",
+  "button1",
+];
+
+const PERMISSION_DENY_ID_HINTS = [
+  "deny",
+  "negative",
+  "cancel",
+  "dont_allow",
+  "button2",
+  "button3",
+];
+
 const SYSTEM_PROMPT_CONTEXT_FILES = [
   "AGENTS.md",
   "SOUL.md",
@@ -44,6 +82,19 @@ const SYSTEM_PROMPT_MAX_CHARS_TOTAL = 18_000;
 type DelegationApplyResult = {
   message: string;
   templateHint: string | null;
+};
+
+type PermissionDialogNode = {
+  text: string;
+  contentDesc: string;
+  resourceId: string;
+  className: string;
+  clickable: boolean;
+  enabled: boolean;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 };
 
 export class AgentRuntime {
@@ -209,6 +260,33 @@ export class AgentRuntime {
     return null;
   }
 
+  private extractDelegatedTextFromDecisionMessage(message: string): string | null {
+    const raw = String(message || "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    const normalized = raw.toLowerCase();
+    if (
+      normalized.startsWith("approved by ") ||
+      normalized.startsWith("rejected by ") ||
+      normalized === "approved from web link." ||
+      normalized === "rejected from web link."
+    ) {
+      return null;
+    }
+
+    const explicitCode = raw.match(/\b\d{4,10}\b/);
+    if (explicitCode?.[0]) {
+      return explicitCode[0];
+    }
+
+    if (/^[A-Za-z0-9._-]{4,32}$/.test(raw)) {
+      return raw;
+    }
+    return null;
+  }
+
   private extractDelegatedGeo(
     artifactJson: Record<string, unknown> | null,
   ): { lat: number; lon: number } | null {
@@ -298,55 +376,353 @@ export class AgentRuntime {
     };
   }
 
+  private normalizePermissionUiText(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[’‘`´]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private parseUiNodeAttributes(attributesRaw: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    const attrRe = /([a-zA-Z0-9_:-]+)="([^"]*)"/g;
+    let match = attrRe.exec(attributesRaw);
+    while (match) {
+      const key = match[1];
+      const value = match[2] ?? "";
+      out[key] = value;
+      match = attrRe.exec(attributesRaw);
+    }
+    return out;
+  }
+
+  private parseBounds(boundsRaw: string): {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  } | null {
+    const match = boundsRaw.match(/^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/);
+    if (!match) {
+      return null;
+    }
+    const left = Number(match[1]);
+    const top = Number(match[2]);
+    const right = Number(match[3]);
+    const bottom = Number(match[4]);
+    if (![left, top, right, bottom].every((value) => Number.isFinite(value))) {
+      return null;
+    }
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+    return { left, top, right, bottom };
+  }
+
+  private parsePermissionDialogNodes(uiDumpXml: string): PermissionDialogNode[] {
+    const nodes: PermissionDialogNode[] = [];
+    const nodeRe = /<node\s+([^>]*?)\/>/g;
+    let match = nodeRe.exec(uiDumpXml);
+    while (match) {
+      const attrs = this.parseUiNodeAttributes(match[1] ?? "");
+      const parsedBounds = this.parseBounds(String(attrs.bounds ?? "").trim());
+      if (!parsedBounds) {
+        match = nodeRe.exec(uiDumpXml);
+        continue;
+      }
+      nodes.push({
+        text: String(attrs.text ?? ""),
+        contentDesc: String(attrs["content-desc"] ?? ""),
+        resourceId: String(attrs["resource-id"] ?? ""),
+        className: String(attrs.class ?? ""),
+        clickable: String(attrs.clickable ?? "").toLowerCase() === "true",
+        enabled: String(attrs.enabled ?? "").toLowerCase() !== "false",
+        left: parsedBounds.left,
+        top: parsedBounds.top,
+        right: parsedBounds.right,
+        bottom: parsedBounds.bottom,
+      });
+      match = nodeRe.exec(uiDumpXml);
+    }
+    return nodes;
+  }
+
+  private scorePermissionNodeCandidate(node: PermissionDialogNode, approved: boolean): number {
+    if (!node.enabled) {
+      return 0;
+    }
+
+    const combined = this.normalizePermissionUiText(
+      [node.text, node.contentDesc].filter(Boolean).join(" "),
+    );
+    const idNormalized = this.normalizePermissionUiText(node.resourceId);
+    const textHints = approved ? PERMISSION_APPROVE_TEXT_HINTS : PERMISSION_DENY_TEXT_HINTS;
+    const idHints = approved ? PERMISSION_APPROVE_ID_HINTS : PERMISSION_DENY_ID_HINTS;
+    let score = 0;
+
+    for (const hint of textHints) {
+      if (combined.includes(hint)) {
+        score = Math.max(score, hint === "allow" ? 80 : 120);
+      }
+    }
+    for (const hint of idHints) {
+      if (idNormalized.includes(hint)) {
+        score = Math.max(score, 90);
+      }
+    }
+    if (!node.clickable && !node.className.toLowerCase().includes("button")) {
+      score = Math.max(0, score - 40);
+    }
+    return score;
+  }
+
+  private pickPermissionDialogNode(
+    nodes: PermissionDialogNode[],
+    approved: boolean,
+  ): PermissionDialogNode | null {
+    if (nodes.length === 0) {
+      return null;
+    }
+
+    const scored = nodes
+      .map((node) => ({
+        node,
+        score: this.scorePermissionNodeCandidate(node, approved),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+        if (approved) {
+          if (b.node.right !== a.node.right) {
+            return b.node.right - a.node.right;
+          }
+          return b.node.bottom - a.node.bottom;
+        }
+        if (a.node.left !== b.node.left) {
+          return a.node.left - b.node.left;
+        }
+        return b.node.bottom - a.node.bottom;
+      });
+
+    if (scored.length > 0) {
+      return scored[0]?.node ?? null;
+    }
+
+    const actionable = nodes.filter(
+      (node) => node.enabled && (node.clickable || node.className.toLowerCase().includes("button")),
+    );
+    if (actionable.length === 0) {
+      return null;
+    }
+    const maxTop = Math.max(...actionable.map((node) => node.top));
+    const row = actionable.filter((node) => node.top >= maxTop - 160);
+    if (row.length === 0) {
+      return null;
+    }
+    row.sort((a, b) => {
+      if (approved) {
+        return b.right - a.right;
+      }
+      return a.left - b.left;
+    });
+    return row[0] ?? null;
+  }
+
+  private resolveDelegationDeviceId(): string {
+    const adbLike = this.adb as unknown as {
+      resolveDeviceId?: (preferred?: string | null) => string;
+    };
+    if (typeof adbLike.resolveDeviceId === "function") {
+      return adbLike.resolveDeviceId(this.config.agent.deviceId);
+    }
+    try {
+      const status = this.emulator.status();
+      if (status.bootedDevices.length > 0) {
+        return status.bootedDevices[0];
+      }
+      if (status.devices.length > 0) {
+        return status.devices[0];
+      }
+    } catch {
+      // Ignore status probe failure in tests/mocks.
+    }
+    return this.config.agent.deviceId || "emulator-5554";
+  }
+
+  private isPermissionDialogApp(currentApp: string): boolean {
+    const normalized = String(currentApp || "").toLowerCase();
+    return AUTO_PERMISSION_DIALOG_PACKAGES.some((token) => normalized.includes(token));
+  }
+
+  private async applyPermissionDialogDecision(
+    capability: HumanAuthCapability,
+    decision: HumanAuthDecision,
+    currentApp: string,
+  ): Promise<DelegationApplyResult | null> {
+    if (decision.status === "timeout") {
+      return null;
+    }
+    const shouldHandle =
+      capability === "permission" || this.isPermissionDialogApp(currentApp);
+    if (!shouldHandle) {
+      return null;
+    }
+
+    const deviceId = this.resolveDelegationDeviceId();
+    let uiDumpXml = "";
+    try {
+      this.emulator.runAdb(
+        ["-s", deviceId, "shell", "uiautomator", "dump", "/sdcard/openpocket-window.xml"],
+        15_000,
+      );
+      uiDumpXml = this.emulator.runAdb(
+        ["-s", deviceId, "shell", "cat", "/sdcard/openpocket-window.xml"],
+        15_000,
+      );
+      if (!uiDumpXml.includes("<hierarchy")) {
+        uiDumpXml = this.emulator.runAdb(
+          ["-s", deviceId, "shell", "cat", "/sdcard/window_dump.xml"],
+          15_000,
+        );
+      }
+    } catch {
+      uiDumpXml = "";
+    }
+
+    const nodes = this.parsePermissionDialogNodes(uiDumpXml);
+    const targetNode = this.pickPermissionDialogNode(nodes, decision.approved);
+    if (!targetNode) {
+      return {
+        message: `permission dialog decision recorded (${decision.status}), but no actionable button was detected`,
+        templateHint: null,
+      };
+    }
+
+    const tapX = Math.max(0, Math.round((targetNode.left + targetNode.right) / 2));
+    const tapY = Math.max(0, Math.round((targetNode.top + targetNode.bottom) / 2));
+    const label =
+      targetNode.text.trim() ||
+      targetNode.contentDesc.trim() ||
+      targetNode.resourceId.trim() ||
+      "(unlabeled)";
+
+    await this.adb.executeAction(
+      {
+        type: "tap",
+        x: tapX,
+        y: tapY,
+        reason: decision.approved
+          ? "human_auth_permission_approve"
+          : "human_auth_permission_reject",
+      },
+      this.config.agent.deviceId,
+    );
+    await sleep(300);
+
+    return {
+      message: `permission dialog ${decision.approved ? "approve" : "reject"} tapped (${tapX}, ${tapY}) label="${label}"`,
+      templateHint: null,
+    };
+  }
+
   private async applyHumanDelegation(
     capability: HumanAuthCapability,
     decision: HumanAuthDecision,
+    currentApp: string,
   ): Promise<DelegationApplyResult | null> {
+    const messages: string[] = [];
+    let templateHint: string | null = null;
+
+    const permissionDecision = await this.applyPermissionDialogDecision(capability, decision, currentApp);
+    if (permissionDecision) {
+      messages.push(permissionDecision.message);
+      if (permissionDecision.templateHint) {
+        templateHint = permissionDecision.templateHint;
+      }
+    }
+
     if (!decision.approved || !decision.artifactPath) {
-      return null;
+      if (
+        decision.approved &&
+        !decision.artifactPath &&
+        (capability === "sms" || capability === "2fa" || capability === "qr" || capability === "voice")
+      ) {
+        const fallbackText = this.extractDelegatedTextFromDecisionMessage(decision.message);
+        if (fallbackText) {
+          const typed = await this.applyTextDelegation(fallbackText);
+          messages.push(typed.message);
+          if (typed.templateHint) {
+            templateHint = typed.templateHint;
+          }
+        }
+      }
+      if (messages.length === 0) {
+        return null;
+      }
+      return {
+        message: messages.join(" ; "),
+        templateHint,
+      };
     }
     if (!fs.existsSync(decision.artifactPath)) {
+      messages.push(`delegation artifact not found: ${decision.artifactPath}`);
       return {
-        message: `delegation artifact not found: ${decision.artifactPath}`,
-        templateHint: null,
+        message: messages.join(" ; "),
+        templateHint,
       };
     }
 
     try {
       const artifactJson = this.readJsonArtifact(decision.artifactPath);
+      let artifactResult: DelegationApplyResult | null = null;
 
       if (capability === "location") {
         const geo = this.extractDelegatedGeo(artifactJson);
         if (geo) {
-          return this.applyLocationDelegation(geo.lat, geo.lon);
+          artifactResult = await this.applyLocationDelegation(geo.lat, geo.lon);
         }
       }
 
-      if (capability === "sms" || capability === "2fa" || capability === "qr" || capability === "voice") {
+      if (!artifactResult && (capability === "sms" || capability === "2fa" || capability === "qr" || capability === "voice")) {
         const text = this.extractDelegatedText(artifactJson);
         if (text) {
-          return this.applyTextDelegation(text);
+          artifactResult = await this.applyTextDelegation(text);
         }
       }
 
-      if (artifactJson?.kind === "text" || artifactJson?.kind === "qr_text") {
+      if (!artifactResult && (artifactJson?.kind === "text" || artifactJson?.kind === "qr_text")) {
         const text = this.extractDelegatedText(artifactJson);
         if (text) {
-          return this.applyTextDelegation(text);
+          artifactResult = await this.applyTextDelegation(text);
         }
       }
 
-      if (this.isImageArtifactPath(decision.artifactPath)) {
-        return this.applyImageDelegation(decision.artifactPath);
+      if (!artifactResult && this.isImageArtifactPath(decision.artifactPath)) {
+        artifactResult = await this.applyImageDelegation(decision.artifactPath);
+      }
+
+      if (!artifactResult) {
+        artifactResult = {
+          message: `delegation artifact stored at ${decision.artifactPath}`,
+          templateHint: null,
+        };
+      }
+      messages.push(artifactResult.message);
+      if (artifactResult.templateHint) {
+        templateHint = artifactResult.templateHint;
       }
       return {
-        message: `delegation artifact stored at ${decision.artifactPath}`,
-        templateHint: null,
+        message: messages.join(" ; "),
+        templateHint,
       };
     } catch (error) {
+      messages.push(`delegation apply failed: ${(error as Error).message}`);
       return {
-        message: `delegation apply failed: ${(error as Error).message}`,
-        templateHint: null,
+        message: messages.join(" ; "),
+        templateHint,
       };
     }
   }
@@ -478,7 +854,11 @@ export class AgentRuntime {
             };
           }
 
-          const delegation = await this.applyHumanDelegation(autoAction.capability, decision);
+          const delegation = await this.applyHumanDelegation(
+            autoAction.capability,
+            decision,
+            snapshot.currentApp,
+          );
           const delegationResult = delegation?.message ?? null;
           const delegationTemplate = delegation?.templateHint ?? null;
           const decisionLine = delegationResult
@@ -653,7 +1033,11 @@ export class AgentRuntime {
             };
           }
 
-          const delegation = await this.applyHumanDelegation(output.action.capability, decision);
+          const delegation = await this.applyHumanDelegation(
+            output.action.capability,
+            decision,
+            snapshot.currentApp,
+          );
           const delegationResult = delegation?.message ?? null;
           const delegationTemplate = delegation?.templateHint ?? null;
           const decisionLine = delegationResult

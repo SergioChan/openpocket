@@ -361,6 +361,48 @@ export class TelegramGateway {
     return allow.includes(chatId);
   }
 
+  private isCodeBasedHumanAuthCapability(capability: string): boolean {
+    return capability === "sms" || capability === "2fa";
+  }
+
+  private normalizeOtpCode(text: string): string | null {
+    const compact = text.replace(/\s+/g, "");
+    if (/^\d{4,10}$/.test(compact)) {
+      return compact;
+    }
+    return null;
+  }
+
+  private async tryResolvePendingOtpFromPlainText(chatId: number, text: string): Promise<boolean> {
+    const code = this.normalizeOtpCode(text);
+    if (!code) {
+      return false;
+    }
+    const pending = this.humanAuth
+      .listPending()
+      .filter((item) => item.chatId === chatId && this.isCodeBasedHumanAuthCapability(item.capability));
+    if (pending.length !== 1) {
+      return false;
+    }
+
+    const requestId = pending[0].requestId;
+    const resolved = this.humanAuth.resolvePending(
+      requestId,
+      true,
+      code,
+      `chat:${chatId}:otp-inline`,
+    );
+    if (!resolved) {
+      return false;
+    }
+
+    await this.bot.sendMessage(
+      chatId,
+      `Received code for ${requestId}: ${code}\nContinuing task execution now.`,
+    );
+    return true;
+  }
+
   private async consumeMessage(message: Message): Promise<void> {
     const chatId = message.chat.id;
     if (!this.allowed(chatId)) {
@@ -554,6 +596,10 @@ export class TelegramGateway {
       return;
     }
 
+    if (await this.tryResolvePendingOtpFromPlainText(chatId, text)) {
+      return;
+    }
+
     const decision = await this.chat.decide(chatId, text);
     this.log(
       `decision chat=${chatId} mode=${decision.mode} confidence=${decision.confidence.toFixed(2)} reason=${decision.reason}`,
@@ -645,6 +691,7 @@ export class TelegramGateway {
                 return this.humanAuth.requestAndWait(
                   { chatId, task, request: { ...request, timeoutSec } },
                   async (opened) => {
+                    const isCodeFlow = this.isCodeBasedHumanAuthCapability(request.capability);
                     const lines = [
                       `Human authorization required (${request.capability}).`,
                       `Request ID: ${opened.requestId}`,
@@ -657,6 +704,24 @@ export class TelegramGateway {
                       opened.manualApproveCommand,
                       opened.manualRejectCommand,
                     ];
+
+                    if (isCodeFlow) {
+                      await this.bot.sendMessage(
+                        chatId,
+                        [
+                          ...lines,
+                          "",
+                          "Code flow (recommended):",
+                          `- reply plain code (4-10 digits), for example: 123456`,
+                          `- or run: ${opened.manualApproveCommand} <code>`,
+                          `- reject with: ${opened.manualRejectCommand}`,
+                          opened.openUrl
+                            ? "- web page is optional for SMS/2FA; Telegram code reply is faster."
+                            : "- web page is unavailable; use Telegram code reply.",
+                        ].join("\n"),
+                      );
+                      return;
+                    }
 
                     if (opened.openUrl) {
                       await this.bot.sendMessage(chatId, lines.join("\n"), {

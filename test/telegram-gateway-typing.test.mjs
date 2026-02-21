@@ -163,3 +163,68 @@ test("TelegramGateway consumes profile-update payload after chat reply", async (
     assert.match(messageCalls[1].text, /已同步 Telegram Bot 显示名/);
   });
 });
+
+test("TelegramGateway resolves pending 2FA request from plain numeric text", async () => {
+  await withTempHome("openpocket-telegram-otp-inline-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+
+    let resolved = null;
+    gateway.humanAuth.listPending = () => [
+      {
+        requestId: "auth-otp-1",
+        chatId: 9001,
+        task: "OTP flow",
+        capability: "2fa",
+        currentApp: "com.example",
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        relayEnabled: true,
+      },
+    ];
+    gateway.humanAuth.resolvePending = (requestId, approved, note, actor) => {
+      resolved = { requestId, approved, note, actor };
+      return true;
+    };
+
+    let decideCalled = false;
+    gateway.chat.decide = async () => {
+      decideCalled = true;
+      return {
+        mode: "chat",
+        task: "",
+        reply: "fallback",
+        confidence: 1,
+        reason: "fallback",
+      };
+    };
+
+    await gateway.consumeMessage({
+      chat: { id: 9001 },
+      text: "123456",
+    });
+
+    assert.deepEqual(
+      resolved,
+      {
+        requestId: "auth-otp-1",
+        approved: true,
+        note: "123456",
+        actor: "chat:9001:otp-inline",
+      },
+    );
+    assert.equal(decideCalled, false);
+    assert.equal(sent.length >= 1, true);
+    assert.match(sent[0].text, /Received code/i);
+  });
+});

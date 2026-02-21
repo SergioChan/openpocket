@@ -630,21 +630,30 @@ export class PermissionLabManager {
       return [
         "Open app OpenPocket PermissionLab.",
         `Tap button "${scenario.buttonLabel}" exactly once.`,
-        "Then call request_human_auth with capability=2fa and instruction='Please complete 2FA approval on your real phone.'",
-        "Wait for my decision from Telegram web link before doing anything else.",
+        "Then call request_human_auth with capability=2fa and instruction='Please provide your current 2FA code in Telegram.'",
+        "Wait for my decision from Telegram before doing anything else.",
         "After approval or rejection arrives, report the final result and whether the flow resumed.",
       ].join(" ");
     }
 
+    const codeFlowHint =
+      scenario.capability === "sms"
+        ? "For SMS, ask me directly in Telegram for the verification code and wait."
+        : "";
+
     return [
       "Open app OpenPocket PermissionLab.",
       `Tap button "${scenario.buttonLabel}" exactly once.`,
-      "If a system permission/auth dialog appears, do not approve or reject inside emulator.",
-      "Immediately call request_human_auth and wait for my decision from Telegram web link.",
+      "If emulator-local permission dialog appears, do not keep looping on it.",
+      `Immediately call request_human_auth with capability=${scenario.capability} and wait for my decision.`,
+      "For camera/location/qr style blocks, prefer real-device delegation data over emulator-local permission state.",
       "If delegated data is attached by human auth (text/geo/image), use it immediately to continue UI flow.",
       "For delegated image, follow gallery import template in history: tap upload/attach/gallery and pick the injected OpenPocket file from Downloads.",
+      codeFlowHint,
       "After I approve/reject on phone, continue and report final permission outcome (GRANTED/DENIED/already granted).",
-    ].join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
 
   recommendedTelegramTask(scenarioId?: string | null): string {
