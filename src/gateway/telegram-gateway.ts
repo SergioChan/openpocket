@@ -29,6 +29,10 @@ export const TELEGRAM_MENU_COMMANDS: TelegramBot.BotCommand[] = [
   { command: "run", description: "Force task mode with text" },
 ];
 
+export interface TelegramGatewayOptions {
+  onLogLine?: (line: string) => void;
+}
+
 export class TelegramGateway {
   private readonly config: OpenPocketConfig;
   private readonly emulator: EmulatorManager;
@@ -40,15 +44,17 @@ export class TelegramGateway {
   private readonly localHumanAuthStack: LocalHumanAuthStack;
   private localHumanAuthActive = false;
   private chat: ChatAssistant;
+  private readonly onLogLine: ((line: string) => void) | null;
   private running = false;
   private stoppedPromise: Promise<void> | null = null;
   private stopResolver: (() => void) | null = null;
 
-  constructor(config: OpenPocketConfig) {
+  constructor(config: OpenPocketConfig, options?: TelegramGatewayOptions) {
     this.config = config;
     this.emulator = new EmulatorManager(config);
     this.agent = new AgentRuntime(config);
     this.chat = new ChatAssistant(config);
+    this.onLogLine = options?.onLogLine ?? null;
 
     const token =
       config.telegram.botToken.trim() ||
@@ -96,8 +102,14 @@ export class TelegramGateway {
   }
 
   private log(message: string): void {
+    const line = `[OpenPocket][gateway] ${new Date().toISOString()} ${message}`;
     // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][gateway] ${new Date().toISOString()} ${message}`);
+    console.log(line);
+    this.onLogLine?.(line);
+  }
+
+  isRunning(): boolean {
+    return this.running;
   }
 
   private compact(text: string, maxChars: number): string {

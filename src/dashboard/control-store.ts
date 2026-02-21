@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 import type { OpenPocketConfig } from "../types";
 import { ensureDir, nowIso } from "../utils/paths";
@@ -182,7 +183,7 @@ function normalizePromptFiles(items: unknown[], workspaceDir: string): PromptFil
 
     let id = String(item.id ?? "").trim();
     if (!id || seen.has(id)) {
-      id = `prompt-${Math.random().toString(36).slice(2, 10)}`;
+      id = `prompt-${crypto.randomUUID()}`;
     }
 
     const titleRaw = String(item.title ?? "").trim();

@@ -13,6 +13,7 @@ import { loadConfig, saveConfig } from "./config";
 import { EmulatorManager } from "./device/emulator-manager";
 import { TelegramGateway } from "./gateway/telegram-gateway";
 import { runGatewayLoop } from "./gateway/run-loop";
+import { DashboardServer, type DashboardGatewayStatus } from "./dashboard/server";
 import { HumanAuthRelayServer } from "./human-auth/relay-server";
 import { SkillLoader } from "./skills/skill-loader";
 import { ScriptExecutor } from "./tools/script-executor";
@@ -48,6 +49,7 @@ Usage:
   openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
   openpocket [--config <path>] telegram setup
   openpocket [--config <path>] gateway [start|telegram]
+  openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
   openpocket panel start
 
@@ -64,6 +66,7 @@ Examples:
   openpocket script run --text "echo hello"
   openpocket telegram setup
   openpocket gateway start
+  openpocket dashboard start
   openpocket human-auth-relay start --port 8787
   openpocket panel start
 `);
@@ -167,6 +170,69 @@ function openPanelApp(appPath: string, launchArgs: string[] = []): boolean {
 
 function openReleasePage(url: string): void {
   spawnSync("/usr/bin/open", [url], { stdio: "ignore" });
+}
+
+function openUrlInBrowser(url: string): void {
+  if (process.platform === "darwin") {
+    spawnSync("/usr/bin/open", [url], { stdio: "ignore" });
+    return;
+  }
+  if (process.platform === "linux") {
+    spawnSync("xdg-open", [url], { stdio: "ignore" });
+    return;
+  }
+  if (process.platform === "win32") {
+    spawnSync("cmd", ["/c", "start", "", url], { stdio: "ignore", shell: false });
+  }
+}
+
+function findGatewayProcessPids(): number[] {
+  const ps = spawnSync("/bin/ps", ["-axo", "pid=,command="], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if ((ps.status ?? 1) !== 0 || !ps.stdout) {
+    return [];
+  }
+
+  const currentPid = process.pid;
+  const matches: number[] = [];
+  for (const rawLine of ps.stdout.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const match = line.match(/^(\d+)\s+(.*)$/);
+    if (!match?.[1] || !match[2]) {
+      continue;
+    }
+    const pid = Number(match[1]);
+    if (!Number.isFinite(pid) || pid === currentPid) {
+      continue;
+    }
+    const command = match[2].toLowerCase();
+    if (!command.includes("gateway start")) {
+      continue;
+    }
+    if (
+      command.includes("openpocket")
+      || command.includes("/dist/cli.js")
+      || command.includes("/src/cli.ts")
+    ) {
+      matches.push(pid);
+    }
+  }
+
+  return [...new Set(matches)].sort((a, b) => a - b);
+}
+
+function standaloneDashboardGatewayStatus(): DashboardGatewayStatus {
+  const pids = findGatewayProcessPids();
+  return {
+    running: pids.length > 0,
+    managed: false,
+    note: pids.length > 0 ? `detected gateway pid(s): ${pids.join(", ")}` : "no gateway process detected",
+  };
 }
 
 function parseGithubRepoFromReleaseUrl(releaseUrl: string): { owner: string; repo: string } | null {
@@ -524,6 +590,8 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
       const hasToken = Boolean(cfg.telegram.botToken.trim() || process.env[envName]?.trim());
       const totalSteps = 6;
+      let gateway: TelegramGateway | null = null;
+      let dashboard: DashboardServer | null = null;
 
       printStartupHeader(cfg);
       printStartupStep(1, totalSteps, "Load config", "ok");
@@ -576,27 +644,71 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
         );
       }
 
-      if (process.platform === "darwin") {
-        printStartupStep(4, totalSteps, "Ensure panel is running", "starting");
-        await runPanelCommand(configPath, ["start"]);
-        printStartupStep(4, totalSteps, "Ensure panel is running", "ok");
+      if (cfg.dashboard.enabled) {
+        printStartupStep(4, totalSteps, "Ensure local dashboard", "starting");
+        const createDashboard = (port: number): DashboardServer =>
+          new DashboardServer({
+            config: cfg,
+            mode: "integrated",
+            host: cfg.dashboard.host,
+            port,
+            getGatewayStatus: () => ({
+              running: gateway?.isRunning() ?? false,
+              managed: true,
+              note:
+                gateway?.isRunning()
+                  ? "managed by current gateway process"
+                  : "gateway initializing",
+            }),
+          });
+
+        try {
+          dashboard = createDashboard(cfg.dashboard.port);
+          await dashboard.start();
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "EADDRINUSE") {
+            dashboard = createDashboard(0);
+            await dashboard.start();
+          } else {
+            throw error;
+          }
+        }
+
+        printStartupStep(4, totalSteps, "Ensure local dashboard", `ok (${dashboard.address})`);
+        if (cfg.dashboard.autoOpenBrowser) {
+          openUrlInBrowser(dashboard.address);
+          // eslint-disable-next-line no-console
+          console.log(`[OpenPocket][gateway-start] Dashboard opened in browser: ${dashboard.address}`);
+        }
       } else {
-        printStartupStep(4, totalSteps, "Ensure panel is running", "skipped (macOS only)");
+        printStartupStep(4, totalSteps, "Ensure local dashboard", "skipped (disabled in config)");
       }
 
       printStartupStep(5, totalSteps, "Initialize gateway runtime", "starting");
-      const gateway = new TelegramGateway(cfg);
+      gateway = new TelegramGateway(cfg, {
+        onLogLine: (line) => {
+          dashboard?.ingestExternalLogLine(line);
+        },
+      });
       printStartupStep(5, totalSteps, "Initialize gateway runtime", "ok");
       printStartupStep(6, totalSteps, "Start services", "starting");
       await gateway.start();
       printStartupStep(6, totalSteps, "Start services", "ok");
       // eslint-disable-next-line no-console
       console.log("[OpenPocket][gateway-start] Gateway is running. Press Ctrl+C to stop.");
+      if (dashboard) {
+        // eslint-disable-next-line no-console
+        console.log(`[OpenPocket][gateway-start] Dashboard URL: ${dashboard.address}`);
+      }
       return {
         stop: async (reason?: string) => {
           // eslint-disable-next-line no-console
           console.log(`[OpenPocket][gateway-start] Stopping gateway (${reason ?? "run-loop-stop"})`);
-          await gateway.stop(reason ?? "run-loop-stop");
+          await gateway?.stop(reason ?? "run-loop-stop");
+          if (dashboard) {
+            await dashboard.stop();
+          }
         },
       };
     },
@@ -1070,6 +1182,61 @@ async function runPanelCommand(configPath: string | undefined, args: string[]): 
   return 0;
 }
 
+async function runDashboardCommand(configPath: string | undefined, args: string[]): Promise<number> {
+  const sub = (args[0] ?? "start").trim();
+  if (sub !== "start") {
+    throw new Error(`Unknown dashboard subcommand: ${sub}. Use: dashboard start`);
+  }
+
+  const { value: hostOption, rest: afterHost } = takeOption(args.slice(1), "--host");
+  const { value: portOption, rest } = takeOption(afterHost, "--port");
+  if (rest.length > 0) {
+    throw new Error(`Unexpected dashboard arguments: ${rest.join(" ")}`);
+  }
+
+  const cfg = loadConfig(configPath);
+  const parsedPort = Number(portOption ?? String(cfg.dashboard.port));
+  const port = Number.isFinite(parsedPort)
+    ? Math.max(1, Math.min(65535, Math.round(parsedPort)))
+    : cfg.dashboard.port;
+  const host = hostOption?.trim() || cfg.dashboard.host || "127.0.0.1";
+
+  const dashboard = new DashboardServer({
+    config: cfg,
+    mode: "standalone",
+    host,
+    port,
+    getGatewayStatus: standaloneDashboardGatewayStatus,
+  });
+
+  await dashboard.start();
+  // eslint-disable-next-line no-console
+  console.log(`[OpenPocket][dashboard] started at ${dashboard.address}`);
+  // eslint-disable-next-line no-console
+  console.log("[OpenPocket][dashboard] press Ctrl+C to stop");
+
+  if (cfg.dashboard.autoOpenBrowser) {
+    openUrlInBrowser(dashboard.address);
+    // eslint-disable-next-line no-console
+    console.log(`[OpenPocket][dashboard] opened browser: ${dashboard.address}`);
+  }
+
+  await new Promise<void>((resolve) => {
+    const onSignal = (): void => {
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
+      resolve();
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+  });
+
+  await dashboard.stop();
+  // eslint-disable-next-line no-console
+  console.log("[OpenPocket][dashboard] stopped");
+  return 0;
+}
+
 async function runHumanAuthRelayCommand(
   configPath: string | undefined,
   args: string[],
@@ -1184,6 +1351,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (command === "panel") {
     return runPanelCommand(configPath ?? undefined, rest.slice(1));
+  }
+
+  if (command === "dashboard") {
+    return runDashboardCommand(configPath ?? undefined, rest.slice(1));
   }
 
   if (command === "human-auth-relay") {

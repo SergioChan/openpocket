@@ -214,6 +214,7 @@ test("help output uses onboard as primary command and lists legacy aliases", () 
   assert.match(result.stdout, /\binit\b/);
   assert.match(result.stdout, /\bsetup\b/);
   assert.match(result.stdout, /gateway \[start\|telegram\]/);
+  assert.match(result.stdout, /dashboard start/);
   assert.match(result.stdout, /panel start/);
 });
 
@@ -253,4 +254,10 @@ test("gateway defaults to start when subcommand is omitted", () => {
   });
   assert.equal(run.status, 1);
   assert.match(run.stderr, /Telegram bot token is empty/);
+});
+
+test("dashboard command validates subcommand", () => {
+  const run = runCli(["dashboard", "noop"]);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Unknown dashboard subcommand/);
 });

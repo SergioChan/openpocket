@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import crypto from "node:crypto";
 
 import { loadConfig, saveConfig } from "../config";
 import { AdbRuntime } from "../device/adb-runtime";
@@ -141,16 +142,19 @@ export class DashboardServer {
   }
 
   private log(line: string): void {
+    this.ingestExternalLogLine(`[dashboard] ${nowHmss()} ${line}`);
+  }
+
+  ingestExternalLogLine(line: string): void {
     const text = sanitizeLogLine(line);
     if (!text) {
       return;
     }
-    const withPrefix = `[dashboard] ${nowHmss()} ${text}`;
-    this.logs.push(withPrefix);
+    this.logs.push(text);
     if (this.logs.length > 2000) {
       this.logs.splice(0, this.logs.length - 2000);
     }
-    this.onLogLine?.(withPrefix);
+    this.onLogLine?.(text);
   }
 
   async start(): Promise<void> {
@@ -220,7 +224,19 @@ export class DashboardServer {
   }
 
   private runtimePayload(): Record<string, unknown> {
-    const emulator = this.emulator.status();
+    const emulator = (() => {
+      try {
+        return this.emulator.status();
+      } catch (error) {
+        return {
+          avdName: this.config.emulator.avdName,
+          devices: [],
+          bootedDevices: [],
+          error: (error as Error).message,
+        };
+      }
+    })();
+    const emulatorError = "error" in emulator ? String(emulator.error ?? "") : "";
     return {
       mode: this.mode,
       gateway: this.gatewayStatus(),
@@ -229,11 +245,14 @@ export class DashboardServer {
         devices: emulator.devices,
         bootedDevices: emulator.bootedDevices,
         statusText:
-          emulator.bootedDevices.length > 0
+          emulatorError
+            ? `Unavailable (${emulatorError})`
+            : emulator.bootedDevices.length > 0
             ? `Running (${emulator.bootedDevices.join(", ")})`
             : emulator.devices.length > 0
               ? `Starting (${emulator.devices.join(", ")})`
               : "Stopped",
+        error: emulatorError || null,
       },
       dashboard: {
         address: this.address,
@@ -1805,7 +1824,7 @@ export class DashboardServer {
           promptFiles: [...control.promptFiles],
           updatedAt: nowIso(),
         };
-        const id = String(body.id ?? "").trim() || `prompt-${Math.random().toString(36).slice(2, 10)}`;
+        const id = String(body.id ?? "").trim() || `prompt-${crypto.randomUUID()}`;
         next.promptFiles.push({
           id,
           title: title || path.basename(promptPath, path.extname(promptPath)),

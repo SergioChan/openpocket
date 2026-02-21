@@ -310,15 +310,21 @@ Command prefix by install mode:
 ./openpocket telegram setup
 ./openpocket skills list
 ./openpocket gateway start
+./openpocket dashboard start
 ./openpocket human-auth-relay start
 ./openpocket panel start
 ```
 
 `human-auth-relay start` is mainly a standalone debug mode. In normal gateway usage, local relay/tunnel startup is handled automatically from config.
 
+`gateway start` now auto-starts the local Web dashboard (default `http://127.0.0.1:51888`, configurable in `config.dashboard`).  
+Use `dashboard start` when you want to run only the dashboard process.
+
 Legacy aliases still work (deprecated): `openpocket init`, `openpocket setup`.
 
-`openpocket panel start` on macOS uses this order:
+`openpocket panel start` is still available on macOS as the native control-surface fallback.
+
+`openpocket panel start` uses this order:
 
 1. Open an already-installed panel app from `/Applications` or `~/Applications`.
 2. If running from a source clone with `apps/openpocket-menubar`, build and launch from source.
@@ -392,7 +398,7 @@ npm run docs:preview
 
 ## Repository Structure
 
-- [`/src`](./src): runtime source code (agent, gateway, device, tools, onboarding)
+- [`/src`](./src): runtime source code (agent, gateway, device, tools, onboarding, dashboard)
 - [`/frontend`](./frontend): standalone frontend site (homepage + docs)
 - [`/test`](./test): runtime contract and integration tests
 - [`/apps/openpocket-menubar`](./apps/openpocket-menubar): native macOS menu bar control panel
