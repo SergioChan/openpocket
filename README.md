@@ -41,9 +41,12 @@ Status snapshot (February 2026):
 
 - Node.js 20+
 - Android SDK Emulator + platform-tools (`adb`)
-- At least one Android AVD
-- API key for your selected model profile
-- Telegram bot token (for gateway mode)
+- At least one Android AVD (such as Pixel 9 Pro that contains Google Play Store)
+- API key for your selected model profile (make sure you have credit in your selecter model provider)
+- Telegram bot token (for gateway mode) follow this [instruction](https://core.telegram.org/bots/tutorial#obtain-your-bot-token)
+- (Optional, recommended) ngrok authtoken for remote approval (free to obtain)
+
+NOTE: As of 02/21/2026, codex-5.3 has not be supported by OpenAI API, please fallback to codex-5.2 until it is generally available.
 
 ### 2. Install
 
