@@ -103,6 +103,14 @@ function nowHmss(): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function pathWithin(basePath: string, targetPath: string): boolean {
+  const relative = path.relative(basePath, targetPath);
+  if (!relative) {
+    return true;
+  }
+  return !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 export class DashboardServer {
   private config: OpenPocketConfig;
   private readonly mode: "standalone" | "integrated";
@@ -386,6 +394,15 @@ export class DashboardServer {
         }
         const fullPath = path.join(current, entry.name);
         if (entry.isDirectory()) {
+          if (entry.isSymbolicLink()) {
+            continue;
+          }
+          const shouldTraverse = allowedPrefixes.some((prefix) =>
+            pathWithin(fullPath, prefix) || pathWithin(prefix, fullPath),
+          );
+          if (!shouldTraverse) {
+            continue;
+          }
           stack.push(fullPath);
           continue;
         }
@@ -398,7 +415,7 @@ export class DashboardServer {
           continue;
         }
 
-        if (!allowedPrefixes.some((prefix) => fullPath.startsWith(prefix))) {
+        if (!allowedPrefixes.some((prefix) => pathWithin(prefix, fullPath))) {
           continue;
         }
 
@@ -420,7 +437,7 @@ export class DashboardServer {
     }
     const resolved = resolvePath(filePath);
     const root = resolvePath(permission.storageDirectoryPath || this.config.workspaceDir);
-    if (!resolved.startsWith(root)) {
+    if (!pathWithin(root, resolved)) {
       throw new Error("Selected file is outside storage root.");
     }
 
@@ -433,7 +450,7 @@ export class DashboardServer {
       allowedPrefixes.push(root);
     }
 
-    if (!allowedPrefixes.some((prefix) => resolved.startsWith(prefix))) {
+    if (!allowedPrefixes.some((prefix) => pathWithin(prefix, resolved))) {
       throw new Error("Selected file is outside allowed scope.");
     }
 
@@ -1255,11 +1272,28 @@ export class DashboardServer {
       const select = $("#onboard-model-select");
       const current = onboarding.modelProfile || config.defaultModel;
       select.innerHTML = "";
+      const providerLabelFromBaseUrl = (baseUrl) => {
+        const text = String(baseUrl || "").toLowerCase();
+        if (text.includes("api.openai.com")) {
+          return "OpenAI";
+        }
+        if (text.includes("openrouter.ai")) {
+          return "OpenRouter";
+        }
+        if (text.includes("api.z.ai")) {
+          return "AutoGLM";
+        }
+        try {
+          return new URL(baseUrl).host || "custom";
+        } catch {
+          return "custom";
+        }
+      };
       Object.keys(config.models || {}).sort().forEach((key) => {
         const profile = config.models[key];
         const option = document.createElement("option");
         option.value = key;
-        option.textContent = key + " (" + (profile.providerLabel || profile.baseUrl || "provider") + ")";
+        option.textContent = key + " (" + providerLabelFromBaseUrl(profile.baseUrl) + ")";
         if (key === current) {
           option.selected = true;
         }

@@ -39,6 +39,20 @@ async function requestJson(base, pathname, options = {}) {
   return payload;
 }
 
+async function requestJsonExpectError(base, pathname, options = {}) {
+  const response = await fetch(`${base}${pathname}`, {
+    headers: {
+      "content-type": "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+  const payload = await response.json();
+  assert.equal(response.ok, false);
+  assert.equal(payload.ok, false);
+  return payload;
+}
+
 test("dashboard server exposes health/config and prompt CRUD APIs", async () => {
   await withTempHome("openpocket-dashboard-server-", async () => {
     const cfg = loadConfig();
@@ -89,6 +103,57 @@ test("dashboard server exposes health/config and prompt CRUD APIs", async () => 
       });
       const stillExists = removed.promptFiles.some((item) => item.id === target.id);
       assert.equal(stillExists, false);
+    } finally {
+      await server.stop();
+    }
+  });
+});
+
+test("dashboard permission scope does not leak sibling paths with shared prefix", async () => {
+  await withTempHome("openpocket-dashboard-scope-", async () => {
+    const cfg = loadConfig();
+    const server = new DashboardServer({
+      config: cfg,
+      mode: "standalone",
+      host: "127.0.0.1",
+      port: 0,
+    });
+
+    const safeDir = path.join(cfg.workspaceDir, "safe");
+    const unsafeDir = path.join(cfg.workspaceDir, "safe2");
+    fs.mkdirSync(safeDir, { recursive: true });
+    fs.mkdirSync(unsafeDir, { recursive: true });
+    fs.writeFileSync(path.join(safeDir, "ok.txt"), "allowed", "utf-8");
+    fs.writeFileSync(path.join(unsafeDir, "leak.txt"), "blocked", "utf-8");
+
+    await server.start();
+    const base = server.address;
+
+    try {
+      await requestJson(base, "/api/control-settings", {
+        method: "POST",
+        body: JSON.stringify({
+          permission: {
+            allowLocalStorageView: true,
+            storageDirectoryPath: cfg.workspaceDir,
+            allowedSubpaths: ["safe"],
+            allowedExtensions: ["txt"],
+          },
+        }),
+      });
+
+      const files = await requestJson(base, "/api/permissions/files");
+      assert.equal(Array.isArray(files.files), true);
+      assert.equal(files.files.some((item) => item.endsWith("/safe/ok.txt")), true);
+      assert.equal(files.files.some((item) => item.endsWith("/safe2/leak.txt")), false);
+
+      const denied = await requestJsonExpectError(base, "/api/permissions/read-file", {
+        method: "POST",
+        body: JSON.stringify({
+          path: path.join(unsafeDir, "leak.txt"),
+        }),
+      });
+      assert.match(String(denied.error), /outside allowed scope/i);
     } finally {
       await server.stop();
     }
