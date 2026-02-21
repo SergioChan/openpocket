@@ -40,10 +40,10 @@ Usage:
   openpocket [--config <path>] agent [--model <name>] <task>
   openpocket [--config <path>] skills list
   openpocket [--config <path>] script run [--file <path> | --text <script>] [--timeout <sec>]
-  openpocket [--config <path>] telegram setup
+  openpocket [--config <path>] telegram setup|whoami
   openpocket [--config <path>] gateway [start|telegram]
   openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
-  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean]
+  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean] [--send] [--chat <id>]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
 
 Legacy aliases (deprecated):
@@ -58,10 +58,12 @@ Examples:
   openpocket skills list
   openpocket script run --text "echo hello"
   openpocket telegram setup
+  openpocket telegram whoami
   openpocket gateway start
   openpocket dashboard start
   openpocket test permission-app deploy
   openpocket test permission-app task
+  openpocket test permission-app task --send --chat <id>
   openpocket human-auth-relay start --port 8787
 `);
 }
@@ -591,6 +593,205 @@ function parseAllowedChatIds(raw: string): number[] {
   return values.map((value) => Math.trunc(value));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveTelegramTokenSource(cfg: ReturnType<typeof loadConfig>): {
+  envName: string;
+  token: string;
+  source: string;
+} {
+  const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
+  const configToken = cfg.telegram.botToken.trim();
+  const envToken = process.env[envName]?.trim() ?? "";
+  if (configToken) {
+    return { envName, token: configToken, source: "config.json" };
+  }
+  if (envToken) {
+    return { envName, token: envToken, source: `env:${envName}` };
+  }
+  return { envName, token: "", source: `missing (${envName})` };
+}
+
+type TelegramChatCandidate = {
+  id: number;
+  type: string;
+  title: string;
+  source: string;
+};
+
+function extractChatCandidate(value: unknown, source: string): TelegramChatCandidate | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const idRaw = value.id;
+  const id = typeof idRaw === "number" ? Math.trunc(idRaw) : Number.NaN;
+  if (!Number.isFinite(id)) {
+    return null;
+  }
+  const type = String(value.type ?? "unknown");
+  const title = String(
+    value.title ??
+      [value.first_name, value.last_name].filter((item) => typeof item === "string" && item.trim()).join(" ") ??
+      value.username ??
+      "",
+  ).trim();
+  return {
+    id,
+    type,
+    title: title || "(untitled)",
+    source,
+  };
+}
+
+function collectTelegramChatCandidates(update: unknown): TelegramChatCandidate[] {
+  const row = isRecord(update) ? update : null;
+  if (!row) {
+    return [];
+  }
+  const out: TelegramChatCandidate[] = [];
+  const push = (chat: unknown, source: string) => {
+    const parsed = extractChatCandidate(chat, source);
+    if (parsed) {
+      out.push(parsed);
+    }
+  };
+
+  if (isRecord(row.message)) {
+    push(row.message.chat, "message");
+  }
+  if (isRecord(row.edited_message)) {
+    push(row.edited_message.chat, "edited_message");
+  }
+  if (isRecord(row.channel_post)) {
+    push(row.channel_post.chat, "channel_post");
+  }
+  if (isRecord(row.edited_channel_post)) {
+    push(row.edited_channel_post.chat, "edited_channel_post");
+  }
+  if (isRecord(row.callback_query) && isRecord(row.callback_query.message)) {
+    push(row.callback_query.message.chat, "callback_query.message");
+  }
+  if (isRecord(row.my_chat_member)) {
+    push(row.my_chat_member.chat, "my_chat_member");
+  }
+  if (isRecord(row.chat_member)) {
+    push(row.chat_member.chat, "chat_member");
+  }
+
+  return out;
+}
+
+async function runTelegramWhoamiCommand(cfg: ReturnType<typeof loadConfig>): Promise<number> {
+  const tokenInfo = resolveTelegramTokenSource(cfg);
+  const allow = cfg.telegram.allowedChatIds;
+  const allowPolicy = allow.length > 0 ? "allow_only_listed" : "allow_all";
+
+  // eslint-disable-next-line no-console
+  console.log("[OpenPocket] Telegram identity");
+  // eslint-disable-next-line no-console
+  console.log(`  token source: ${tokenInfo.source}`);
+  // eslint-disable-next-line no-console
+  console.log(`  allow policy: ${allowPolicy}`);
+  // eslint-disable-next-line no-console
+  console.log(
+    `  allowlist: ${allow.length > 0 ? allow.map((id) => String(id)).join(", ") : "empty (all chats allowed)"}`,
+  );
+
+  if (!tokenInfo.token) {
+    // eslint-disable-next-line no-console
+    console.log(`\nTelegram token is not configured. Set config.telegram.botToken or env ${tokenInfo.envName}.`);
+    return 0;
+  }
+
+  const apiBase = `https://api.telegram.org/bot${tokenInfo.token}`;
+  let botName = "(unknown)";
+  try {
+    const getMeResp = await fetch(`${apiBase}/getMe`);
+    const getMeText = await getMeResp.text();
+    if (getMeResp.ok) {
+      const getMeJson = JSON.parse(getMeText) as unknown;
+      if (isRecord(getMeJson) && getMeJson.ok === true && isRecord(getMeJson.result)) {
+        const username = String(getMeJson.result.username ?? "").trim();
+        const id = Number(getMeJson.result.id ?? Number.NaN);
+        botName = `${username ? `@${username}` : "(no username)"}${Number.isFinite(id) ? ` (id=${id})` : ""}`;
+      }
+    }
+  } catch {
+    // Ignore getMe failure and continue with updates probe.
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`  bot: ${botName}`);
+
+  try {
+    const updatesResp = await fetch(`${apiBase}/getUpdates`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        timeout: 0,
+        limit: 30,
+        allowed_updates: [
+          "message",
+          "edited_message",
+          "channel_post",
+          "edited_channel_post",
+          "callback_query",
+          "my_chat_member",
+          "chat_member",
+        ],
+      }),
+    });
+    const updatesText = await updatesResp.text();
+    if (!updatesResp.ok) {
+      throw new Error(`HTTP ${updatesResp.status}: ${updatesText.slice(0, 300)}`);
+    }
+
+    const updatesJson = JSON.parse(updatesText) as unknown;
+    if (!isRecord(updatesJson) || updatesJson.ok !== true || !Array.isArray(updatesJson.result)) {
+      throw new Error("Unexpected getUpdates response.");
+    }
+
+    const seen = new Map<number, TelegramChatCandidate>();
+    for (const row of updatesJson.result) {
+      for (const chat of collectTelegramChatCandidates(row)) {
+        if (!seen.has(chat.id)) {
+          seen.set(chat.id, chat);
+        }
+      }
+    }
+
+    if (seen.size === 0) {
+      // eslint-disable-next-line no-console
+      console.log("\nNo chat IDs discovered from recent updates.");
+      // eslint-disable-next-line no-console
+      console.log("Send one message to your bot in Telegram, then run `openpocket telegram whoami` again.");
+      return 0;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log("\nDiscovered chat IDs:");
+    for (const chat of seen.values()) {
+      const allowed = allow.length === 0 || allow.includes(chat.id);
+      // eslint-disable-next-line no-console
+      console.log(
+        `  - ${chat.id} | type=${chat.type} | title=${chat.title} | source=${chat.source} | allowed=${allowed}`,
+      );
+    }
+    return 0;
+  } catch (error) {
+    const message = (error as Error).message || "unknown error";
+    // eslint-disable-next-line no-console
+    console.log(`\nUnable to query recent Telegram updates: ${message}`);
+    // eslint-disable-next-line no-console
+    console.log("If gateway is running, polling conflict can happen. Stop gateway and retry this command.");
+    return 0;
+  }
+}
+
 const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function normalizeEnvVarName(value: string, fallback: string): string {
@@ -718,15 +919,19 @@ async function runTelegramSetupCommand(
   args: string[],
 ): Promise<number> {
   const sub = (args[0] ?? "setup").trim();
-  if (sub !== "setup") {
-    throw new Error(`Unknown telegram subcommand: ${sub}. Use: telegram setup`);
+  if (sub !== "setup" && sub !== "whoami") {
+    throw new Error(`Unknown telegram subcommand: ${sub}. Use: telegram setup|whoami`);
+  }
+
+  const cfg = loadConfig(configPath);
+  if (sub === "whoami") {
+    return runTelegramWhoamiCommand(cfg);
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error("`telegram setup` requires an interactive terminal (TTY).");
   }
 
-  const cfg = loadConfig(configPath);
   const rl = createInterface({ input, output });
   try {
     // eslint-disable-next-line no-console
@@ -966,8 +1171,10 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   }
 
   const hasClean = args.includes("--clean");
-  const withoutClean = args.filter((item) => item !== "--clean");
-  const { value: deviceId, rest } = takeOption(withoutClean.slice(1), "--device");
+  const sendToTelegram = args.includes("--send");
+  const withoutFlags = args.filter((item) => item !== "--clean" && item !== "--send");
+  const { value: deviceId, rest: afterDevice } = takeOption(withoutFlags.slice(1), "--device");
+  const { value: chatIdRaw, rest } = takeOption(afterDevice, "--chat");
   if (rest.length > 1) {
     throw new Error(`Unexpected test arguments: ${rest.slice(1).join(" ")}`);
   }
@@ -977,8 +1184,64 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   const permissionLab = new PermissionLabManager(cfg);
 
   if (action === "task") {
+    const taskText = permissionLab.recommendedTelegramTask();
+    if (!sendToTelegram) {
+      // eslint-disable-next-line no-console
+      console.log(taskText);
+      // eslint-disable-next-line no-console
+      console.log("Tip: add `--send` (and optionally `--chat <id>`) to send this prompt to Telegram directly.");
+      return 0;
+    }
+
+    const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
+    const token = cfg.telegram.botToken.trim() || (process.env[envName]?.trim() ?? "");
+    if (!token) {
+      throw new Error(`Telegram bot token is empty. Set config.telegram.botToken or env ${envName}.`);
+    }
+
+    let chatId: number | null = null;
+    if (chatIdRaw !== null) {
+      const parsed = Number(chatIdRaw);
+      if (!Number.isFinite(parsed)) {
+        throw new Error("Chat ID must be a number.");
+      }
+      chatId = Math.trunc(parsed);
+    } else if (cfg.telegram.allowedChatIds.length === 1) {
+      chatId = cfg.telegram.allowedChatIds[0];
+    } else if (cfg.telegram.allowedChatIds.length > 1) {
+      throw new Error(
+        `Multiple allowed chat IDs configured (${cfg.telegram.allowedChatIds.join(", ")}). Use --chat <id>.`,
+      );
+    } else {
+      throw new Error("No default chat ID found. Use --chat <id> or configure telegram.allowedChatIds.");
+    }
+
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: taskText,
+      }),
+    });
+
+    const bodyText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Telegram send failed (${response.status}): ${bodyText.slice(0, 300)}`);
+    }
+    let apiPayload: { ok?: boolean; description?: string } = {};
+    try {
+      apiPayload = JSON.parse(bodyText) as { ok?: boolean; description?: string };
+    } catch {
+      apiPayload = {};
+    }
+    if (apiPayload.ok === false) {
+      throw new Error(`Telegram send failed: ${apiPayload.description ?? "unknown error"}`);
+    }
     // eslint-disable-next-line no-console
-    console.log(permissionLab.recommendedTelegramTask());
+    console.log(`[OpenPocket][test] PermissionLab prompt sent to Telegram chat ${chatId}.`);
     return 0;
   }
 
