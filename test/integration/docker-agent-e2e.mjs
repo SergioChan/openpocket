@@ -3,7 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -272,15 +272,91 @@ function runCliOrThrow(label, args, env, timeoutMs) {
   return runOrThrow(label, "node", [cliPath, ...args], { env, timeoutMs });
 }
 
+function runCommandAsync(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: repoRoot,
+      env: options.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    let settled = false;
+    let timer = null;
+
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      resolve(result);
+    };
+
+    const fail = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      reject(error);
+    };
+
+    if (child.stdout) {
+      child.stdout.on("data", (chunk) => stdoutChunks.push(Buffer.from(chunk)));
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => stderrChunks.push(Buffer.from(chunk)));
+    }
+
+    child.on("error", fail);
+    child.on("close", (code) => {
+      finish({
+        status: code ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf-8"),
+      });
+    });
+
+    const timeoutMs = options.timeoutMs;
+    if (timeoutMs && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish({
+          status: 124,
+          stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
+          stderr: `${Buffer.concat(stderrChunks).toString("utf-8")}\nTimed out after ${timeoutMs}ms.`,
+        });
+      }, timeoutMs);
+    }
+  });
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function waitForBootComplete(env, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
+  const startedAt = Date.now();
   while (Date.now() < deadline) {
     const devices = runCommand("adb", ["devices"], { env, timeoutMs: 15000 });
-    const hasDevice = /emulator-\d+\s+device/.test(`${devices.stdout}\n${devices.stderr}`);
+    const devicesText = `${devices.stdout}\n${devices.stderr}`;
+    const hasDevice = /emulator-\d+\s+device/.test(devicesText);
+    const connectedLines = devicesText
+      .split("\n")
+      .slice(1)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+    log(`Boot wait ${elapsedSec}s: ${connectedLines.join(", ") || "(none)"}`);
 
     if (hasDevice) {
       const prop = runCommand("adb", ["shell", "getprop", "sys.boot_completed"], {
@@ -338,8 +414,22 @@ async function main() {
     const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     cfg.defaultModel = "e2e-mock";
     cfg.emulator.headless = true;
-    cfg.emulator.bootTimeoutSec = 600;
-    cfg.emulator.extraArgs = ["-accel", "off", "-no-audio", "-no-boot-anim", "-no-snapshot"];
+    cfg.emulator.bootTimeoutSec = 60;
+    cfg.emulator.extraArgs = [
+      "-gpu",
+      "swiftshader_indirect",
+      "-memory",
+      "1024",
+      "-cores",
+      "1",
+      "-accel",
+      "off",
+      "-no-audio",
+      "-no-boot-anim",
+      "-no-snapshot",
+      "-no-snapshot-save",
+      "-no-metrics",
+    ];
     cfg.agent.maxSteps = 8;
     cfg.agent.loopDelayMs = 300;
     cfg.agent.verbose = false;
@@ -355,10 +445,10 @@ async function main() {
     };
     fs.writeFileSync(configPath, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
 
-    runCliOrThrow("openpocket emulator start", ["emulator", "start"], env, 900000);
-    await waitForBootComplete(env, 600000);
+    runCliOrThrow("openpocket emulator start", ["emulator", "start"], env, 300000);
+    await waitForBootComplete(env, 1200000);
 
-    const runAgent = runCommand("node", [cliPath, "agent", "--model", "e2e-mock", task], {
+    const runAgent = await runCommandAsync("node", [cliPath, "agent", "--model", "e2e-mock", task], {
       env,
       timeoutMs: 600000,
     });
