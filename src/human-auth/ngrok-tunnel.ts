@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import net from "node:net";
 
 import type { HumanAuthTunnelNgrokConfig } from "../types";
 import { sleep } from "../utils/time";
@@ -14,6 +15,35 @@ function stringifyError(error: unknown): string {
   return String(error);
 }
 
+function normalizeHost(host: string): string {
+  const value = host.trim().toLowerCase();
+  if (!value || value === "::" || value === "0.0.0.0") {
+    return "127.0.0.1";
+  }
+  if (value === "localhost") {
+    return "127.0.0.1";
+  }
+  return value;
+}
+
+function toHostPort(value: string): string {
+  let url = value.trim();
+  if (!url) {
+    return "";
+  }
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    url = `http://${url}`;
+  }
+  try {
+    const parsed = new URL(url);
+    const host = normalizeHost(parsed.hostname);
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    return `${host}:${port}`;
+  } catch {
+    return "";
+  }
+}
+
 export class NgrokTunnel {
   private readonly config: HumanAuthTunnelNgrokConfig;
   private readonly targetUrl: string;
@@ -21,6 +51,7 @@ export class NgrokTunnel {
   private process: ChildProcessWithoutNullStreams | null = null;
   private publicUrl = "";
   private closed = false;
+  private apiBaseUrl = "";
 
   constructor(
     config: HumanAuthTunnelNgrokConfig,
@@ -47,8 +78,44 @@ export class NgrokTunnel {
     return "";
   }
 
+  private async reserveApiWebAddress(): Promise<{ webAddr: string; apiBaseUrl: string }> {
+    const fallbackApiBase = "http://127.0.0.1:4040";
+    let parsed: URL;
+    try {
+      parsed = new URL(this.config.apiBaseUrl || fallbackApiBase);
+    } catch {
+      parsed = new URL(fallbackApiBase);
+    }
+    const host = normalizeHost(parsed.hostname || "127.0.0.1");
+    const basePortRaw = Number(parsed.port || "4040");
+    const basePort = Number.isFinite(basePortRaw) ? Math.max(1024, Math.trunc(basePortRaw)) : 4040;
+
+    const tryPort = (port: number): Promise<boolean> =>
+      new Promise((resolve) => {
+        const server = net.createServer();
+        server.once("error", () => resolve(false));
+        server.listen(port, host, () => {
+          server.close(() => resolve(true));
+        });
+      });
+
+    for (let offset = 0; offset < 25; offset += 1) {
+      const port = basePort + offset;
+      // eslint-disable-next-line no-await-in-loop
+      if (await tryPort(port)) {
+        return {
+          webAddr: `${host}:${port}`,
+          apiBaseUrl: `http://${host}:${port}`,
+        };
+      }
+    }
+
+    throw new Error(`Unable to reserve ngrok API web address from ${host}:${basePort}..${host}:${basePort + 24}`);
+  }
+
   private async readPublicUrlFromApi(): Promise<string> {
-    const response = await fetch(`${this.config.apiBaseUrl}/api/tunnels`);
+    const apiBaseUrl = this.apiBaseUrl || this.config.apiBaseUrl;
+    const response = await fetch(`${apiBaseUrl}/api/tunnels`);
     if (!response.ok) {
       throw new Error(`ngrok api status=${response.status}`);
     }
@@ -56,17 +123,26 @@ export class NgrokTunnel {
     if (!isObject(parsed) || !Array.isArray(parsed.tunnels)) {
       throw new Error("ngrok api returned invalid payload.");
     }
+    const targetKey = toHostPort(this.targetUrl);
     const tunnels = parsed.tunnels
       .filter((item): item is Record<string, unknown> => isObject(item))
       .map((item) => ({
         publicUrl: String(item.public_url ?? ""),
         proto: String(item.proto ?? ""),
+        addr: isObject(item.config) ? String(item.config.addr ?? "") : String(item.addr ?? ""),
       }))
       .filter((item) => item.publicUrl.startsWith("https://"));
     if (tunnels.length === 0) {
       throw new Error("ngrok api has no https tunnel yet.");
     }
-    return tunnels[0].publicUrl.replace(/\/+$/, "");
+    const matched = tunnels.find((item) => toHostPort(item.addr) === targetKey);
+    if (matched) {
+      return matched.publicUrl.replace(/\/+$/, "");
+    }
+    if (tunnels.length === 1) {
+      return tunnels[0].publicUrl.replace(/\/+$/, "");
+    }
+    throw new Error(`ngrok api has no tunnel for target ${this.targetUrl}`);
   }
 
   async start(): Promise<string> {
@@ -77,9 +153,14 @@ export class NgrokTunnel {
       throw new Error("ngrok tunnel is starting.");
     }
 
+    const reserved = await this.reserveApiWebAddress();
+    this.apiBaseUrl = reserved.apiBaseUrl;
+
     const args = [
       "http",
       this.targetUrl,
+      "--web-addr",
+      reserved.webAddr,
       "--log",
       "stdout",
       "--log-format",

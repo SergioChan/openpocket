@@ -669,6 +669,88 @@ async function sendTelegramMessage(token: string, payload: TelegramSendMessagePa
   }
 }
 
+function normalizeUrlForCompare(value: string): string {
+  let url = value.trim();
+  if (!url) {
+    return "";
+  }
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    url = `http://${url}`;
+  }
+  try {
+    const parsed = new URL(url);
+    const host =
+      parsed.hostname === "localhost" || parsed.hostname === "::" || parsed.hostname === "0.0.0.0"
+        ? "127.0.0.1"
+        : parsed.hostname.toLowerCase();
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    return `${host}:${port}`;
+  } catch {
+    return "";
+  }
+}
+
+async function isRelayHealthy(baseUrl: string, timeoutMs = 1500): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/healthz`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function discoverNgrokPublicUrlForTarget(apiBaseUrl: string, relayBaseUrl: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
+  try {
+    const response = await fetch(`${apiBaseUrl.replace(/\/+$/, "")}/api/tunnels`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const parsed = (await response.json()) as unknown;
+    if (!isRecord(parsed) || !Array.isArray(parsed.tunnels)) {
+      return null;
+    }
+    const target = normalizeUrlForCompare(relayBaseUrl);
+    const tunnels = parsed.tunnels
+      .filter((item): item is Record<string, unknown> => isRecord(item))
+      .map((item) => {
+        const cfg = isRecord(item.config) ? item.config : null;
+        return {
+          publicUrl: String(item.public_url ?? ""),
+          proto: String(item.proto ?? ""),
+          addr: cfg ? String(cfg.addr ?? "") : String(item.addr ?? ""),
+        };
+      })
+      .filter((item) => item.publicUrl.startsWith("https://"));
+    if (tunnels.length === 0) {
+      return null;
+    }
+    const matched = tunnels.find((item) => normalizeUrlForCompare(item.addr) === target);
+    if (matched) {
+      return matched.publicUrl.replace(/\/+$/, "");
+    }
+    if (tunnels.length === 1) {
+      return tunnels[0].publicUrl.replace(/\/+$/, "");
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 type TelegramChatCandidate = {
   id: number;
   type: string;
@@ -1242,18 +1324,6 @@ async function runPermissionLabScenario(params: {
     runtimeConfig.agent.deviceId = params.deviceId.trim();
   }
 
-  if (runtimeConfig.humanAuth.useLocalRelay) {
-    runtimeConfig.humanAuth.localRelayPort = 0;
-    runtimeConfig.humanAuth.relayBaseUrl = "";
-    runtimeConfig.humanAuth.publicBaseUrl = "";
-    const stateName = path.basename(runtimeConfig.humanAuth.localRelayStateFile || "relay-state.json");
-    runtimeConfig.humanAuth.localRelayStateFile = path.join(
-      runtimeConfig.stateDir,
-      "human-auth",
-      `permissionlab-${Date.now()}-${stateName}`,
-    );
-  }
-
   const permissionLab = new PermissionLabManager(runtimeConfig);
   const agent = new AgentRuntime(runtimeConfig);
   const humanAuth = new HumanAuthBridge(runtimeConfig);
@@ -1265,19 +1335,49 @@ async function runPermissionLabScenario(params: {
 
   try {
     if (runtimeConfig.humanAuth.useLocalRelay) {
-      // eslint-disable-next-line no-console
-      console.log("[OpenPocket][test] Starting local human-auth relay stack...");
-      const started = await localStack.start();
-      runtimeConfig.humanAuth.relayBaseUrl = started.relayBaseUrl;
-      runtimeConfig.humanAuth.publicBaseUrl = started.publicBaseUrl;
-      localStackStarted = true;
-      // eslint-disable-next-line no-console
-      console.log(`[OpenPocket][test] Human-auth relay: ${started.relayBaseUrl}`);
-      // eslint-disable-next-line no-console
-      console.log(`[OpenPocket][test] Human-auth public URL: ${started.publicBaseUrl}`);
+      const configuredRelayBaseUrl = `http://${runtimeConfig.humanAuth.localRelayHost}:${runtimeConfig.humanAuth.localRelayPort}`;
+      const existingRelayHealthy = await isRelayHealthy(configuredRelayBaseUrl);
+      if (existingRelayHealthy) {
+        runtimeConfig.humanAuth.relayBaseUrl = configuredRelayBaseUrl;
+        const discoveredPublicUrl = await discoverNgrokPublicUrlForTarget(
+          runtimeConfig.humanAuth.tunnel.ngrok.apiBaseUrl,
+          configuredRelayBaseUrl,
+        );
+        runtimeConfig.humanAuth.publicBaseUrl = (
+          runtimeConfig.humanAuth.publicBaseUrl.trim() ||
+          discoveredPublicUrl ||
+          configuredRelayBaseUrl
+        ).replace(/\/+$/, "");
+        // eslint-disable-next-line no-console
+        console.log(`[OpenPocket][test] Reusing running human-auth relay: ${runtimeConfig.humanAuth.relayBaseUrl}`);
+        // eslint-disable-next-line no-console
+        console.log(`[OpenPocket][test] Reusing public auth URL: ${runtimeConfig.humanAuth.publicBaseUrl}`);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log("[OpenPocket][test] Starting local human-auth relay stack...");
+        const started = await localStack.start();
+        runtimeConfig.humanAuth.relayBaseUrl = started.relayBaseUrl;
+        runtimeConfig.humanAuth.publicBaseUrl = started.publicBaseUrl;
+        localStackStarted = true;
+        // eslint-disable-next-line no-console
+        console.log(`[OpenPocket][test] Human-auth relay: ${started.relayBaseUrl}`);
+        // eslint-disable-next-line no-console
+        console.log(`[OpenPocket][test] Human-auth public URL: ${started.publicBaseUrl}`);
+      }
     } else if (!runtimeConfig.humanAuth.relayBaseUrl.trim()) {
       throw new Error(
         "Human auth relay URL is empty. Set config.humanAuth.relayBaseUrl or enable config.humanAuth.useLocalRelay.",
+      );
+    }
+
+    if (
+      runtimeConfig.humanAuth.tunnel.provider === "ngrok" &&
+      runtimeConfig.humanAuth.tunnel.ngrok.enabled &&
+      normalizeUrlForCompare(runtimeConfig.humanAuth.publicBaseUrl) ===
+        normalizeUrlForCompare(runtimeConfig.humanAuth.relayBaseUrl)
+    ) {
+      throw new Error(
+        "Ngrok public URL is not available. A relay is running but no public tunnel was found for it. Stop duplicate ngrok/gateway sessions, then retry.",
       );
     }
 
