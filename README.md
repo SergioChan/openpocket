@@ -328,6 +328,8 @@ Command prefix by install mode:
 ./openpocket skills list
 ./openpocket gateway start
 ./openpocket dashboard start
+./openpocket test permission-app deploy
+./openpocket test permission-app task
 ./openpocket human-auth-relay start
 ```
 
@@ -385,6 +387,51 @@ When the agent emits `request_human_auth`, Telegram users can:
 - or run fallback commands:
   - `/auth approve <request-id> [note]`
   - `/auth reject <request-id> [note]`
+
+When a running task enters Android system permission UI
+(`permissioncontroller` / `packageinstaller`), OpenPocket now auto-triggers
+`request_human_auth` and sends the Telegram approval link flow.
+
+## PermissionLab E2E Test
+
+Use the built-in Android test app to verify remote authorization flow end-to-end.
+
+### 1) Start gateway + ngrok human-auth mode
+
+```bash
+openpocket gateway start
+```
+
+### 2) Build/install/launch test app on emulator
+
+```bash
+openpocket test permission-app deploy
+```
+
+Optional commands:
+
+```bash
+openpocket test permission-app launch
+openpocket test permission-app reset
+openpocket test permission-app uninstall
+openpocket test permission-app task
+```
+
+### 3) Send task in Telegram
+
+Use the generated prompt from `openpocket test permission-app task`, or send this directly:
+
+```text
+/run Open app OpenPocket PermissionLab. Tap one permission button (Camera, SMS, Location, Contacts, etc.). If a system permission/auth wall appears, do not bypass in emulator. Call request_human_auth and wait for my approval from Telegram link. After I approve/reject on phone, continue and report result.
+```
+
+### 4) Approve from phone
+
+When Telegram receives the human-auth message:
+
+1. Open the URL button (ngrok public link).
+2. Approve/reject on the web page.
+3. Agent resumes and reports task result in Telegram.
 
 ## Documentation
 
