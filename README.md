@@ -94,6 +94,172 @@ openpocket agent --model gpt-5.2-codex "Open Chrome and search weather"
 
 Or send plain text directly to your Telegram bot after `gateway start`.
 
+## Deployment Playbook by OS
+
+This section focuses on production-style runtime deployment for:
+
+- `gateway start`
+- emulator setup/startup
+- ngrok + human-auth relay configuration
+
+### Support Matrix
+
+| Environment | Recommended | Notes |
+| --- | --- | --- |
+| macOS (Apple Silicon / Intel) | Yes | Best local developer experience. |
+| Windows (native host) | Yes | Use Android Emulator on Windows host (Hyper-V/WHPX). |
+| Linux Server (`x86_64` + KVM) | Yes | Recommended for headless server runtime. |
+| Docker on ARM host running `linux/amd64` emulator | Not recommended | Works unpredictably due nested software emulation. |
+
+### Common Config Baseline
+
+Run onboarding once:
+
+```bash
+openpocket onboard
+```
+
+Or configure manually in `~/.openpocket/config.json`:
+
+```json
+{
+  "emulator": {
+    "avdName": "OpenPocket_AVD",
+    "androidSdkRoot": "",
+    "headless": true,
+    "bootTimeoutSec": 180
+  },
+  "telegram": {
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "allowedChatIds": []
+  },
+  "humanAuth": {
+    "enabled": true,
+    "useLocalRelay": true,
+    "localRelayHost": "127.0.0.1",
+    "localRelayPort": 8787,
+    "apiKeyEnv": "OPENPOCKET_HUMAN_AUTH_KEY",
+    "tunnel": {
+      "provider": "ngrok",
+      "ngrok": {
+        "enabled": true,
+        "authtokenEnv": "NGROK_AUTHTOKEN"
+      }
+    }
+  }
+}
+```
+
+Required env vars for gateway + remote approval:
+
+```bash
+export TELEGRAM_BOT_TOKEN="<your_telegram_bot_token>"
+export OPENPOCKET_HUMAN_AUTH_KEY="<your_human_auth_key>"
+export NGROK_AUTHTOKEN="<your_ngrok_token>"
+```
+
+---
+
+### macOS (Local Runtime)
+
+1. Install Android SDK + Emulator + at least one AVD (Android Studio preferred).
+2. Verify toolchain:
+
+```bash
+adb version
+~/Library/Android/sdk/emulator/emulator -list-avds
+```
+
+3. Start emulator:
+
+```bash
+openpocket emulator start
+openpocket emulator status
+```
+
+4. Start gateway (dashboard auto-starts):
+
+```bash
+openpocket gateway start
+```
+
+5. If human-auth uses ngrok, gateway will auto-start local relay + tunnel and send approval URLs in Telegram.
+
+---
+
+### Windows (Native Host Runtime)
+
+Windows does not require WSL for OpenPocket runtime.
+Recommended setup is: Android Emulator + adb on Windows host, OpenPocket CLI also on Windows host.
+
+1. Install Android Studio + SDK tools, create an AVD.
+2. Ensure virtualization acceleration is enabled (WHPX/Hyper-V for emulator).
+3. In PowerShell:
+
+```powershell
+$env:ANDROID_SDK_ROOT="$env:LOCALAPPDATA\\Android\\Sdk"
+adb version
+& "$env:ANDROID_SDK_ROOT\\emulator\\emulator.exe" -list-avds
+openpocket emulator start
+openpocket gateway start
+```
+
+4. Set tokens in user env (or config file):
+
+```powershell
+setx TELEGRAM_BOT_TOKEN "<token>"
+setx OPENPOCKET_HUMAN_AUTH_KEY "<key>"
+setx NGROK_AUTHTOKEN "<ngrok_token>"
+```
+
+WSL can still be used for development tooling, but running Android Emulator inside WSL/Linux guest is not the preferred path.
+
+---
+
+### Linux Server (`x86_64` Headless)
+
+This is the recommended server deployment target.
+
+1. Validate architecture and KVM:
+
+```bash
+uname -m                # expect x86_64
+ls -l /dev/kvm          # must exist
+```
+
+2. Install Android SDK cmdline tools, platform-tools, emulator, and create AVD.
+3. Use headless mode in config:
+
+```json
+"emulator": {
+  "headless": true,
+  "extraArgs": ["-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot"]
+}
+```
+
+4. Start runtime:
+
+```bash
+openpocket emulator start
+openpocket gateway start
+```
+
+5. For service mode, run with `systemd` or `tmux`, and keep ngrok token configured for remote human-auth links.
+
+## Current End-to-End Tests
+
+OpenPocket currently has two E2E paths:
+
+1. `test/integration/docker-agent-e2e.mjs`
+   - Automated agent E2E.
+   - Simulates natural-language task -> planning -> emulator actions -> session assertions.
+   - Can run locally (direct host execution) and in Docker wrapper (`npm run test:e2e:docker`).
+
+2. `openpocket test permission-app run --case <scenario> --chat <chat_id>`
+   - PermissionLab human-auth E2E.
+   - Validates agent + Telegram + relay/ngrok + approval handoff.
+   - Scenarios: `camera`, `microphone`, `location`, `contacts`, `sms`, `calendar`, `photos`, `notification`, `2fa`.
+
 ## Key Capabilities
 
 - **Local emulator-first runtime**: execution stays on your machine via adb, not a hosted cloud phone.
