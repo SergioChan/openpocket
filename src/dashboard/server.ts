@@ -427,6 +427,25 @@ export class DashboardServer {
     return content.toString("utf-8");
   }
 
+  private readPromptFile(promptPath: string): string {
+    const resolved = resolvePath(promptPath);
+    if (!fs.existsSync(resolved)) {
+      return "";
+    }
+    const stat = fs.statSync(resolved);
+    if (stat.size > 2_000_000) {
+      throw new Error(`Prompt file too large (${stat.size} bytes).`);
+    }
+    const content = fs.readFileSync(resolved);
+    return content.toString("utf-8");
+  }
+
+  private savePromptFile(promptPath: string, content: string): void {
+    const resolved = resolvePath(promptPath);
+    fs.mkdirSync(path.dirname(resolved), { recursive: true });
+    fs.writeFileSync(resolved, content, "utf-8");
+  }
+
   private applyOnboarding(input: unknown): { onboarding: OnboardingStateFile; config: OpenPocketConfig } {
     if (!isObject(input)) {
       throw new Error("Invalid onboarding payload.");
@@ -780,8 +799,40 @@ export class DashboardServer {
       font-size: 14px;
       line-height: 1.7;
     }
+    .split {
+      display: grid;
+      grid-template-columns: minmax(260px, 34%) 1fr;
+      gap: 10px;
+    }
+    .list-box {
+      width: 100%;
+      min-height: 250px;
+      border: 1px solid #c7d4e2;
+      border-radius: 9px;
+      padding: 6px;
+      background: #fff;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .log-view {
+      min-height: 360px;
+      max-height: 56vh;
+      overflow: auto;
+      border: 1px solid #0f172a;
+      border-radius: 10px;
+      padding: 10px;
+      background: #030712;
+      color: #55f18e;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
     @media (max-width: 980px) {
       .grid.cols-2 {
+        grid-template-columns: 1fr;
+      }
+      .split {
         grid-template-columns: 1fr;
       }
       .layout {
@@ -935,20 +986,95 @@ export class DashboardServer {
     </section>
 
     <section class="tab-panel" data-panel="permissions">
-      <div class="card placeholder">
-        Permissions tab UI will be completed in V3. Backend APIs are ready: <span class="mono">/api/control-settings</span>, <span class="mono">/api/permissions/files</span>, <span class="mono">/api/permissions/read-file</span>.
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>File Access Permissions</h3>
+          <p class="hint">Control local file scope exposed in dashboard.</p>
+          <label class="row">
+            <input type="checkbox" id="perm-allow-view" />
+            <span>Allow local storage file view in dashboard</span>
+          </label>
+          <div style="margin-top:10px;">
+            <label for="perm-storage-root">Storage root</label>
+            <input type="text" id="perm-storage-root" placeholder="/path/to/workspace" />
+          </div>
+          <div style="margin-top:10px;">
+            <label for="perm-subpaths">Allowed subpaths (one per line)</label>
+            <textarea id="perm-subpaths"></textarea>
+          </div>
+          <div style="margin-top:10px;">
+            <label for="perm-exts">Allowed extensions (one per line, without dot)</label>
+            <textarea id="perm-exts"></textarea>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn primary" id="perm-save-btn">Apply Scope</button>
+            <button class="btn" id="perm-refresh-files-btn">Refresh Files</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Scoped File Viewer</h3>
+          <div class="split">
+            <div>
+              <div class="row spread">
+                <span class="hint" id="perm-file-count">0 files</span>
+              </div>
+              <select id="perm-file-list" class="list-box" size="14"></select>
+            </div>
+            <div>
+              <textarea id="perm-file-content" style="min-height:320px;" readonly placeholder="File content"></textarea>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="tab-panel" data-panel="prompts">
-      <div class="card placeholder">
-        Agent Prompts tab UI will be completed in V3. Prompt files are already persisted via <span class="mono">control-panel.json</span>.
+      <div class="card">
+        <h3>Prompt Files</h3>
+        <div class="split">
+          <div>
+            <div style="margin-bottom:8px;">
+              <label for="prompt-add-title">Title</label>
+              <input type="text" id="prompt-add-title" placeholder="AGENTS" />
+            </div>
+            <div style="margin-bottom:8px;">
+              <label for="prompt-add-path">Path</label>
+              <input type="text" id="prompt-add-path" placeholder="/path/to/AGENTS.md" />
+            </div>
+            <div class="row" style="margin-bottom:8px;">
+              <button class="btn" id="prompt-add-btn">Add Prompt File</button>
+              <button class="btn warn" id="prompt-remove-btn">Remove</button>
+            </div>
+            <select id="prompt-list" class="list-box" size="12"></select>
+          </div>
+          <div>
+            <div class="row spread">
+              <span class="hint" id="prompt-selected-meta">No prompt selected</span>
+              <div class="row">
+                <button class="btn" id="prompt-reload-btn">Reload</button>
+                <button class="btn primary" id="prompt-save-btn">Save</button>
+              </div>
+            </div>
+            <textarea id="prompt-editor" style="min-height:340px;" placeholder="Prompt file content"></textarea>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="tab-panel" data-panel="logs">
-      <div class="card placeholder">
-        Logs tab UI will be completed in V3. Current backend log endpoint: <span class="mono">/api/logs</span>.
+      <div class="card">
+        <h3>Dashboard Logs</h3>
+        <div class="row">
+          <button class="btn" id="logs-refresh-btn">Refresh</button>
+          <button class="btn warn" id="logs-clear-btn">Clear</button>
+          <label class="row">
+            <input type="checkbox" id="logs-auto" />
+            <span>Auto refresh (2s)</span>
+          </label>
+          <span class="hint" id="logs-meta"></span>
+        </div>
+        <div class="log-view" id="logs-view"></div>
       </div>
     </section>
   </div>
@@ -957,9 +1083,13 @@ export class DashboardServer {
       runtime: null,
       config: null,
       onboarding: null,
+      controlSettings: null,
+      promptFiles: [],
+      selectedPromptId: "",
       preview: null,
       previewTimer: null,
       runtimeTimer: null,
+      logsTimer: null,
       credentialStatus: {},
     };
 
@@ -1092,6 +1222,180 @@ export class DashboardServer {
         "<div>" + status + "</div>";
     }
 
+    async function loadControlSettings() {
+      const payload = await api("/api/control-settings");
+      state.controlSettings = payload.controlSettings || null;
+      state.promptFiles = state.controlSettings?.promptFiles || [];
+      renderPermissions();
+      renderPromptList();
+    }
+
+    function renderPermissions() {
+      const control = state.controlSettings;
+      if (!control) {
+        return;
+      }
+      const permission = control.permission || {};
+      $("#perm-allow-view").checked = Boolean(permission.allowLocalStorageView);
+      $("#perm-storage-root").value = permission.storageDirectoryPath || (state.config?.workspaceDir || "");
+      $("#perm-subpaths").value = (permission.allowedSubpaths || []).join("\\n");
+      $("#perm-exts").value = (permission.allowedExtensions || []).join("\\n");
+    }
+
+    async function savePermissions() {
+      const permission = {
+        allowLocalStorageView: $("#perm-allow-view").checked,
+        storageDirectoryPath: $("#perm-storage-root").value.trim(),
+        allowedSubpaths: $("#perm-subpaths").value
+          .split("\\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+        allowedExtensions: $("#perm-exts").value
+          .split("\\n")
+          .map((line) => line.trim().toLowerCase())
+          .filter(Boolean),
+      };
+      await api("/api/control-settings", {
+        method: "POST",
+        body: JSON.stringify({ permission }),
+      });
+      await loadControlSettings();
+      setStatus("Permission scope saved.", "ok");
+    }
+
+    async function loadScopedFiles() {
+      const payload = await api("/api/permissions/files");
+      const files = payload.files || [];
+      const list = $("#perm-file-list");
+      list.innerHTML = "";
+      files.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item;
+        option.textContent = item;
+        list.appendChild(option);
+      });
+      $("#perm-file-count").textContent = files.length + " files";
+      if (files.length === 0) {
+        $("#perm-file-content").value = "";
+      }
+    }
+
+    async function readScopedFile() {
+      const selected = $("#perm-file-list").value;
+      if (!selected) {
+        $("#perm-file-content").value = "";
+        return;
+      }
+      const payload = await api("/api/permissions/read-file", {
+        method: "POST",
+        body: JSON.stringify({ path: selected }),
+      });
+      $("#perm-file-content").value = payload.content || "";
+    }
+
+    function renderPromptList() {
+      const list = $("#prompt-list");
+      list.innerHTML = "";
+      if (!(state.promptFiles || []).some((item) => item.id === state.selectedPromptId)) {
+        state.selectedPromptId = "";
+      }
+      (state.promptFiles || []).forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.title + " | " + item.path;
+        if (item.id === state.selectedPromptId) {
+          option.selected = true;
+        }
+        list.appendChild(option);
+      });
+      if (!state.selectedPromptId && state.promptFiles.length > 0) {
+        state.selectedPromptId = state.promptFiles[0].id;
+      }
+      list.value = state.selectedPromptId || "";
+      updatePromptMeta();
+    }
+
+    function updatePromptMeta() {
+      const current = (state.promptFiles || []).find((item) => item.id === state.selectedPromptId);
+      if (!current) {
+        $("#prompt-selected-meta").textContent = "No prompt selected";
+        return;
+      }
+      $("#prompt-selected-meta").textContent = current.title + " | " + current.path;
+    }
+
+    async function readPromptContent() {
+      const id = state.selectedPromptId;
+      if (!id) {
+        $("#prompt-editor").value = "";
+        updatePromptMeta();
+        return;
+      }
+      const payload = await api("/api/prompts/read", {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      });
+      $("#prompt-editor").value = payload.content || "";
+      updatePromptMeta();
+    }
+
+    async function addPrompt() {
+      const title = $("#prompt-add-title").value.trim();
+      const promptPath = $("#prompt-add-path").value.trim();
+      if (!promptPath) {
+        setStatus("Prompt path is required.", "error");
+        return;
+      }
+      const payload = await api("/api/prompts/add", {
+        method: "POST",
+        body: JSON.stringify({ title, path: promptPath }),
+      });
+      state.promptFiles = payload.promptFiles || [];
+      state.selectedPromptId = state.promptFiles.length > 0 ? state.promptFiles[state.promptFiles.length - 1].id : "";
+      renderPromptList();
+      await readPromptContent();
+      $("#prompt-add-title").value = "";
+      $("#prompt-add-path").value = "";
+      setStatus("Prompt file added.", "ok");
+    }
+
+    async function removePrompt() {
+      const id = state.selectedPromptId;
+      if (!id) {
+        return;
+      }
+      const payload = await api("/api/prompts/remove", {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      });
+      state.promptFiles = payload.promptFiles || [];
+      state.selectedPromptId = state.promptFiles.length > 0 ? state.promptFiles[0].id : "";
+      renderPromptList();
+      await readPromptContent();
+      setStatus("Prompt removed.", "ok");
+    }
+
+    async function savePrompt() {
+      const id = state.selectedPromptId;
+      if (!id) {
+        setStatus("Select a prompt first.", "error");
+        return;
+      }
+      const content = $("#prompt-editor").value;
+      await api("/api/prompts/save", {
+        method: "POST",
+        body: JSON.stringify({ id, content }),
+      });
+      setStatus("Prompt file saved.", "ok");
+    }
+
+    async function loadLogs() {
+      const payload = await api("/api/logs?limit=1000");
+      const lines = payload.lines || [];
+      $("#logs-view").textContent = lines.join("\\n");
+      $("#logs-meta").textContent = lines.length + " lines";
+    }
+
     async function refreshPreview() {
       setStatus("Refreshing emulator preview...");
       const preview = await api("/api/emulator/preview");
@@ -1140,6 +1444,7 @@ export class DashboardServer {
       setStatus("Config saved.", "ok");
       await loadRuntime();
       await loadConfigAndOnboarding();
+      await loadControlSettings();
     }
 
     async function saveOnboarding() {
@@ -1187,7 +1492,20 @@ export class DashboardServer {
 
     function bindEvents() {
       document.querySelectorAll(".tab-btn").forEach((button) => {
-        button.addEventListener("click", () => activateTab(button.dataset.tab));
+        button.addEventListener("click", () => {
+          const tab = button.dataset.tab;
+          activateTab(tab);
+          if (tab === "logs") {
+            loadLogs().catch(() => {});
+          }
+          if (tab === "permissions") {
+            loadScopedFiles().catch(() => {});
+          }
+          if (tab === "prompts") {
+            renderPromptList();
+            readPromptContent().catch(() => {});
+          }
+        });
       });
 
       $("#runtime-refresh-btn").addEventListener("click", () => {
@@ -1252,6 +1570,69 @@ export class DashboardServer {
       $("#preview-image").addEventListener("click", (event) => {
         sendPreviewTap(event).catch((error) => setStatus(error.message, "error"));
       });
+
+      $("#perm-save-btn").addEventListener("click", () => {
+        savePermissions()
+          .then(() => loadScopedFiles())
+          .catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#perm-refresh-files-btn").addEventListener("click", () => {
+        loadScopedFiles()
+          .then(() => setStatus("Scoped files refreshed.", "ok"))
+          .catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#perm-file-list").addEventListener("change", () => {
+        readScopedFile().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#prompt-add-btn").addEventListener("click", () => {
+        addPrompt().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#prompt-remove-btn").addEventListener("click", () => {
+        removePrompt().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#prompt-list").addEventListener("change", (event) => {
+        state.selectedPromptId = event.target.value || "";
+        readPromptContent().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#prompt-reload-btn").addEventListener("click", () => {
+        readPromptContent().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#prompt-save-btn").addEventListener("click", () => {
+        savePrompt().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#logs-refresh-btn").addEventListener("click", () => {
+        loadLogs().catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#logs-clear-btn").addEventListener("click", () => {
+        api("/api/logs/clear", { method: "POST", body: "{}" })
+          .then(() => loadLogs())
+          .then(() => setStatus("Logs cleared.", "ok"))
+          .catch((error) => setStatus(error.message, "error"));
+      });
+
+      $("#logs-auto").addEventListener("change", (event) => {
+        const enabled = event.target.checked;
+        if (state.logsTimer) {
+          clearInterval(state.logsTimer);
+          state.logsTimer = null;
+        }
+        if (enabled) {
+          state.logsTimer = setInterval(() => {
+            if (document.querySelector('[data-panel="logs"]').classList.contains("active")) {
+              loadLogs().catch(() => {});
+            }
+          }, 2000);
+        }
+      });
     }
 
     async function init() {
@@ -1259,6 +1640,9 @@ export class DashboardServer {
       try {
         await loadRuntime();
         await loadConfigAndOnboarding();
+        await loadControlSettings();
+        await loadScopedFiles();
+        await loadLogs();
         setStatus("Dashboard ready.", "ok");
       } catch (error) {
         setStatus(error.message || "Initialization failed", "error");
@@ -1392,6 +1776,119 @@ export class DashboardServer {
         sendJson(res, 200, {
           ok: true,
           controlSettings: merged,
+        });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/api/prompts") {
+        const control = loadControlSettings(this.config);
+        sendJson(res, 200, {
+          promptFiles: control.promptFiles,
+        });
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/api/prompts/add") {
+        const body = await readJsonBody(req);
+        if (!isObject(body)) {
+          throw new Error("Invalid prompt add payload.");
+        }
+        const title = String(body.title ?? "").trim();
+        const promptPath = String(body.path ?? "").trim();
+        if (!promptPath) {
+          throw new Error("Prompt path is required.");
+        }
+
+        const control = loadControlSettings(this.config);
+        const next = {
+          ...control,
+          promptFiles: [...control.promptFiles],
+          updatedAt: nowIso(),
+        };
+        const id = String(body.id ?? "").trim() || `prompt-${Math.random().toString(36).slice(2, 10)}`;
+        next.promptFiles.push({
+          id,
+          title: title || path.basename(promptPath, path.extname(promptPath)),
+          path: resolvePath(promptPath),
+        });
+        saveControlSettings(this.config, next);
+        this.log(`prompt added id=${id}`);
+        sendJson(res, 200, {
+          ok: true,
+          promptFiles: next.promptFiles,
+        });
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/api/prompts/remove") {
+        const body = await readJsonBody(req);
+        if (!isObject(body)) {
+          throw new Error("Invalid prompt remove payload.");
+        }
+        const id = String(body.id ?? "").trim();
+        if (!id) {
+          throw new Error("Prompt id is required.");
+        }
+
+        const control = loadControlSettings(this.config);
+        const next = {
+          ...control,
+          promptFiles: control.promptFiles.filter((item) => item.id !== id),
+          updatedAt: nowIso(),
+        };
+        saveControlSettings(this.config, next);
+        this.log(`prompt removed id=${id}`);
+        sendJson(res, 200, {
+          ok: true,
+          promptFiles: next.promptFiles,
+        });
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/api/prompts/read") {
+        const body = await readJsonBody(req);
+        if (!isObject(body)) {
+          throw new Error("Invalid prompt read payload.");
+        }
+        const id = String(body.id ?? "").trim();
+        if (!id) {
+          throw new Error("Prompt id is required.");
+        }
+
+        const control = loadControlSettings(this.config);
+        const prompt = control.promptFiles.find((item) => item.id === id);
+        if (!prompt) {
+          throw new Error(`Prompt not found: ${id}`);
+        }
+        const content = this.readPromptFile(prompt.path);
+        sendJson(res, 200, {
+          prompt,
+          content,
+        });
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/api/prompts/save") {
+        const body = await readJsonBody(req);
+        if (!isObject(body)) {
+          throw new Error("Invalid prompt save payload.");
+        }
+        const id = String(body.id ?? "").trim();
+        if (!id) {
+          throw new Error("Prompt id is required.");
+        }
+        const content = String(body.content ?? "");
+
+        const control = loadControlSettings(this.config);
+        const prompt = control.promptFiles.find((item) => item.id === id);
+        if (!prompt) {
+          throw new Error(`Prompt not found: ${id}`);
+        }
+        this.savePromptFile(prompt.path, content);
+        this.log(`prompt saved id=${id}`);
+        sendJson(res, 200, {
+          ok: true,
+          prompt,
         });
         return;
       }
