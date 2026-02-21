@@ -725,6 +725,9 @@ export class DashboardServer {
     .grid.cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .core-paths-grid {
+      grid-template-columns: 1fr;
+    }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
@@ -925,7 +928,7 @@ export class DashboardServer {
     <header class="topbar">
       <div class="title">
         <h1>OpenPocket</h1>
-        <p class="subtitle">Local Android agent control dashboard (Web)</p>
+        <p class="subtitle">Local agent phone control dashboard</p>
       </div>
       <div class="badge-row">
         <span class="badge" id="gateway-badge">Gateway: Unknown</span>
@@ -970,7 +973,7 @@ export class DashboardServer {
 
           <div class="card">
             <h3>Core Paths</h3>
-            <div class="grid cols-2">
+            <div class="grid core-paths-grid">
               <div>
                 <label for="workspace-input">Workspace</label>
                 <input type="text" id="workspace-input" />
