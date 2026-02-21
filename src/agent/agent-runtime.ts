@@ -29,6 +29,11 @@ const AUTO_PERMISSION_DIALOG_PACKAGES = [
   "packageinstaller",
 ];
 
+type DelegationApplyResult = {
+  message: string;
+  templateHint: string | null;
+};
+
 export class AgentRuntime {
   private readonly config: OpenPocketConfig;
   private readonly workspace: WorkspaceStore;
@@ -161,7 +166,7 @@ export class AgentRuntime {
     return { lat, lon };
   }
 
-  private async applyLocationDelegation(lat: number, lon: number): Promise<string> {
+  private async applyLocationDelegation(lat: number, lon: number): Promise<DelegationApplyResult> {
     const deviceId = this.adb.resolveDeviceId(this.config.agent.deviceId);
     this.emulator.runAdb(
       [
@@ -175,10 +180,13 @@ export class AgentRuntime {
       ],
       20_000,
     );
-    return `delegated location injected lat=${lat.toFixed(6)} lon=${lon.toFixed(6)}`;
+    return {
+      message: `delegated location injected lat=${lat.toFixed(6)} lon=${lon.toFixed(6)}`,
+      templateHint: "location_injected_continue_flow",
+    };
   }
 
-  private async applyTextDelegation(text: string): Promise<string> {
+  private async applyTextDelegation(text: string): Promise<DelegationApplyResult> {
     const result = await this.adb.executeAction(
       {
         type: "type",
@@ -187,10 +195,13 @@ export class AgentRuntime {
       },
       this.config.agent.deviceId,
     );
-    return `delegated text typed (${text.length} chars): ${result}`;
+    return {
+      message: `delegated text typed (${text.length} chars): ${result}`,
+      templateHint: "text_typed_continue_flow",
+    };
   }
 
-  private async applyImageDelegation(artifactPath: string): Promise<string> {
+  private async applyImageDelegation(artifactPath: string): Promise<DelegationApplyResult> {
     const deviceId = this.adb.resolveDeviceId(this.config.agent.deviceId);
     const ext = path.extname(artifactPath).toLowerCase() || ".jpg";
     const remoteName = `openpocket-human-auth-${Date.now()}${ext}`;
@@ -223,18 +234,25 @@ export class AgentRuntime {
     } catch {
       // Media scan broadcast is best-effort.
     }
-    return `delegated image pushed to ${remotePath}`;
+    return {
+      message: `delegated image pushed to ${remotePath}`,
+      templateHint:
+        `gallery_import_template: tap app upload/attach/gallery entry, open Downloads, select ${remoteName}, then confirm.`,
+    };
   }
 
   private async applyHumanDelegation(
     capability: HumanAuthCapability,
     decision: HumanAuthDecision,
-  ): Promise<string | null> {
+  ): Promise<DelegationApplyResult | null> {
     if (!decision.approved || !decision.artifactPath) {
       return null;
     }
     if (!fs.existsSync(decision.artifactPath)) {
-      return `delegation artifact not found: ${decision.artifactPath}`;
+      return {
+        message: `delegation artifact not found: ${decision.artifactPath}`,
+        templateHint: null,
+      };
     }
 
     try {
@@ -264,9 +282,15 @@ export class AgentRuntime {
       if (this.isImageArtifactPath(decision.artifactPath)) {
         return this.applyImageDelegation(decision.artifactPath);
       }
-      return `delegation artifact stored at ${decision.artifactPath}`;
+      return {
+        message: `delegation artifact stored at ${decision.artifactPath}`,
+        templateHint: null,
+      };
     } catch (error) {
-      return `delegation apply failed: ${(error as Error).message}`;
+      return {
+        message: `delegation apply failed: ${(error as Error).message}`,
+        templateHint: null,
+      };
     }
   }
 
@@ -396,7 +420,9 @@ export class AgentRuntime {
             };
           }
 
-          const delegationResult = await this.applyHumanDelegation(autoAction.capability, decision);
+          const delegation = await this.applyHumanDelegation(autoAction.capability, decision);
+          const delegationResult = delegation?.message ?? null;
+          const delegationTemplate = delegation?.templateHint ?? null;
           const decisionLine = delegationResult
             ? `Human auth ${decision.status} request_id=${decision.requestId} message=${decision.message} delegation=${delegationResult}`
             : `Human auth ${decision.status} request_id=${decision.requestId} message=${decision.message}`;
@@ -404,7 +430,7 @@ export class AgentRuntime {
             ? `${decisionLine}\nhuman_artifact=${decision.artifactPath}`
             : decisionLine;
           const stepResultWithDelegation = delegationResult
-            ? `${stepResultBase}\ndelegation_result=${delegationResult}`
+            ? `${stepResultBase}\ndelegation_result=${delegationResult}${delegationTemplate ? `\ndelegation_template=${delegationTemplate}` : ""}`
             : stepResultBase;
           const stepResult = screenshotPath
             ? `${stepResultWithDelegation}\nlocal_screenshot=${screenshotPath}`
@@ -427,6 +453,9 @@ export class AgentRuntime {
           history.push(
             `step ${step}: app=${snapshot.currentApp} action=request_human_auth(auto_permission_dialog) decision=${decision.status} message=${decision.message}${delegationResult ? ` delegation=${delegationResult}` : ""}`,
           );
+          if (delegationTemplate) {
+            history.push(`delegation_template ${delegationTemplate}`);
+          }
 
           if (onProgress && step % this.config.agent.progressReportInterval === 0) {
             try {
@@ -566,7 +595,9 @@ export class AgentRuntime {
             };
           }
 
-          const delegationResult = await this.applyHumanDelegation(output.action.capability, decision);
+          const delegation = await this.applyHumanDelegation(output.action.capability, decision);
+          const delegationResult = delegation?.message ?? null;
+          const delegationTemplate = delegation?.templateHint ?? null;
           const decisionLine = delegationResult
             ? `Human auth ${decision.status} request_id=${decision.requestId} message=${decision.message} delegation=${delegationResult}`
             : `Human auth ${decision.status} request_id=${decision.requestId} message=${decision.message}`;
@@ -574,7 +605,7 @@ export class AgentRuntime {
             ? `${decisionLine}\nhuman_artifact=${decision.artifactPath}`
             : decisionLine;
           const stepResultWithDelegation = delegationResult
-            ? `${stepResultBase}\ndelegation_result=${delegationResult}`
+            ? `${stepResultBase}\ndelegation_result=${delegationResult}${delegationTemplate ? `\ndelegation_template=${delegationTemplate}` : ""}`
             : stepResultBase;
           const stepResult = screenshotPath
             ? `${stepResultWithDelegation}\nlocal_screenshot=${screenshotPath}`
@@ -597,6 +628,9 @@ export class AgentRuntime {
           history.push(
             `step ${step}: app=${snapshot.currentApp} action=request_human_auth decision=${decision.status} message=${decision.message}${delegationResult ? ` delegation=${delegationResult}` : ""}`,
           );
+          if (delegationTemplate) {
+            history.push(`delegation_template ${delegationTemplate}`);
+          }
 
           if (onProgress && step % this.config.agent.progressReportInterval === 0) {
             try {

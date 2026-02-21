@@ -451,3 +451,79 @@ test("AgentRuntime applies delegated location artifact after human auth approval
     fs.rmSync(artifactFile, { force: true });
   }
 });
+
+test("AgentRuntime appends gallery template hint after delegated image artifact", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  const emulatorCommands = [];
+  const artifactFile = path.join(os.tmpdir(), `openpocket-artifact-image-${Date.now()}.jpg`);
+  fs.writeFileSync(artifactFile, Buffer.from("fake-image-bytes"));
+
+  runtime.adb = {
+    captureScreenSnapshot: () => makeSnapshot(),
+    resolveDeviceId: () => "emulator-5554",
+    executeAction: async () => "ok",
+  };
+  runtime.emulator = {
+    runAdb: (args) => {
+      emulatorCommands.push(args);
+      return "ok";
+    },
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  const observedHistories = [];
+  let callCount = 0;
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async (params) => {
+    observedHistories.push([...(params.history || [])]);
+    callCount += 1;
+    if (callCount === 1) {
+      return {
+        thought: "Need delegated camera capture",
+        action: {
+          type: "request_human_auth",
+          capability: "camera",
+          instruction: "Capture an image from real device camera.",
+          timeoutSec: 120,
+        },
+        raw: '{"thought":"Need delegated camera capture","action":{"type":"request_human_auth","capability":"camera","instruction":"Capture an image from real device camera.","timeoutSec":120}}',
+      };
+    }
+    return {
+      thought: "Continue with picker",
+      action: { type: "finish", message: "Completed with delegated image" },
+      raw: '{"thought":"Continue with picker","action":{"type":"finish","message":"Completed with delegated image"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask(
+      "delegated image template test",
+      undefined,
+      undefined,
+      async () => ({
+        requestId: "req-image",
+        approved: true,
+        status: "approved",
+        message: "Image captured",
+        decidedAt: new Date().toISOString(),
+        artifactPath: artifactFile,
+      }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(
+      emulatorCommands.some((args) => Array.isArray(args) && args.includes("push") && args.includes(artifactFile)),
+      true,
+    );
+    const secondCallHistory = observedHistories[1] || [];
+    assert.equal(
+      secondCallHistory.some((line) => typeof line === "string" && line.includes("delegation_template gallery_import_template")),
+      true,
+    );
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+    fs.rmSync(artifactFile, { force: true });
+  }
+});

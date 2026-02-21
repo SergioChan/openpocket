@@ -633,6 +633,8 @@ export class PermissionLabManager {
       `Tap button "${scenario.buttonLabel}" exactly once.`,
       "If a system permission/auth dialog appears, do not approve or reject inside emulator.",
       "Immediately call request_human_auth and wait for my decision from Telegram web link.",
+      "If delegated data is attached by human auth (text/geo/image), use it immediately to continue UI flow.",
+      "For delegated image, follow gallery import template in history: tap upload/attach/gallery and pick the injected OpenPocket file from Downloads.",
       "After I approve/reject on phone, continue and report final permission outcome (GRANTED/DENIED/already granted).",
     ].join(" ");
   }
