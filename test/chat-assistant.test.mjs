@@ -46,7 +46,7 @@ function createAssistant(options = {}) {
         "",
         "## Agent Identity",
         "",
-        "- Name: OpenPocket",
+        "- Name: Pocket",
         "- Role: Android phone-use automation agent",
         "- Persona: pragmatic and concise",
       ].join("\n"),
@@ -202,4 +202,47 @@ test("ChatAssistant onboarding follows Chinese and supports one-shot multi-field
   assert.match(identityBody, /Persona: 冷静务实/);
   assert.match(userBody, /Preferred form of address: 小陈/);
   assert.match(userBody, /Preferred assistant name: Pocket/);
+});
+
+test("ChatAssistant onboarding triggers on default scaffold with blank profile fields", async () => {
+  const { assistant, cfg } = createAssistant({ withApiKey: true });
+
+  fs.writeFileSync(
+    path.join(cfg.workspaceDir, "IDENTITY.md"),
+    [
+      "# IDENTITY",
+      "",
+      "## Agent Identity",
+      "",
+      "- Name: OpenPocket",
+      "- Role: Android phone-use automation agent",
+      "- Primary objective: execute user tasks safely and efficiently",
+      "",
+      "## Behavioral Defaults",
+      "",
+      "- Language for model thought/action text: English",
+      "- Planning style: sub-goal driven, one deterministic step at a time",
+      "- Escalation trigger: request_human_auth when real-device authorization is required",
+    ].join("\n"),
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(cfg.workspaceDir, "USER.md"),
+    [
+      "# USER",
+      "",
+      "## Profile",
+      "",
+      "- Name:",
+      "- Preferred form of address:",
+      "- Timezone:",
+      "- Language preference:",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const out = await assistant.decide(11, "你好");
+  assert.equal(out.mode, "chat");
+  assert.equal(out.reason, "profile_onboarding");
+  assert.match(out.reply, /我该怎么称呼你/);
 });

@@ -116,12 +116,34 @@ export class ChatAssistant {
 
   private extractBulletValue(content: string, key: string): string {
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`^-\\s*${escaped}\\s*:\\s*(.+?)\\s*$`, "im");
-    const match = content.match(regex);
-    if (!match?.[1]) {
-      return "";
+    const regex = new RegExp(`^-\\s*${escaped}\\s*:\\s*(.*)$`, "i");
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    for (const line of lines) {
+      const match = line.match(regex);
+      if (!match) {
+        continue;
+      }
+      return this.normalizeOneLine(match[1] ?? "");
     }
-    return this.normalizeOneLine(match[1]);
+    return "";
+  }
+
+  private isPlaceholderValue(value: string, extra: string[] = []): boolean {
+    const normalized = this.normalizeOneLine(value).toLowerCase();
+    if (!normalized) {
+      return true;
+    }
+    const placeholders = new Set([
+      "unknown",
+      "tbd",
+      "todo",
+      "null",
+      "n/a",
+      "none",
+      "placeholder",
+      ...extra.map((v) => v.toLowerCase()),
+    ]);
+    return placeholders.has(normalized);
   }
 
   private needsIdentityOnboarding(): boolean {
@@ -130,10 +152,11 @@ export class ChatAssistant {
       return true;
     }
     const name = this.extractBulletValue(content, "Name");
-    if (!name) {
+    if (this.isPlaceholderValue(name, ["openpocket"])) {
       return true;
     }
-    if (/^(unknown|tbd|todo|null|n\/a|none|placeholder)$/i.test(name)) {
+    const persona = this.extractBulletValue(content, "Persona");
+    if (this.isPlaceholderValue(persona)) {
       return true;
     }
     return false;
@@ -146,10 +169,7 @@ export class ChatAssistant {
     }
     const preferred = this.extractBulletValue(content, "Preferred form of address")
       || this.extractBulletValue(content, "What to call them");
-    if (!preferred) {
-      return true;
-    }
-    if (/^(unknown|tbd|todo|null|n\/a|none|placeholder)$/i.test(preferred)) {
+    if (this.isPlaceholderValue(preferred)) {
       return true;
     }
     return false;
