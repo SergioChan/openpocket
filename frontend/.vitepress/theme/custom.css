@@ -624,32 +624,15 @@ h1, h2, h3, h4, h5, h6,
   width: 100%;
 }
 
-.op-arch-grid {
+.op-arch-simple {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 100%;
-}
-
-.op-arch-track {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   width: 100%;
   padding: 14px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.55);
   border: 1px dashed rgba(0, 0, 0, 0.14);
-}
-
-.op-arch-track-label {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #7a7a7a;
 }
 
 .op-arch-flow {
@@ -663,6 +646,11 @@ h1, h2, h3, h4, h5, h6,
 
 .op-arch-group {
   will-change: opacity, transform;
+}
+
+.op-arch-flow--branch {
+  padding-top: 10px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.12);
 }
 
 .op-arch-node {
@@ -835,8 +823,8 @@ h1, h2, h3, h4, h5, h6,
 .dark .op-workflow-step p        { color: #c8cdd8 !important; }
 
 /* Architecture */
-.dark .op-arch-track             { background: rgba(255, 255, 255, 0.02) !important; border-color: rgba(255, 255, 255, 0.15) !important; }
-.dark .op-arch-track-label       { color: #95a2b8 !important; }
+.dark .op-arch-simple            { background: rgba(255, 255, 255, 0.02) !important; border-color: rgba(255, 255, 255, 0.15) !important; }
+.dark .op-arch-flow--branch      { border-color: rgba(255, 255, 255, 0.14) !important; }
 .dark .op-arch-node--gray        { background: rgba(255, 255, 255, 0.04) !important; border-color: rgba(255, 255, 255, 0.12) !important; color: #f0f2f7 !important; }
 .dark .op-arch-node--blue        { background: rgba(43, 127, 255, 0.12) !important; border-color: rgba(43, 127, 255, 0.5) !important; color: #6da8ff !important; }
 .dark .op-arch-node--orange      { background: rgba(255, 138, 0, 0.12) !important; border-color: rgba(255, 179, 71, 0.5) !important; color: #ffb347 !important; }
@@ -944,7 +932,7 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-step-title { font-size: 44px !important; line-height: 52px !important; }
   .op-workflow-step-num   { font-size: 26px !important; }
   .op-workflow-grid       { gap: 32px; }
-  .op-arch-track          { padding: 12px; }
+  .op-arch-simple         { padding: 12px; }
   .op-arch-flow           { justify-content: flex-start; }
   .VPNavBar .container    { padding: 0 32px !important; }
 }
@@ -952,9 +940,12 @@ h1, h2, h3, h4, h5, h6,
 /* Tablet portrait */
 @media (max-width: 860px) {
   .VPNavBarMenu             { display: none !important; }
-  .VPNavBar .container      { padding: 0 20px !important; align-items: center !important; }
+  .VPNavBar .container      { padding: 0 14px !important; align-items: center !important; }
   .VPNavBar .title          { height: var(--vp-nav-height) !important; }
-  .VPNavBar .content        { height: var(--vp-nav-height) !important; }
+  .VPNavBar .content        { height: var(--vp-nav-height) !important; justify-content: flex-end !important; }
+  .VPNavBar .content-body   { width: auto !important; margin-left: auto !important; gap: 8px !important; justify-content: flex-end !important; }
+  .VPNavBar .hamburger      { margin: 0 !important; height: var(--vp-nav-height) !important; display: flex !important; align-items: center !important; }
+  .VPNavBar .hamburger .container { margin: 0 !important; top: 0 !important; }
   .op-landing             { padding: 48px 28px; gap: 64px; }
   .op-hero-title          { font-size: 36px !important; line-height: 44px !important; }
   .op-hero-desc           { font-size: 16px; }
@@ -966,17 +957,17 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-grid       { flex-direction: column; gap: 28px; }
   .op-workflow-step-title { font-size: 36px !important; line-height: 44px !important; }
   .op-workflow-step-num   { font-size: 22px !important; }
-  .op-arch-track-label    { font-size: 11px; line-height: 15px; }
   .op-arch-flow           { flex-direction: column; align-items: flex-start; gap: 10px; }
   .op-arch-arrow          { font-size: 0; }
   .op-arch-arrow::after   { content: '\2193'; font-size: 16px; }
+  .op-arch-flow--branch   { margin-top: 2px; }
   .op-hero-actions        { flex-wrap: wrap; }
 }
 
 /* Mobile navbar alignment fix */
 @media (max-width: 767px) {
-  .VPNavBar .content-body { justify-content: flex-end !important; }
-  .VPNavBar .hamburger    { margin-left: auto !important; }
+  .VPNavBar .content-body { justify-content: flex-end !important; gap: 6px !important; }
+  .VPNavBar .hamburger    { margin: 0 !important; }
 }
 
 /* Mobile */
@@ -999,11 +990,21 @@ h1, h2, h3, h4, h5, h6,
   .op-workflow-step p     { font-size: 13px; line-height: 18px; }
   .op-usecase-card        { padding: 12px 14px !important; font-size: 14px !important; }
   .op-usecase-icon        { width: 32px !important; height: 32px !important; min-width: 32px; min-height: 32px; }
-  .op-arch-track          { padding: 10px; border-radius: 12px; }
+  .op-arch-simple         { padding: 10px; border-radius: 12px; }
   .op-arch-node           { padding: 8px 12px !important; font-size: 12px !important; line-height: 18px !important; height: 34px !important; }
   .op-arch-node--compact  { padding: 8px 12px !important; font-size: 12px !important; line-height: 18px !important; height: 34px !important; }
   .op-arch-arrow::after   { font-size: 14px; }
   .VPNavBar .container    { padding: 0 16px !important; }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .op-cursor {
+    display: none !important;
+  }
+  .has-custom-cursor,
+  .has-custom-cursor * {
+    cursor: auto !important;
+  }
 }
 
 /* Accessibility */

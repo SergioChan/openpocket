@@ -53,23 +53,40 @@ function isHomePage() {
 
 /* ── Custom cursor ── */
 const cursorEl = ref<HTMLDivElement | null>(null);
+let customCursorEnabled = false;
 
-function initCustomCursor() {
+function supportsCustomCursor() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function refreshCustomCursorState() {
   const el = cursorEl.value;
   if (!el) return;
 
-  if (!isHomePage()) {
-    el.classList.remove("visible");
+  customCursorEnabled = isHomePage() && supportsCustomCursor();
+  if (!customCursorEnabled) {
+    el.classList.remove("visible", "hover");
     document.documentElement.classList.remove("has-custom-cursor");
     return;
   }
 
   document.documentElement.classList.add("has-custom-cursor");
+}
 
-  el.classList.add("visible");
+function initCustomCursor() {
+  const el = cursorEl.value;
+  if (!el) return;
+  refreshCustomCursorState();
+  if (customCursorEnabled) {
+    el.classList.add("visible");
+  }
 }
 
 function updateCursor(e: MouseEvent) {
+  if (!customCursorEnabled) return;
   const el = cursorEl.value;
   if (!el) return;
   el.style.left = e.clientX + "px";
@@ -84,11 +101,13 @@ function updateCursor(e: MouseEvent) {
 }
 
 function hideCursor() {
+  if (!customCursorEnabled) return;
   const el = cursorEl.value;
   if (el) el.classList.remove("visible");
 }
 
 function showCursor() {
+  if (!customCursorEnabled) return;
   const el = cursorEl.value;
   if (el && isHomePage()) el.classList.add("visible");
 }
@@ -176,6 +195,7 @@ function initDotGrid() {
 }
 
 function onMove(e: MouseEvent) {
+  if (!customCursorEnabled) return;
   cursorX = e.clientX;
   cursorY = e.clientY;
   dirty = true;
@@ -183,6 +203,11 @@ function onMove(e: MouseEvent) {
 }
 
 function onScroll() { dirty = true; }
+
+function onResize() {
+  refreshCustomCursorState();
+  dirty = true;
+}
 
 function onLeave() {
   cursorX = -9999; cursorY = -9999; dirty = true;
@@ -196,6 +221,7 @@ onMounted(() => {
     initDotGrid();
     initCustomCursor();
     window.addEventListener("mousemove", onMove);
+    window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("mouseleave", onLeave);
     document.addEventListener("mouseenter", onEnter);
@@ -205,6 +231,7 @@ onMounted(() => {
 onUnmounted(() => {
   cancelAnimationFrame(animId);
   window.removeEventListener("mousemove", onMove);
+  window.removeEventListener("resize", onResize);
   window.removeEventListener("scroll", onScroll);
   document.removeEventListener("mouseleave", onLeave);
   document.removeEventListener("mouseenter", onEnter);

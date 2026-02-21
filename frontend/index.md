@@ -114,70 +114,26 @@ import { withBase } from "vitepress";
 <!-- Architecture -->
 <section class="op-arch">
   <p class="op-section-label">Architecture</p>
-  <div class="op-arch-grid">
-    <div class="op-arch-track op-arch-group">
-      <p class="op-arch-track-label">Main Task Execution</p>
-      <div class="op-arch-flow">
-        <div class="op-arch-node op-arch-node--gray">User Surfaces</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue">Gateway Runtime</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--orange">Agent Runtime</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue">ADB Runtime</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--gray">Android Emulator</div>
-      </div>
+  <div class="op-arch-simple op-arch-group">
+    <div class="op-arch-flow">
+      <div class="op-arch-node op-arch-node--gray">User</div>
+      <span class="op-arch-arrow">→</span>
+      <div class="op-arch-node op-arch-node--blue">Gateway</div>
+      <span class="op-arch-arrow">→</span>
+      <div class="op-arch-node op-arch-node--orange">Agent Runtime</div>
+      <span class="op-arch-arrow">→</span>
+      <div class="op-arch-node op-arch-node--blue">ADB Runtime</div>
+      <span class="op-arch-arrow">→</span>
+      <div class="op-arch-node op-arch-node--gray">Android Emulator</div>
     </div>
-    <div class="op-arch-track op-arch-group">
-      <p class="op-arch-track-label">Model + Skills + Artifacts</p>
-      <div class="op-arch-flow">
-        <div class="op-arch-node op-arch-node--orange op-arch-node--compact">Agent Runtime</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-stack">
-          <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Model Client</div>
-          <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Skill Loader</div>
-          <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Script Executor</div>
-          <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Session + Memory Store</div>
-        </div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-stack">
-          <div class="op-arch-node op-arch-node--gray op-arch-node--compact">LLM Providers</div>
-          <div class="op-arch-node op-arch-node--gray op-arch-node--compact">Local Artifacts</div>
-        </div>
-      </div>
-    </div>
-    <div class="op-arch-track op-arch-group">
-      <p class="op-arch-track-label">Gateway Operations</p>
-      <div class="op-arch-flow">
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Gateway Loop</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Telegram Gateway</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--gray op-arch-node--compact">Bot Chats</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Heartbeat Runner</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Cron Service</div>
-      </div>
-    </div>
-    <div class="op-arch-track op-arch-group">
-      <p class="op-arch-track-label">Remote Human Authorization</p>
-      <div class="op-arch-flow">
-        <div class="op-arch-node op-arch-node--orange op-arch-node--compact">Agent Runtime</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">HumanAuthBridge</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Local Relay API</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">ngrok Tunnel (optional)</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--gray op-arch-node--compact">Phone Approval Page</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Decision Polling</div>
-        <span class="op-arch-arrow">→</span>
-        <div class="op-arch-node op-arch-node--orange op-arch-node--compact">Agent Resume</div>
-      </div>
+    <div class="op-arch-flow op-arch-flow--branch">
+      <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Gateway</div>
+      <span class="op-arch-arrow">→</span>
+      <div class="op-arch-node op-arch-node--blue op-arch-node--compact">Auth Relay</div>
+      <span class="op-arch-arrow">←</span>
+      <div class="op-arch-node op-arch-node--orange op-arch-node--compact">Agent Runtime</div>
+      <span class="op-arch-arrow">↔</span>
+      <div class="op-arch-node op-arch-node--gray op-arch-node--compact">User Interface</div>
     </div>
   </div>
 </section>
