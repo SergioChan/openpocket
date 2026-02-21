@@ -117,3 +117,49 @@ test("TelegramGateway syncs bot display name after onboarding update", async () 
     assert.match(messageCalls[0].text, /已同步 Telegram Bot 显示名/);
   });
 });
+
+test("TelegramGateway consumes profile-update payload after chat reply", async () => {
+  await withTempHome("openpocket-telegram-profile-update-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const messageCalls = [];
+    const setNameCalls = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      messageCalls.push({ chatId, text });
+      return {};
+    };
+    gateway.bot.setMyName = async (form) => {
+      setNameCalls.push(form);
+      return true;
+    };
+
+    let consumed = false;
+    gateway.chat.decide = async () => ({
+      mode: "chat",
+      task: "",
+      reply: "已更新。我的名字改为“Jarvis-Phone”。",
+      confidence: 1,
+      reason: "profile_update",
+    });
+    gateway.chat.consumePendingProfileUpdate = () => {
+      if (consumed) {
+        return null;
+      }
+      consumed = true;
+      return { assistantName: "Jarvis-Phone", locale: "zh" };
+    };
+
+    await gateway.consumeMessage({ chat: { id: 456 }, text: "你把名字改成 Jarvis-Phone 吧" });
+
+    assert.equal(setNameCalls.length, 1);
+    assert.equal(setNameCalls[0].name, "Jarvis-Phone");
+    assert.equal(messageCalls.length, 2);
+    assert.match(messageCalls[0].text, /已更新/);
+    assert.match(messageCalls[1].text, /已同步 Telegram Bot 显示名/);
+  });
+});

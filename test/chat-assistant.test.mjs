@@ -275,3 +275,21 @@ test("ChatAssistant exposes pending profile update after onboarding completion",
   const secondRead = assistant.consumePendingProfileUpdate(21);
   assert.equal(secondRead, null);
 });
+
+test("ChatAssistant updates profile from regular rename message", async () => {
+  const { assistant, cfg } = createAssistant();
+
+  const out = await assistant.decide(31, "你把名字改成 Jarvis-Phone 吧");
+  assert.equal(out.mode, "chat");
+  assert.equal(out.reason, "profile_update");
+  assert.match(out.reply, /我的名字改为“Jarvis-Phone”/);
+
+  const identityBody = fs.readFileSync(path.join(cfg.workspaceDir, "IDENTITY.md"), "utf-8");
+  const userBody = fs.readFileSync(path.join(cfg.workspaceDir, "USER.md"), "utf-8");
+  assert.match(identityBody, /Name: Jarvis-Phone/);
+  assert.match(userBody, /Preferred assistant name: Jarvis-Phone/);
+
+  const payload = assistant.consumePendingProfileUpdate(31);
+  assert.equal(payload?.assistantName, "Jarvis-Phone");
+  assert.equal(payload?.locale, "zh");
+});

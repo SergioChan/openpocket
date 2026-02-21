@@ -23,6 +23,12 @@ interface ProfileOnboardingState {
   assistantPersona?: string;
 }
 
+interface ProfileSnapshot {
+  userPreferredAddress: string;
+  assistantName: string;
+  assistantPersona: string;
+}
+
 export interface ChatDecision {
   mode: "task" | "chat";
   task: string;
@@ -123,6 +129,13 @@ export class ChatAssistant {
 
   private normalizeOneLine(input: string): string {
     return input.replace(/\s+/g, " ").trim();
+  }
+
+  private normalizeAssistantName(input: string): string {
+    return this.normalizeOneLine(input)
+      .replace(/[。！？.!?]+$/g, "")
+      .replace(/\s*(吧|呀|呢|啦|喔|哦|好吗|可以吗)\s*$/i, "")
+      .trim();
   }
 
   private extractBulletValue(content: string, key: string): string {
@@ -270,7 +283,9 @@ export class ChatAssistant {
     ]);
     const assistantName = this.extractByPatterns(normalized, [
       /(?:你叫|你就叫|称呼你为|我叫你|我希望你叫)\s*[:：]?\s*([^,，。;；\n]+)/i,
+      /(?:你(?:把)?(?:你(?:的)?)?名字(?:改成|改为|设为|设置为|叫做?)|你以后叫)\s*[:：]?\s*([^,，。;；\n]+)/i,
       /(?:call you|your name is|i want to call you)\s+([^,.;\n]+)/i,
+      /(?:rename yourself to|change your name to|set your name to|call yourself)\s+([^,.;\n]+)/i,
     ]);
     const assistantPersona = this.extractByPatterns(normalized, [
       /(?:人设|风格|语气|设定)\s*[:：]?\s*([^。;；\n]+)/i,
@@ -281,7 +296,7 @@ export class ChatAssistant {
       out.userPreferredAddress = userPreferredAddress;
     }
     if (assistantName) {
-      out.assistantName = assistantName;
+      out.assistantName = this.normalizeAssistantName(assistantName);
     }
     if (assistantPersona) {
       out.assistantPersona = assistantPersona;
@@ -421,6 +436,145 @@ export class ChatAssistant {
       "- Add durable preferences here.",
       "- Keep sensitive details minimal.",
     ].join("\n");
+  }
+
+  private upsertBulletValue(content: string, key: string, value: string): string {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`^-\\s*${escaped}\\s*:\\s*.*$`, "i");
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!regex.test(lines[i])) {
+        continue;
+      }
+      lines[i] = `- ${key}: ${value}`;
+      return lines.join("\n");
+    }
+    const trimmed = lines.join("\n").trimEnd();
+    if (!trimmed) {
+      return `- ${key}: ${value}`;
+    }
+    return `${trimmed}\n- ${key}: ${value}`;
+  }
+
+  private readProfileSnapshot(locale: OnboardingLocale): ProfileSnapshot {
+    const identity = this.readTextSafe(this.profileFilePath("IDENTITY.md"));
+    const user = this.readTextSafe(this.profileFilePath("USER.md"));
+
+    const userPreferredAddressRaw =
+      this.extractBulletValue(user, "Preferred form of address")
+      || this.extractBulletValue(user, "What to call them");
+    const assistantNameRaw =
+      this.extractBulletValue(identity, "Name")
+      || this.extractBulletValue(user, "Preferred assistant name");
+    const assistantPersonaRaw =
+      this.extractBulletValue(identity, "Persona")
+      || this.extractBulletValue(user, "Preferred assistant persona");
+
+    return {
+      userPreferredAddress: this.isPlaceholderValue(userPreferredAddressRaw)
+        ? this.pickFallback(locale, "user")
+        : userPreferredAddressRaw,
+      assistantName: this.isPlaceholderValue(assistantNameRaw, ["openpocket"])
+        ? this.pickFallback(locale, "assistant")
+        : assistantNameRaw,
+      assistantPersona: this.isPlaceholderValue(assistantPersonaRaw)
+        ? this.pickFallback(locale, "persona")
+        : assistantPersonaRaw,
+    };
+  }
+
+  private writeProfileSnapshot(snapshot: ProfileSnapshot): void {
+    const identityPath = this.profileFilePath("IDENTITY.md");
+    const userPath = this.profileFilePath("USER.md");
+
+    const identityCurrent = this.readTextSafe(identityPath).trim();
+    const identityBody = identityCurrent
+      ? this.upsertBulletValue(
+        this.upsertBulletValue(identityCurrent, "Name", snapshot.assistantName),
+        "Persona",
+        snapshot.assistantPersona,
+      )
+      : this.buildIdentityFromAnswers({
+        assistantName: snapshot.assistantName,
+        assistantPersona: snapshot.assistantPersona,
+      });
+
+    const userCurrent = this.readTextSafe(userPath).trim();
+    const userBody = userCurrent
+      ? this.upsertBulletValue(
+        this.upsertBulletValue(
+          this.upsertBulletValue(userCurrent, "Preferred form of address", snapshot.userPreferredAddress),
+          "Preferred assistant name",
+          snapshot.assistantName,
+        ),
+        "Preferred assistant persona",
+        snapshot.assistantPersona,
+      )
+      : this.buildUserFromAnswers({
+        userPreferredAddress: snapshot.userPreferredAddress,
+        assistantName: snapshot.assistantName,
+        assistantPersona: snapshot.assistantPersona,
+      });
+
+    this.writeTextSafe(identityPath, identityBody);
+    this.writeTextSafe(userPath, userBody);
+  }
+
+  private applyProfileUpdate(chatId: number, inputText: string): string | null {
+    const activeOnboarding = this.profileOnboarding.get(chatId);
+    if (activeOnboarding || this.needsProfileOnboarding()) {
+      return null;
+    }
+
+    const parsed = this.parseOnboardingFields(inputText);
+    if (!parsed.userPreferredAddress && !parsed.assistantName && !parsed.assistantPersona) {
+      return null;
+    }
+
+    const locale = this.detectOnboardingLocale(inputText);
+    const current = this.readProfileSnapshot(locale);
+    const next: ProfileSnapshot = {
+      userPreferredAddress: parsed.userPreferredAddress ?? current.userPreferredAddress,
+      assistantName: parsed.assistantName ?? current.assistantName,
+      assistantPersona: parsed.assistantPersona
+        ? this.resolvePersonaAnswer(parsed.assistantPersona, locale)
+        : current.assistantPersona,
+    };
+
+    const assistantNameChanged = next.assistantName !== current.assistantName;
+    const updatesZh: string[] = [];
+    const updatesEn: string[] = [];
+    if (next.userPreferredAddress !== current.userPreferredAddress) {
+      updatesZh.push(`我会称呼你为“${next.userPreferredAddress}”`);
+      updatesEn.push(`I will address you as "${next.userPreferredAddress}"`);
+    }
+    if (assistantNameChanged) {
+      updatesZh.push(`我的名字改为“${next.assistantName}”`);
+      updatesEn.push(`my name is now "${next.assistantName}"`);
+    }
+    if (next.assistantPersona !== current.assistantPersona) {
+      updatesZh.push(`人设改为“${next.assistantPersona}”`);
+      updatesEn.push(`persona updated to "${next.assistantPersona}"`);
+    }
+
+    if (updatesZh.length === 0) {
+      return locale === "zh"
+        ? "这些设定已经是当前值了，不需要改动。"
+        : "These profile settings are already up to date.";
+    }
+
+    this.writeProfileSnapshot(next);
+    if (assistantNameChanged) {
+      this.pendingProfileUpdates.set(chatId, {
+        assistantName: next.assistantName,
+        locale,
+      });
+    }
+
+    if (locale === "zh") {
+      return `已更新。${updatesZh.join("；")}。`;
+    }
+    return `Updated. ${updatesEn.join("; ")}.`;
   }
 
   private applyProfileOnboarding(chatId: number, inputText: string): string | null {
@@ -810,6 +964,19 @@ export class ChatAssistant {
         reply: onboardingReply,
         confidence: 1,
         reason: "profile_onboarding",
+      };
+    }
+
+    const profileUpdateReply = this.applyProfileUpdate(chatId, normalizedInput);
+    if (profileUpdateReply) {
+      this.pushTurn(chatId, "user", normalizedInput);
+      this.pushTurn(chatId, "assistant", profileUpdateReply);
+      return {
+        mode: "chat",
+        task: "",
+        reply: profileUpdateReply,
+        confidence: 1,
+        reason: "profile_update",
       };
     }
 
