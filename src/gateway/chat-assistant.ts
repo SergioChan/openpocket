@@ -80,6 +80,8 @@ export class ChatAssistant {
   private readonly config: OpenPocketConfig;
   private readonly history = new Map<number, ChatTurn[]>();
   private readonly profileOnboarding = new Map<number, ProfileOnboardingState>();
+  private readonly pendingProfileUpdates =
+    new Map<number, { assistantName: string; locale: OnboardingLocale }>();
   private modeHint: "responses" | "chat" | "completions" = "responses";
 
   constructor(config: OpenPocketConfig) {
@@ -89,6 +91,15 @@ export class ChatAssistant {
   clear(chatId: number): void {
     this.history.delete(chatId);
     this.profileOnboarding.delete(chatId);
+    this.pendingProfileUpdates.delete(chatId);
+  }
+
+  consumePendingProfileUpdate(
+    chatId: number,
+  ): { assistantName: string; locale: OnboardingLocale } | null {
+    const payload = this.pendingProfileUpdates.get(chatId) ?? null;
+    this.pendingProfileUpdates.delete(chatId);
+    return payload;
   }
 
   private profileFilePath(name: "IDENTITY.md" | "USER.md"): string {
@@ -193,7 +204,15 @@ export class ChatAssistant {
       if (step === 2) {
         return "收到。那你希望我叫什么名字？";
       }
-      return "最后一个：你希望我采用什么样的人设/语气？";
+      return [
+        "最后一步：设定我的人设/语气。",
+        "你可以直接描述，也可以选编号：",
+        "1) 专业可靠：清晰、稳健、少废话",
+        "2) 高效直给：结果导向、节奏快",
+        "3) 温和陪伴：耐心解释、语气柔和",
+        "4) 幽默轻松：轻松自然，但不影响执行",
+        "回复示例：`2` 或 `专业可靠，简洁，必要时幽默`",
+      ].join("\n");
     }
 
     if (step === 1) {
@@ -202,7 +221,15 @@ export class ChatAssistant {
     if (step === 2) {
       return "Great. What name would you like to call me?";
     }
-    return "Got it. What persona should I keep (tone/style/traits)?";
+    return [
+      "Final step: choose my persona/tone.",
+      "You can describe it freely, or pick one preset:",
+      "1) Professional & reliable: clear, stable, minimal fluff",
+      "2) Fast & direct: action-oriented, concise, high tempo",
+      "3) Warm & supportive: patient guidance, softer tone",
+      "4) Light & humorous: relaxed tone while staying task-focused",
+      "Reply example: `2` or `professional, concise, lightly humorous`",
+    ].join("\n");
   }
 
   private pickFallback(locale: OnboardingLocale, key: "user" | "assistant" | "persona"): string {
@@ -261,6 +288,52 @@ export class ChatAssistant {
     }
 
     return out;
+  }
+
+  private personaPresetFromAnswer(answer: string, locale: OnboardingLocale): string {
+    const normalized = this.normalizeOneLine(answer).toLowerCase();
+    const presetMapZh: Record<string, string> = {
+      "1": "专业可靠：清晰、稳健、少废话",
+      "2": "高效直给：结果导向、节奏快",
+      "3": "温和陪伴：耐心解释、语气柔和",
+      "4": "幽默轻松：轻松自然，但不影响执行",
+      a: "专业可靠：清晰、稳健、少废话",
+      b: "高效直给：结果导向、节奏快",
+      c: "温和陪伴：耐心解释、语气柔和",
+      d: "幽默轻松：轻松自然，但不影响执行",
+      "选1": "专业可靠：清晰、稳健、少废话",
+      "选2": "高效直给：结果导向、节奏快",
+      "选3": "温和陪伴：耐心解释、语气柔和",
+      "选4": "幽默轻松：轻松自然，但不影响执行",
+      "方案1": "专业可靠：清晰、稳健、少废话",
+      "方案2": "高效直给：结果导向、节奏快",
+      "方案3": "温和陪伴：耐心解释、语气柔和",
+      "方案4": "幽默轻松：轻松自然，但不影响执行",
+    };
+    const presetMapEn: Record<string, string> = {
+      "1": "professional and reliable: clear, stable, minimal fluff",
+      "2": "fast and direct: action-oriented, concise, high tempo",
+      "3": "warm and supportive: patient guidance, softer tone",
+      "4": "light and humorous: relaxed tone while staying task-focused",
+      a: "professional and reliable: clear, stable, minimal fluff",
+      b: "fast and direct: action-oriented, concise, high tempo",
+      c: "warm and supportive: patient guidance, softer tone",
+      d: "light and humorous: relaxed tone while staying task-focused",
+      option1: "professional and reliable: clear, stable, minimal fluff",
+      option2: "fast and direct: action-oriented, concise, high tempo",
+      option3: "warm and supportive: patient guidance, softer tone",
+      option4: "light and humorous: relaxed tone while staying task-focused",
+    };
+    const table = locale === "zh" ? presetMapZh : presetMapEn;
+    return table[normalized] ?? "";
+  }
+
+  private resolvePersonaAnswer(answer: string, locale: OnboardingLocale): string {
+    const preset = this.personaPresetFromAnswer(answer, locale);
+    if (preset) {
+      return preset;
+    }
+    return answer;
   }
 
   private applyThreePartFallback(state: ProfileOnboardingState, answer: string): void {
@@ -369,7 +442,9 @@ export class ChatAssistant {
         const parsed = this.parseOnboardingFields(answer);
         if (parsed.userPreferredAddress) state.userPreferredAddress = parsed.userPreferredAddress;
         if (parsed.assistantName) state.assistantName = parsed.assistantName;
-        if (parsed.assistantPersona) state.assistantPersona = parsed.assistantPersona;
+        if (parsed.assistantPersona) {
+          state.assistantPersona = this.resolvePersonaAnswer(parsed.assistantPersona, state.locale);
+        }
         this.applyThreePartFallback(state, answer);
         const firstMissing = this.firstMissingStep(state);
         if (firstMissing) {
@@ -391,7 +466,9 @@ export class ChatAssistant {
 
       if (parsed.userPreferredAddress) current.userPreferredAddress = parsed.userPreferredAddress;
       if (parsed.assistantName) current.assistantName = parsed.assistantName;
-      if (parsed.assistantPersona) current.assistantPersona = parsed.assistantPersona;
+      if (parsed.assistantPersona) {
+        current.assistantPersona = this.resolvePersonaAnswer(parsed.assistantPersona, current.locale);
+      }
       this.applyThreePartFallback(current, answer);
 
       // If user answered naturally without keywords, map answer to current step.
@@ -400,7 +477,7 @@ export class ChatAssistant {
       } else if (current.step === 2 && !current.assistantName) {
         current.assistantName = answer;
       } else if (current.step === 3 && !current.assistantPersona) {
-        current.assistantPersona = answer;
+        current.assistantPersona = this.resolvePersonaAnswer(answer, current.locale);
       }
 
       const firstMissing = this.firstMissingStep(current);
@@ -434,6 +511,10 @@ export class ChatAssistant {
         assistantPersona,
       }),
     );
+    this.pendingProfileUpdates.set(chatId, {
+      assistantName,
+      locale: finalized.locale,
+    });
     this.profileOnboarding.delete(chatId);
     if (finalized.locale === "zh") {
       return `好，我已经写入 USER.md 和 IDENTITY.md。后续我会称呼你为“${userPreferredAddress}”，我的名字是“${assistantName}”，人设是“${assistantPersona}”。`;

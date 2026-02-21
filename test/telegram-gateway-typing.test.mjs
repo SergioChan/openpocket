@@ -87,3 +87,33 @@ test("TelegramGateway typing heartbeat supports nested operations", async () => 
     assert.equal(calls.length, doneCount, "typing heartbeat should not leak after nested operations");
   });
 });
+
+test("TelegramGateway syncs bot display name after onboarding update", async () => {
+  await withTempHome("openpocket-telegram-bot-name-sync-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const setNameCalls = [];
+    const messageCalls = [];
+    gateway.bot.setMyName = async (form) => {
+      setNameCalls.push(form);
+      return true;
+    };
+    gateway.bot.sendMessage = async (chatId, text) => {
+      messageCalls.push({ chatId, text });
+      return {};
+    };
+
+    await gateway.syncBotDisplayName(123, "Jarvis", "zh");
+    await gateway.syncBotDisplayName(123, "Jarvis", "zh");
+
+    assert.equal(setNameCalls.length, 1);
+    assert.equal(setNameCalls[0].name, "Jarvis");
+    assert.equal(messageCalls.length, 1);
+    assert.match(messageCalls[0].text, /已同步 Telegram Bot 显示名/);
+  });
+});

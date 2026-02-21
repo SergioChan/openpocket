@@ -48,6 +48,7 @@ export class TelegramGateway {
   private readonly onLogLine: ((line: string) => void) | null;
   private readonly typingIntervalMs: number;
   private readonly typingSessions = new Map<number, { refs: number; timer: NodeJS.Timeout }>();
+  private lastSyncedBotDisplayName: string | null = null;
   private running = false;
   private stoppedPromise: Promise<void> | null = null;
   private stopResolver: (() => void) | null = null;
@@ -137,6 +138,51 @@ export class TelegramGateway {
       .replace(/[A-Za-z]:\\[^\s)\]]+/g, "[local-path]");
 
     return this.compact(redacted, maxChars);
+  }
+
+  private normalizeBotDisplayName(input: string): string {
+    const normalized = input.replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return "";
+    }
+    // Telegram bot display name max length is 64 chars.
+    return normalized.slice(0, 64);
+  }
+
+  private async syncBotDisplayName(
+    chatId: number,
+    assistantName: string,
+    locale: "zh" | "en",
+  ): Promise<void> {
+    const nextName = this.normalizeBotDisplayName(assistantName);
+    if (!nextName) {
+      return;
+    }
+    if (this.lastSyncedBotDisplayName === nextName) {
+      return;
+    }
+
+    try {
+      await this.bot.setMyName({ name: nextName });
+      this.lastSyncedBotDisplayName = nextName;
+      this.log(`telegram bot display name updated chat=${chatId} name=${JSON.stringify(nextName)}`);
+      await this.bot.sendMessage(
+        chatId,
+        locale === "zh"
+          ? `已同步 Telegram Bot 显示名：${nextName}`
+          : `Telegram bot display name updated: ${nextName}`,
+      );
+    } catch (error) {
+      this.log(
+        `telegram bot display name update failed chat=${chatId} name=${JSON.stringify(nextName)} error=${(error as Error).message}`,
+      );
+      await this.bot.sendMessage(
+        chatId,
+        locale === "zh"
+          ? `我已保存名字“${nextName}”，但同步 Telegram Bot 显示名失败：${(error as Error).message}`
+          : `I saved name "${nextName}", but failed to sync Telegram bot display name: ${(error as Error).message}`,
+      );
+    }
   }
 
   async start(): Promise<void> {
@@ -520,6 +566,10 @@ export class TelegramGateway {
 
     const reply = decision.reply || (await this.chat.reply(chatId, text));
     await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
+    const profileUpdate = this.chat.consumePendingProfileUpdate(chatId);
+    if (profileUpdate) {
+      await this.syncBotDisplayName(chatId, profileUpdate.assistantName, profileUpdate.locale);
+    }
   }
 
   private async runTaskAsync(chatId: number, task: string): Promise<void> {

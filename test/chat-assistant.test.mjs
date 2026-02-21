@@ -167,7 +167,8 @@ test("ChatAssistant runs profile onboarding when identity and user are empty", a
   assert.match(second.reply, /what name would you like to call me/i);
 
   const third = await assistant.decide(7, "Pocket");
-  assert.match(third.reply, /what persona should i keep/i);
+  assert.match(third.reply, /persona\/tone/i);
+  assert.match(third.reply, /1\) Professional/);
 
   const done = await assistant.decide(7, "Pragmatic, calm, and direct");
   assert.match(done.reply, /saved your profile/i);
@@ -202,6 +203,19 @@ test("ChatAssistant onboarding follows Chinese and supports one-shot multi-field
   assert.match(identityBody, /Persona: 冷静务实/);
   assert.match(userBody, /Preferred form of address: 小陈/);
   assert.match(userBody, /Preferred assistant name: Pocket/);
+});
+
+test("ChatAssistant onboarding accepts persona preset index", async () => {
+  const { assistant, cfg } = createAssistant({ keepProfileEmpty: true });
+
+  await assistant.decide(15, "hello");
+  await assistant.decide(15, "Sergio");
+  await assistant.decide(15, "Jarvis");
+  const done = await assistant.decide(15, "2");
+  assert.match(done.reply, /saved your profile/i);
+
+  const identityBody = fs.readFileSync(path.join(cfg.workspaceDir, "IDENTITY.md"), "utf-8");
+  assert.match(identityBody, /Persona: fast and direct/);
 });
 
 test("ChatAssistant onboarding triggers on default scaffold with blank profile fields", async () => {
@@ -245,4 +259,19 @@ test("ChatAssistant onboarding triggers on default scaffold with blank profile f
   assert.equal(out.mode, "chat");
   assert.equal(out.reason, "profile_onboarding");
   assert.match(out.reply, /我该怎么称呼你/);
+});
+
+test("ChatAssistant exposes pending profile update after onboarding completion", async () => {
+  const { assistant } = createAssistant({ keepProfileEmpty: true });
+
+  await assistant.decide(21, "hello");
+  await assistant.decide(21, "Sergio");
+  await assistant.decide(21, "Jarvis");
+  await assistant.decide(21, "professional and reliable");
+
+  const payload = assistant.consumePendingProfileUpdate(21);
+  assert.equal(payload?.assistantName, "Jarvis");
+  assert.equal(payload?.locale, "en");
+  const secondRead = assistant.consumePendingProfileUpdate(21);
+  assert.equal(secondRead, null);
 });
