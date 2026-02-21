@@ -911,8 +911,8 @@ h1, h2, h3, h4, h5, h6,
 @media (max-width: 860px) {
   .VPNavBarMenu             { display: none !important; }
   .VPNavBar .container      { padding: 0 20px !important; align-items: center !important; }
-  .VPNavBar .title          { height: auto !important; }
-  .VPNavBar .content        { height: auto !important; }
+  .VPNavBar .title          { height: var(--vp-nav-height) !important; }
+  .VPNavBar .content        { height: var(--vp-nav-height) !important; }
   .op-landing             { padding: 48px 28px; gap: 64px; }
   .op-hero-title          { font-size: 36px !important; line-height: 44px !important; }
   .op-hero-desc           { font-size: 16px; }
@@ -928,6 +928,12 @@ h1, h2, h3, h4, h5, h6,
   .op-arch-arrow          { font-size: 0; }
   .op-arch-arrow::after   { content: '\2193'; font-size: 16px; }
   .op-hero-actions        { flex-wrap: wrap; }
+}
+
+/* Mobile navbar alignment fix */
+@media (max-width: 767px) {
+  .VPNavBar .content-body { justify-content: flex-end !important; }
+  .VPNavBar .hamburger    { margin-left: auto !important; }
 }
 
 /* Mobile */
