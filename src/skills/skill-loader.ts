@@ -95,7 +95,7 @@ export class SkillLoader {
     }
 
     return skills
-      .map((skill) => `- [${skill.source}] ${skill.name}: ${skill.description}`)
+      .map((skill) => `- [${skill.source}] ${skill.name} (${skill.path}): ${skill.description}`)
       .join("\n");
   }
 }

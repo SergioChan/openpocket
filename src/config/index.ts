@@ -36,6 +36,7 @@ function defaultConfigObject() {
       loopDelayMs: 1200,
       progressReportInterval: 1,
       returnHomeOnTaskEnd: true,
+      systemPromptMode: "full" as const,
       lang: "en" as const,
       verbose: true,
       deviceId: null,
@@ -274,6 +275,7 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
     loop_delay_ms: "loopDelayMs",
     progress_report_interval: "progressReportInterval",
     return_home_on_task_end: "returnHomeOnTaskEnd",
+    system_prompt_mode: "systemPromptMode",
     device_id: "deviceId",
   };
   for (const [oldKey, newKey] of Object.entries(agentMap)) {
@@ -487,6 +489,11 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
   const resolvedWorkspaceDir = resolvePath(String(merged.workspaceDir));
   const resolvedStateDir = resolvePath(String(merged.stateDir));
 
+  const systemPromptModeRaw = String(agent.systemPromptMode ?? agent.system_prompt_mode ?? "full");
+  const systemPromptMode = systemPromptModeRaw === "minimal" || systemPromptModeRaw === "none"
+    ? systemPromptModeRaw
+    : "full";
+
   const cfg: OpenPocketConfig = {
     projectName: String(merged.projectName),
     workspaceDir: resolvedWorkspaceDir,
@@ -516,6 +523,7 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
       loopDelayMs: Number(agent.loopDelayMs ?? 1200),
       progressReportInterval: Math.max(1, Number(agent.progressReportInterval ?? 1)),
       returnHomeOnTaskEnd: Boolean(agent.returnHomeOnTaskEnd ?? true),
+      systemPromptMode,
       lang: "en",
       verbose: Boolean(agent.verbose),
       deviceId: agent.deviceId ? String(agent.deviceId) : null,

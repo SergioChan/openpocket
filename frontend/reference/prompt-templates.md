@@ -47,6 +47,12 @@ You are OpenPocket, an Android phone-use agent running one tool step at a time.
 <workspaceContext>
 ```
 
+Prompt mode support:
+
+- `full`: complete policy sections (default)
+- `minimal`: condensed rules for lower-noise automation
+- `none`: only minimal safety instructions
+
 ## User Prompt (EN)
 
 `buildUserPrompt(task, step, snapshot, history)` builds:
@@ -83,6 +89,7 @@ Call exactly one tool now.
 At runtime, OpenPocket loads these workspace files (trimmed with size limits) and injects them into system prompt context:
 
 - `AGENTS.md`
+- `BOOTSTRAP.md`
 - `SOUL.md`
 - `USER.md`
 - `IDENTITY.md`

@@ -18,6 +18,7 @@ export interface AgentConfig {
   loopDelayMs: number;
   progressReportInterval: number;
   returnHomeOnTaskEnd: boolean;
+  systemPromptMode: "full" | "minimal" | "none";
   lang: "en";
   verbose: boolean;
   deviceId: string | null;

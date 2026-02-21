@@ -12,6 +12,8 @@ test("buildSystemPrompt includes planning rules and skills", () => {
   assert.match(prompt, /deterministic action/);
   assert.match(prompt, /Human Authorization Policy/);
   assert.match(prompt, /Available Skills/);
+  assert.match(prompt, /Skill Selection Protocol/);
+  assert.match(prompt, /Memory Recall Protocol/);
   assert.match(prompt, /Write thought and all text fields in English/);
   assert.match(prompt, /skill-a/);
 });
@@ -20,6 +22,21 @@ test("buildSystemPrompt includes workspace context when provided", () => {
   const prompt = buildSystemPrompt("- skill-a", "### AGENTS.md\nrule A");
   assert.match(prompt, /Workspace Prompt Context/);
   assert.match(prompt, /AGENTS\.md/);
+});
+
+test("buildSystemPrompt supports minimal mode", () => {
+  const prompt = buildSystemPrompt("- skill-a", "### AGENTS.md\nrule A", { mode: "minimal" });
+  assert.match(prompt, /Core Rules/);
+  assert.match(prompt, /Call exactly one tool per step/);
+  assert.match(prompt, /Workspace Prompt Context/);
+  assert.doesNotMatch(prompt, /Planning Loop/);
+});
+
+test("buildSystemPrompt supports none mode", () => {
+  const prompt = buildSystemPrompt("- skill-a", "### AGENTS.md\nrule A", { mode: "none" });
+  assert.match(prompt, /Call exactly one tool step at a time/);
+  assert.doesNotMatch(prompt, /Workspace Prompt Context/);
+  assert.doesNotMatch(prompt, /Available Skills/);
 });
 
 test("buildUserPrompt keeps only recent 8 history items", () => {

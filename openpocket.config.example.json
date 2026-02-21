@@ -21,6 +21,7 @@
     "loopDelayMs": 1200,
     "progressReportInterval": 1,
     "returnHomeOnTaskEnd": true,
+    "systemPromptMode": "full",
     "lang": "en",
     "verbose": true,
     "deviceId": null

@@ -87,6 +87,37 @@ test("AgentRuntime injects BOOTSTRAP guidance into system prompt context", async
   }
 });
 
+test("AgentRuntime supports none system prompt mode for constrained runs", async () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  runtime.adb = {
+    captureScreenSnapshot: () => makeSnapshot(),
+    executeAction: async () => "ok",
+  };
+  runtime.autoArtifactBuilder = {
+    build: () => ({ skillPath: null, scriptPath: null }),
+  };
+
+  let capturedSystemPrompt = "";
+  const originalNextStep = ModelClient.prototype.nextStep;
+  ModelClient.prototype.nextStep = async (params) => {
+    capturedSystemPrompt = params.systemPrompt;
+    return {
+      thought: "done",
+      action: { type: "finish", message: "task completed" },
+      raw: '{"thought":"done","action":{"type":"finish","message":"task completed"}}',
+    };
+  };
+
+  try {
+    const result = await runtime.runTask("prompt none mode test", undefined, undefined, undefined, "none");
+    assert.equal(result.ok, true);
+    assert.match(capturedSystemPrompt, /Call exactly one tool step at a time/);
+    assert.doesNotMatch(capturedSystemPrompt, /Planning Loop/);
+  } finally {
+    ModelClient.prototype.nextStep = originalNextStep;
+  }
+});
+
 test("AgentRuntime returns home after successful task by default", async () => {
   const runtime = setupRuntime({ returnHomeOnTaskEnd: true });
   const actionCalls = [];

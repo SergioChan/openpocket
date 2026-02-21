@@ -8,12 +8,20 @@ This page explains how OpenPocket constructs prompts and routes user messages.
 
 - tool catalog and argument expectations
 - mandatory planning loop for every step
+- skill-selection protocol (mandatory when relevant skills exist)
+- memory-recall protocol for identity/preferences/history questions
 - execution policy (deterministic, bounded, anti-loop)
 - explicit `request_human_auth` policy and capability set
 - completion policy (`finish` with full summary)
 - output discipline (one tool call per step, English text fields)
 - loaded skill summary text
-- optional injected workspace context (`AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`)
+- optional injected workspace context (`AGENTS.md`, `BOOTSTRAP.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`)
+
+System prompt supports three modes:
+
+- `full`: default rich policy
+- `minimal`: lean policy (used by cron)
+- `none`: minimal safety skeleton only
 
 Prompt templates are documented in [Prompt Templates](../reference/prompt-templates.md).
 

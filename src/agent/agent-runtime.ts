@@ -733,6 +733,7 @@ export class AgentRuntime {
     modelName?: string,
     onProgress?: (update: AgentProgressUpdate) => Promise<void> | void,
     onHumanAuth?: (request: HumanAuthRequest) => Promise<HumanAuthDecision> | HumanAuthDecision,
+    promptMode?: "full" | "minimal" | "none",
   ): Promise<AgentRunResult> {
     if (this.busy) {
       return {
@@ -777,7 +778,10 @@ export class AgentRuntime {
       const traces: StepTrace[] = [];
       const skillsSummary = this.skillLoader.summaryText();
       const workspacePromptContext = this.buildWorkspacePromptContext();
-      const systemPrompt = buildSystemPrompt(skillsSummary, workspacePromptContext);
+      const effectivePromptMode = promptMode ?? this.config.agent.systemPromptMode;
+      const systemPrompt = buildSystemPrompt(skillsSummary, workspacePromptContext, {
+        mode: effectivePromptMode,
+      });
 
       for (let step = 1; step <= this.config.agent.maxSteps; step += 1) {
         if (this.stopRequested) {

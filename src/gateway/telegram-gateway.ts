@@ -801,6 +801,7 @@ export class TelegramGateway {
                   },
                 );
               },
+          source === "cron" ? "minimal" : undefined,
         );
 
         this.log(`task done source=${source} chat=${chatId ?? "(none)"} ok=${result.ok} session=${result.sessionPath}`);
