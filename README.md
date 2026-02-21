@@ -415,6 +415,7 @@ openpocket test permission-app launch
 openpocket test permission-app reset
 openpocket test permission-app uninstall
 openpocket test permission-app task
+openpocket test permission-app task --send --chat <your_chat_id>
 ```
 
 ### 3) Send task in Telegram

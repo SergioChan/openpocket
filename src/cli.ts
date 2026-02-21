@@ -43,7 +43,7 @@ Usage:
   openpocket [--config <path>] telegram setup
   openpocket [--config <path>] gateway [start|telegram]
   openpocket [--config <path>] dashboard start [--host <host>] [--port <port>]
-  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean]
+  openpocket [--config <path>] test permission-app [deploy|install|launch|reset|uninstall|task] [--device <id>] [--clean] [--send] [--chat <id>]
   openpocket [--config <path>] human-auth-relay start [--host <host>] [--port <port>] [--public-base-url <url>] [--api-key <key>] [--state-file <path>]
 
 Legacy aliases (deprecated):
@@ -62,6 +62,7 @@ Examples:
   openpocket dashboard start
   openpocket test permission-app deploy
   openpocket test permission-app task
+  openpocket test permission-app task --send --chat <id>
   openpocket human-auth-relay start --port 8787
 `);
 }
@@ -966,8 +967,10 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   }
 
   const hasClean = args.includes("--clean");
-  const withoutClean = args.filter((item) => item !== "--clean");
-  const { value: deviceId, rest } = takeOption(withoutClean.slice(1), "--device");
+  const sendToTelegram = args.includes("--send");
+  const withoutFlags = args.filter((item) => item !== "--clean" && item !== "--send");
+  const { value: deviceId, rest: afterDevice } = takeOption(withoutFlags.slice(1), "--device");
+  const { value: chatIdRaw, rest } = takeOption(afterDevice, "--chat");
   if (rest.length > 1) {
     throw new Error(`Unexpected test arguments: ${rest.slice(1).join(" ")}`);
   }
@@ -977,8 +980,64 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   const permissionLab = new PermissionLabManager(cfg);
 
   if (action === "task") {
+    const taskText = permissionLab.recommendedTelegramTask();
+    if (!sendToTelegram) {
+      // eslint-disable-next-line no-console
+      console.log(taskText);
+      // eslint-disable-next-line no-console
+      console.log("Tip: add `--send` (and optionally `--chat <id>`) to send this prompt to Telegram directly.");
+      return 0;
+    }
+
+    const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
+    const token = cfg.telegram.botToken.trim() || (process.env[envName]?.trim() ?? "");
+    if (!token) {
+      throw new Error(`Telegram bot token is empty. Set config.telegram.botToken or env ${envName}.`);
+    }
+
+    let chatId: number | null = null;
+    if (chatIdRaw !== null) {
+      const parsed = Number(chatIdRaw);
+      if (!Number.isFinite(parsed)) {
+        throw new Error("Chat ID must be a number.");
+      }
+      chatId = Math.trunc(parsed);
+    } else if (cfg.telegram.allowedChatIds.length === 1) {
+      chatId = cfg.telegram.allowedChatIds[0];
+    } else if (cfg.telegram.allowedChatIds.length > 1) {
+      throw new Error(
+        `Multiple allowed chat IDs configured (${cfg.telegram.allowedChatIds.join(", ")}). Use --chat <id>.`,
+      );
+    } else {
+      throw new Error("No default chat ID found. Use --chat <id> or configure telegram.allowedChatIds.");
+    }
+
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: taskText,
+      }),
+    });
+
+    const bodyText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Telegram send failed (${response.status}): ${bodyText.slice(0, 300)}`);
+    }
+    let apiPayload: { ok?: boolean; description?: string } = {};
+    try {
+      apiPayload = JSON.parse(bodyText) as { ok?: boolean; description?: string };
+    } catch {
+      apiPayload = {};
+    }
+    if (apiPayload.ok === false) {
+      throw new Error(`Telegram send failed: ${apiPayload.description ?? "unknown error"}`);
+    }
     // eslint-disable-next-line no-console
-    console.log(permissionLab.recommendedTelegramTask());
+    console.log(`[OpenPocket][test] PermissionLab prompt sent to Telegram chat ${chatId}.`);
     return 0;
   }
 
