@@ -261,8 +261,27 @@ async function runCodexCliLoginCommand(): Promise<{ ok: boolean; detail: string 
       stdio: "inherit",
       timeout: 15 * 60 * 1000,
     });
+    if (result.error) {
+      const error = result.error as NodeJS.ErrnoException;
+      if (error.code === "ENOENT") {
+        return {
+          ok: false,
+          detail: "`codex` command not found in PATH",
+        };
+      }
+      return {
+        ok: false,
+        detail: error.message || "codex login failed to start",
+      };
+    }
     if ((result.status ?? 1) === 0) {
       return { ok: true, detail: "codex login completed" };
+    }
+    if (result.signal) {
+      return {
+        ok: false,
+        detail: `codex login terminated by signal ${result.signal}`,
+      };
     }
     const stderr = (result.stderr ?? "").toString().trim();
     return {
@@ -646,13 +665,17 @@ async function runApiKeyStep(
     const loginRunner = options?.codexCliLoginRunner ?? runCodexCliLoginCommand;
     const loginResult = await loginRunner();
     const credential = readCodexCliCredential();
-    if (loginResult.ok && credential) {
+    if (credential) {
       state.apiKeySource = "codex-cli";
       state.apiKeyConfiguredAt = nowIso();
-      await prompter.note(
-        "Codex CLI Authorization",
-        "Authorization complete. Codex CLI credentials detected and ready.",
-      );
+      const successMessage = loginResult.ok
+        ? "Authorization complete. Codex CLI credentials detected and ready."
+        : [
+            "`codex login` was not confirmed, but existing Codex CLI credentials were detected.",
+            `Details: ${loginResult.detail}`,
+            "Authorization complete. Existing credentials will be used.",
+          ].join("\n");
+      await prompter.note("Codex CLI Authorization", successMessage);
       return;
     }
 

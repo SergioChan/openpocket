@@ -308,3 +308,53 @@ test("setup wizard supports codex cli auth option in model selection", async () 
     });
   });
 });
+
+test("setup wizard uses existing codex credential when codex login command fails", async () => {
+  await withTempHome("openpocket-setup-codex-cli-existing-credential-", async () => {
+    await withTempCodexHome("openpocket-codex-home-existing-", async (codexHome) => {
+      fs.writeFileSync(
+        path.join(codexHome, "auth.json"),
+        JSON.stringify({
+          tokens: {
+            access_token: "existing-codex-access-token",
+            refresh_token: "existing-codex-refresh-token",
+          },
+        }),
+        "utf-8",
+      );
+
+      const cfg = loadConfig();
+      let loginCalled = 0;
+      const prompter = new FakePrompter({
+        confirms: [true],
+        selects: ["gpt-5.2-codex::codex-cli", "skip", "keep", "skip", "disabled"],
+        texts: [],
+        pauseCount: 0,
+      });
+      const emulator = new FakeEmulator();
+
+      await runSetupWizard(cfg, {
+        prompter,
+        emulator,
+        skipTtyCheck: true,
+        printHeader: false,
+        codexCliLoginRunner: async () => {
+          loginCalled += 1;
+          return {
+            ok: false,
+            detail: "codex command not found",
+          };
+        },
+      });
+
+      assert.equal(loginCalled, 1);
+
+      const statePath = path.join(cfg.stateDir, "onboarding.json");
+      assert.equal(fs.existsSync(statePath), true);
+      const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      assert.equal(state.modelProfile, "gpt-5.2-codex");
+      assert.equal(state.apiKeySource, "codex-cli");
+      assert.equal(typeof state.apiKeyConfiguredAt, "string");
+    });
+  });
+});
