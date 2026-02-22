@@ -159,9 +159,107 @@ export class EmulatorManager {
   private hasEmulatorProcessForAvd(): boolean {
     const avdToken = `-avd ${this.config.emulator.avdName}`;
     return this.listProcessCommands().some((line) => {
-      const isEmuProc = line.includes("qemu-system") || line.includes("/emulator") || line.includes(" emulator ");
+      const isEmuProc = this.isRealEmulatorProcessCommand(line);
       return isEmuProc && line.includes(avdToken);
     });
+  }
+
+  private isRealEmulatorProcessCommand(line: string): boolean {
+    const firstToken = line.split(/\s+/, 1)[0] ?? "";
+    if (!firstToken) {
+      return false;
+    }
+    const processName = path.basename(firstToken);
+    if (!processName) {
+      return false;
+    }
+    if (processName.startsWith("qemu-system")) {
+      return true;
+    }
+    if (processName === "emulator" || processName === "emulator-headless") {
+      return true;
+    }
+    return processName.includes("emulator");
+  }
+
+  private windowedQemuProcessNameMac(): string | null {
+    if (process.platform !== "darwin") {
+      return null;
+    }
+    const avdToken = `-avd ${this.config.emulator.avdName}`;
+    for (const line of this.listProcessCommands()) {
+      if (!line.includes(avdToken) || !this.isRealEmulatorProcessCommand(line) || !line.includes("qemu-system")) {
+        continue;
+      }
+      const firstToken = line.split(/\s+/, 1)[0] ?? "";
+      const processName = path.basename(firstToken);
+      if (!processName || processName.includes("-headless")) {
+        continue;
+      }
+      return processName;
+    }
+    return null;
+  }
+
+  private processVisibleMac(processName: string): boolean | null {
+    if (process.platform !== "darwin") {
+      return null;
+    }
+    const escaped = processName.replace(/"/g, '\\"');
+    const output = spawnSync(
+      "osascript",
+      ["-e", `tell application "System Events" to get visible of application process "${escaped}"`],
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    if (output.status !== 0) {
+      return null;
+    }
+    const text = String(output.stdout ?? "")
+      .trim()
+      .toLowerCase();
+    if (text === "true") {
+      return true;
+    }
+    if (text === "false") {
+      return false;
+    }
+    return null;
+  }
+
+  private setProcessVisibleMac(processName: string, visible: boolean, frontmost = false): boolean {
+    if (process.platform !== "darwin") {
+      return false;
+    }
+    const escaped = processName.replace(/"/g, '\\"');
+    const scripts = [`tell application "System Events" to set visible of application process "${escaped}" to ${visible}`];
+    if (visible && frontmost) {
+      scripts.push(`tell application "System Events" to set frontmost of application process "${escaped}" to true`);
+    }
+
+    for (const script of scripts) {
+      const result = spawnSync("osascript", ["-e", script], {
+        stdio: "ignore",
+      });
+      if (result.status !== 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private async waitForProcessVisibleMac(processName: string, visible: boolean, timeoutMs: number): Promise<boolean> {
+    const startAt = Date.now();
+    while (Date.now() - startAt < timeoutMs) {
+      const current = this.processVisibleMac(processName);
+      if (current === visible) {
+        return true;
+      }
+      await sleep(200);
+    }
+    return this.processVisibleMac(processName) === visible;
   }
 
   private async waitForProcessExit(timeoutMs: number): Promise<boolean> {
@@ -198,20 +296,12 @@ export class EmulatorManager {
     }
 
     const avdToken = `-avd ${this.config.emulator.avdName}`;
-    const emulatorHeadless = processes.some(
-      (line) => line.includes("-no-window") && line.includes("-avd") && line.includes("emulator"),
+    return processes.some(
+      (line) =>
+        this.isRealEmulatorProcessCommand(line) &&
+        line.includes("-no-window") &&
+        (line.includes(avdToken) || line.includes("-avd")),
     );
-    if (emulatorHeadless) {
-      return true;
-    }
-
-    const matchedAvdHeadless = processes.some((line) => line.includes("-no-window") && line.includes(avdToken));
-    if (matchedAvdHeadless) {
-      return true;
-    }
-
-    const qemuHeadless = processes.some((line) => line.includes("-no-window") && line.includes("qemu-system"));
-    return qemuHeadless;
   }
 
   private forceKillHeadlessProcessMac(): boolean {
@@ -382,9 +472,13 @@ export class EmulatorManager {
     if (process.platform !== "darwin") {
       return "hide-window currently supports macOS only.";
     }
-    spawnSync("osascript", ["-e", 'tell application "Android Emulator" to hide'], {
-      stdio: "ignore",
-    });
+    const processName = this.windowedQemuProcessNameMac();
+    if (processName && this.setProcessVisibleMac(processName, false, false)) {
+      return "Android Emulator window hidden.";
+    }
+
+    spawnSync("osascript", ["-e", 'tell application "Android Emulator" to hide'], { stdio: "ignore" });
+    spawnSync("osascript", ["-e", 'tell application id "com.google.android.emulator" to hide'], { stdio: "ignore" });
     return "Android Emulator window hidden.";
   }
 
@@ -392,9 +486,13 @@ export class EmulatorManager {
     if (process.platform !== "darwin") {
       return "show-window currently supports macOS only.";
     }
-    spawnSync("osascript", ["-e", 'tell application "Android Emulator" to activate'], {
-      stdio: "ignore",
-    });
+    const processName = this.windowedQemuProcessNameMac();
+    if (processName && this.setProcessVisibleMac(processName, true, true)) {
+      return "Android Emulator window activated.";
+    }
+
+    spawnSync("osascript", ["-e", 'tell application "Android Emulator" to activate'], { stdio: "ignore" });
+    spawnSync("osascript", ["-e", 'tell application id "com.google.android.emulator" to activate'], { stdio: "ignore" });
     return "Android Emulator window activated.";
   }
 
@@ -402,23 +500,11 @@ export class EmulatorManager {
     if (process.platform !== "darwin") {
       return false;
     }
-    try {
-      const output = spawnSync(
-        "osascript",
-        ["-e", 'tell application "Android Emulator" to get count of windows'],
-        {
-          encoding: "utf-8",
-          stdio: ["ignore", "pipe", "ignore"],
-        },
-      );
-      if (output.status !== 0) {
-        return false;
-      }
-      const count = Number.parseInt(String(output.stdout ?? "").trim(), 10);
-      return Number.isFinite(count) && count > 0;
-    } catch {
+    const processName = this.windowedQemuProcessNameMac();
+    if (!processName) {
       return false;
     }
+    return this.processVisibleMac(processName) === true;
   }
 
   private async waitForVisibleWindowMac(timeoutMs: number): Promise<boolean> {
@@ -456,6 +542,13 @@ export class EmulatorManager {
     }
 
     const showMessage = this.showWindow();
+    const processName = this.windowedQemuProcessNameMac();
+    if (processName) {
+      const visible = await this.waitForProcessVisibleMac(processName, true, 1200);
+      if (visible) {
+        return showMessage;
+      }
+    }
     const becameVisible = await this.waitForVisibleWindowMac(1500);
     if (becameVisible) {
       return showMessage;
@@ -484,7 +577,15 @@ export class EmulatorManager {
       return "Emulator is already running in background (headless).";
     }
 
-    return this.restartWithMode(true, "Switching emulator to headless background mode.");
+    const processName = this.windowedQemuProcessNameMac();
+    if (processName && this.setProcessVisibleMac(processName, false, false)) {
+      const hidden = await this.waitForProcessVisibleMac(processName, false, 1200);
+      if (hidden) {
+        return "Android Emulator window hidden.";
+      }
+    }
+
+    return this.restartWithMode(true, "Hide could not hide the current window process; switching emulator to headless background mode.");
   }
 
   captureScreenshot(outputPath?: string, preferredDeviceId?: string): string {
