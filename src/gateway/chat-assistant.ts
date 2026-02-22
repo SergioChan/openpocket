@@ -54,6 +54,9 @@ interface ProfileSnapshot {
   userPreferredAddress: string;
   assistantName: string;
   assistantPersona: string;
+  userName?: string;
+  timezone?: string;
+  languagePreference?: string;
 }
 
 interface OnboardingPreset {
@@ -632,6 +635,15 @@ export class ChatAssistant {
     if (typeof patch.assistantPersona === "string" && this.normalizeOneLine(patch.assistantPersona)) {
       next.assistantPersona = this.resolvePersonaAnswer(this.normalizeOneLine(patch.assistantPersona), locale);
     }
+    if (typeof patch.userName === "string" && this.normalizeOneLine(patch.userName)) {
+      next.userName = this.normalizeOneLine(patch.userName);
+    }
+    if (typeof patch.timezone === "string" && this.normalizeOneLine(patch.timezone)) {
+      next.timezone = this.normalizeOneLine(patch.timezone);
+    }
+    if (typeof patch.languagePreference === "string" && this.normalizeOneLine(patch.languagePreference)) {
+      next.languagePreference = this.normalizeOneLine(patch.languagePreference);
+    }
     return next;
   }
 
@@ -952,6 +964,9 @@ export class ChatAssistant {
     userPreferredAddress: string;
     assistantName: string;
     assistantPersona: string;
+    userName?: string;
+    timezone?: string;
+    languagePreference?: string;
   }): string {
     return [
       "# USER",
@@ -960,10 +975,10 @@ export class ChatAssistant {
       "",
       "## Profile",
       "",
-      "- Name:",
+      `- Name: ${params.userName ?? ""}`,
       `- Preferred form of address: ${params.userPreferredAddress}`,
-      "- Timezone:",
-      "- Language preference:",
+      `- Timezone: ${params.timezone ?? ""}`,
+      `- Language preference: ${params.languagePreference ?? ""}`,
       "",
       "## Interaction Preferences",
       "",
@@ -1017,6 +1032,9 @@ export class ChatAssistant {
     const assistantPersonaRaw =
       this.extractBulletValue(identity, "Persona")
       || this.extractBulletValue(user, "Preferred assistant persona");
+    const userNameRaw = this.extractBulletValue(user, "Name");
+    const timezoneRaw = this.extractBulletValue(user, "Timezone");
+    const languagePreferenceRaw = this.extractBulletValue(user, "Language preference");
 
     return {
       userPreferredAddress: this.isPlaceholderValue(userPreferredAddressRaw)
@@ -1028,6 +1046,9 @@ export class ChatAssistant {
       assistantPersona: this.isPlaceholderValue(assistantPersonaRaw)
         ? this.pickFallback(locale, "persona")
         : assistantPersonaRaw,
+      userName: this.isPlaceholderValue(userNameRaw) ? undefined : userNameRaw,
+      timezone: this.isPlaceholderValue(timezoneRaw) ? undefined : timezoneRaw,
+      languagePreference: this.isPlaceholderValue(languagePreferenceRaw) ? undefined : languagePreferenceRaw,
     };
   }
 
@@ -1049,17 +1070,21 @@ export class ChatAssistant {
 
     const userCurrent = this.readTextSafe(userPath).trim();
     const userBody = userCurrent
-      ? this.upsertBulletValue(
-        this.upsertBulletValue(
-          this.upsertBulletValue(userCurrent, "Preferred form of address", snapshot.userPreferredAddress),
-          "Preferred assistant name",
-          snapshot.assistantName,
-        ),
-        "Preferred assistant persona",
-        snapshot.assistantPersona,
-      )
+      ? (() => {
+          let body = userCurrent;
+          body = this.upsertBulletValue(body, "Name", snapshot.userName ?? "");
+          body = this.upsertBulletValue(body, "Preferred form of address", snapshot.userPreferredAddress);
+          body = this.upsertBulletValue(body, "Timezone", snapshot.timezone ?? "");
+          body = this.upsertBulletValue(body, "Language preference", snapshot.languagePreference ?? "");
+          body = this.upsertBulletValue(body, "Preferred assistant name", snapshot.assistantName);
+          body = this.upsertBulletValue(body, "Preferred assistant persona", snapshot.assistantPersona);
+          return body;
+        })()
       : this.buildUserFromAnswers({
+        userName: snapshot.userName,
         userPreferredAddress: snapshot.userPreferredAddress,
+        timezone: snapshot.timezone,
+        languagePreference: snapshot.languagePreference,
         assistantName: snapshot.assistantName,
         assistantPersona: snapshot.assistantPersona,
       });

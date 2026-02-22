@@ -118,6 +118,40 @@ test("TelegramGateway syncs bot display name after onboarding update", async () 
   });
 });
 
+test("TelegramGateway startup sync reads assistant name from IDENTITY.md", async () => {
+  await withTempHome("openpocket-telegram-startup-name-sync-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+    fs.writeFileSync(
+      path.join(cfg.workspaceDir, "IDENTITY.md"),
+      [
+        "# IDENTITY",
+        "",
+        "## Agent Identity",
+        "",
+        "- Name: Jarvis-Startup",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const setNameCalls = [];
+    gateway.bot.setMyName = async (form) => {
+      setNameCalls.push(form);
+      return true;
+    };
+
+    await gateway.syncBotDisplayNameFromIdentity();
+    await gateway.syncBotDisplayNameFromIdentity();
+
+    assert.equal(setNameCalls.length, 1);
+    assert.equal(setNameCalls[0].name, "Jarvis-Startup");
+  });
+});
+
 test("TelegramGateway consumes profile-update payload after chat reply", async () => {
   await withTempHome("openpocket-telegram-profile-update-", async () => {
     const cfg = loadConfig();

@@ -333,6 +333,9 @@ test("ChatAssistant model-driven onboarding completes and removes bootstrap file
         userPreferredAddress: "Sergio",
         assistantName: "Jarvis-Phone",
         assistantPersona: "professional and reliable",
+        userName: "Sergio Chan",
+        timezone: "America/Los_Angeles",
+        languagePreference: "zh-CN",
       },
       writeProfile: true,
       onboardingComplete: true,
@@ -353,6 +356,9 @@ test("ChatAssistant model-driven onboarding completes and removes bootstrap file
   assert.match(identityBody, /Name: Jarvis-Phone/);
   assert.match(identityBody, /Persona: professional and reliable/);
   assert.match(userBody, /Preferred form of address: Sergio/);
+  assert.match(userBody, /Name: Sergio Chan/);
+  assert.match(userBody, /Timezone: America\/Los_Angeles/);
+  assert.match(userBody, /Language preference: zh-CN/);
 
   assert.equal(fs.existsSync(path.join(cfg.workspaceDir, "BOOTSTRAP.md")), false);
   assert.equal(isWorkspaceOnboardingCompleted(cfg.workspaceDir), true);

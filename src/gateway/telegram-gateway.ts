@@ -1,4 +1,6 @@
 import TelegramBot, { type Message } from "node-telegram-bot-api";
+import fs from "node:fs";
+import path from "node:path";
 
 import type { CronJob, OpenPocketConfig } from "../types";
 import { saveConfig } from "../config";
@@ -151,6 +153,38 @@ export class TelegramGateway {
     return normalized.slice(0, 64);
   }
 
+  private readAssistantNameFromIdentity(): string {
+    const identityPath = path.join(this.config.workspaceDir, "IDENTITY.md");
+    if (!fs.existsSync(identityPath)) {
+      return "";
+    }
+    let raw = "";
+    try {
+      raw = fs.readFileSync(identityPath, "utf-8");
+    } catch {
+      return "";
+    }
+    const match = raw.match(/^\s*-\s*Name\s*:\s*(.+)$/im);
+    if (!match?.[1]) {
+      return "";
+    }
+    return this.normalizeBotDisplayName(match[1]);
+  }
+
+  private async syncBotDisplayNameFromIdentity(): Promise<void> {
+    const assistantName = this.readAssistantNameFromIdentity();
+    if (!assistantName || assistantName === this.lastSyncedBotDisplayName) {
+      return;
+    }
+    try {
+      await this.bot.setMyName({ name: assistantName });
+      this.lastSyncedBotDisplayName = assistantName;
+      this.log(`telegram bot display name startup-sync name=${JSON.stringify(assistantName)}`);
+    } catch (error) {
+      this.log(`telegram bot display name startup-sync failed: ${(error as Error).message}`);
+    }
+  }
+
   private buildContextSummaryMessage(): string {
     const report = this.agent.getWorkspacePromptContextReport();
     const lines = [
@@ -251,6 +285,7 @@ export class TelegramGateway {
     this.bot.on("message", this.handleMessage);
     this.bot.on("polling_error", this.handlePollingError);
     await this.configureBotCommandMenu();
+    await this.syncBotDisplayNameFromIdentity();
 
     if (this.config.humanAuth.enabled && this.config.humanAuth.useLocalRelay) {
       try {
