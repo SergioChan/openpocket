@@ -10,6 +10,7 @@ test("telegram command menu includes control commands for bot menu", () => {
   const expected = [
     "start",
     "help",
+    "context",
     "status",
     "model",
     "startvm",

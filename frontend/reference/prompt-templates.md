@@ -97,6 +97,10 @@ At runtime, OpenPocket loads these workspace files (trimmed with size limits) an
 - `HEARTBEAT.md`
 - `MEMORY.md`
 
+Optional hook:
+
+- `.openpocket/bootstrap-context-hook.md` (injected before workspace files when present)
+
 ## Multimodal
 
 Each step request includes the screenshot as base64 PNG in the model payload.

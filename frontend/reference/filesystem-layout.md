@@ -28,6 +28,9 @@ OpenPocket runtime uses `OPENPOCKET_HOME` (default `~/.openpocket`).
     HEARTBEAT.md
     MEMORY.md
     BARE_SESSION_RESET_PROMPT.md
+    .openpocket/
+      workspace-state.json
+      bootstrap-context-hook.md (optional)
     memory/
       README.md
       YYYY-MM-DD.md

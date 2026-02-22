@@ -13,6 +13,7 @@ import { HeartbeatRunner } from "./heartbeat-runner";
 export const TELEGRAM_MENU_COMMANDS: TelegramBot.BotCommand[] = [
   { command: "start", description: "Start or resume chat onboarding" },
   { command: "help", description: "Show command help" },
+  { command: "context", description: "Inspect injected prompt context" },
   { command: "status", description: "Show gateway and emulator status" },
   { command: "model", description: "Show or switch model profile" },
   { command: "startvm", description: "Start Android emulator" },
@@ -148,6 +149,49 @@ export class TelegramGateway {
     }
     // Telegram bot display name max length is 64 chars.
     return normalized.slice(0, 64);
+  }
+
+  private buildContextSummaryMessage(): string {
+    const report = this.agent.getWorkspacePromptContextReport();
+    const lines = [
+      "Workspace prompt context report:",
+      `- limits: per-file=${report.maxCharsPerFile}, total=${report.maxCharsTotal}`,
+      `- included chars: ${report.totalIncludedChars}`,
+      `- bootstrap hook applied: ${report.hookApplied}`,
+      "- files:",
+    ];
+    for (const file of report.files) {
+      lines.push(
+        `  - ${file.fileName}: ${file.included ? "included" : "skipped"}`
+        + `, missing=${file.missing}, truncated=${file.truncated}, chars=${file.includedChars}/${file.originalChars}`,
+      );
+    }
+    lines.push("Use `/context detail <fileName>` to inspect one snippet.");
+    return lines.join("\n");
+  }
+
+  private buildContextDetailMessage(target: string): string {
+    const report = this.agent.getWorkspacePromptContextReport();
+    const normalizedTarget = target.trim().toLowerCase();
+    if (!normalizedTarget) {
+      return "Usage: /context detail <fileName>";
+    }
+    const file = report.files.find((item) => item.fileName.toLowerCase() === normalizedTarget);
+    if (!file) {
+      return `Unknown context file: ${target}`;
+    }
+    if (!file.included || !file.snippet) {
+      return `No injected snippet for ${file.fileName} (missing=${file.missing}).`;
+    }
+    const snippet = file.snippet.length > 2200
+      ? `${file.snippet.slice(0, 2200)}\n...[detail truncated]`
+      : file.snippet;
+    return [
+      `${file.fileName}`,
+      `included=${file.included}, missing=${file.missing}, truncated=${file.truncated}, chars=${file.includedChars}/${file.originalChars}`,
+      "",
+      snippet,
+    ].join("\n");
   }
 
   private inferLocale(message: Message): "zh" | "en" {
@@ -457,6 +501,8 @@ export class TelegramGateway {
         [
           "OpenPocket commands:",
           "/start",
+          "/context",
+          "/context detail <fileName>",
           "/status",
           "/model [name]",
           "/startvm",
@@ -478,6 +524,21 @@ export class TelegramGateway {
           "Send plain text directly. I will auto-route to chat or task mode. Use /run to force task mode.",
         ].join("\n"),
       );
+      return;
+    }
+
+    if (text.startsWith("/context")) {
+      const detailArg = text.replace("/context", "").trim();
+      if (!detailArg || /^list$/i.test(detailArg)) {
+        await this.bot.sendMessage(chatId, this.sanitizeForChat(this.buildContextSummaryMessage(), 3500));
+        return;
+      }
+      if (/^detail(\s+.+)?$/i.test(detailArg)) {
+        const target = detailArg.replace(/^detail\s*/i, "");
+        await this.bot.sendMessage(chatId, this.sanitizeForChat(this.buildContextDetailMessage(target), 3500));
+        return;
+      }
+      await this.bot.sendMessage(chatId, this.sanitizeForChat(this.buildContextDetailMessage(detailArg), 3500));
       return;
     }
 

@@ -70,3 +70,10 @@ Chat assistant stores in-memory turn history per chat ID:
 - include up to last 12 turns in next prompt
 
 `/clear` removes memory for the current chat.
+
+## Prompt Observability
+
+Telegram command `/context` exposes workspace prompt injection diagnostics:
+
+- list mode: injected files, truncation status, char budgets
+- detail mode: snippet preview for one injected file

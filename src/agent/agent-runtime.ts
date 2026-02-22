@@ -77,8 +77,27 @@ const SYSTEM_PROMPT_CONTEXT_FILES = [
   "HEARTBEAT.md",
   "MEMORY.md",
 ] as const;
-const SYSTEM_PROMPT_MAX_CHARS_PER_FILE = 4_000;
-const SYSTEM_PROMPT_MAX_CHARS_TOTAL = 18_000;
+const SYSTEM_PROMPT_CONTEXT_HOOK_FILE = path.join(".openpocket", "bootstrap-context-hook.md");
+const SYSTEM_PROMPT_MAX_CHARS_PER_FILE = 20_000;
+const SYSTEM_PROMPT_MAX_CHARS_TOTAL = 150_000;
+
+type WorkspacePromptFileReport = {
+  fileName: string;
+  originalChars: number;
+  includedChars: number;
+  truncated: boolean;
+  included: boolean;
+  missing: boolean;
+  snippet: string;
+};
+
+export type WorkspacePromptContextReport = {
+  maxCharsPerFile: number;
+  maxCharsTotal: number;
+  totalIncludedChars: number;
+  files: WorkspacePromptFileReport[];
+  hookApplied: boolean;
+};
 
 type DelegationApplyResult = {
   message: string;
@@ -200,16 +219,80 @@ export class AgentRuntime {
     }
   }
 
-  private buildWorkspacePromptContext(): string {
+  private clipWithHeadTail(input: string, limit: number): { snippet: string; truncated: boolean } {
+    if (input.length <= limit) {
+      return { snippet: input, truncated: false };
+    }
+    const marker = "\n...[truncated: middle content omitted]...\n";
+    const budget = Math.max(0, limit - marker.length);
+    const headChars = Math.max(0, Math.ceil(budget * 0.6));
+    const tailChars = Math.max(0, budget - headChars);
+    const head = input.slice(0, headChars).trimEnd();
+    const tail = tailChars > 0 ? input.slice(-tailChars).trimStart() : "";
+    return {
+      snippet: `${head}${marker}${tail}`,
+      truncated: true,
+    };
+  }
+
+  private buildWorkspacePromptContext(): { text: string; report: WorkspacePromptContextReport } {
     const blocks: string[] = [];
+    const reports: WorkspacePromptFileReport[] = [];
     let remaining = SYSTEM_PROMPT_MAX_CHARS_TOTAL;
+    let hookApplied = false;
+
+    const hookPath = path.join(this.config.workspaceDir, SYSTEM_PROMPT_CONTEXT_HOOK_FILE);
+    const hookRaw = fs.existsSync(hookPath)
+      ? (() => {
+          try {
+            return fs.readFileSync(hookPath, "utf-8");
+          } catch {
+            return "";
+          }
+        })()
+      : "";
+    const hookNormalized = hookRaw.replace(/\r\n/g, "\n").trim();
+    if (hookNormalized && remaining > 256) {
+      const hookLimit = Math.min(SYSTEM_PROMPT_MAX_CHARS_PER_FILE, remaining);
+      const clipped = this.clipWithHeadTail(hookNormalized, hookLimit);
+      blocks.push(`### BOOTSTRAP_CONTEXT_HOOK\n${clipped.snippet}`);
+      reports.push({
+        fileName: "BOOTSTRAP_CONTEXT_HOOK",
+        originalChars: hookNormalized.length,
+        includedChars: clipped.snippet.length,
+        truncated: clipped.truncated,
+        included: true,
+        missing: false,
+        snippet: clipped.snippet,
+      });
+      remaining -= clipped.snippet.length;
+      hookApplied = true;
+    }
 
     for (const name of SYSTEM_PROMPT_CONTEXT_FILES) {
       if (remaining <= 256) {
-        break;
+        reports.push({
+          fileName: name,
+          originalChars: 0,
+          includedChars: 0,
+          truncated: false,
+          included: false,
+          missing: false,
+          snippet: "",
+        });
+        continue;
       }
       const filePath = path.join(this.config.workspaceDir, name);
       if (!fs.existsSync(filePath)) {
+        reports.push({
+          fileName: name,
+          originalChars: 0,
+          includedChars: 0,
+          truncated: false,
+          included: false,
+          missing: true,
+          snippet: "",
+        });
         continue;
       }
 
@@ -217,32 +300,68 @@ export class AgentRuntime {
       try {
         raw = fs.readFileSync(filePath, "utf-8");
       } catch {
+        reports.push({
+          fileName: name,
+          originalChars: 0,
+          includedChars: 0,
+          truncated: false,
+          included: false,
+          missing: true,
+          snippet: "",
+        });
         continue;
       }
 
       const normalized = raw.replace(/\r\n/g, "\n").trim();
       if (!normalized) {
+        reports.push({
+          fileName: name,
+          originalChars: 0,
+          includedChars: 0,
+          truncated: false,
+          included: false,
+          missing: false,
+          snippet: "",
+        });
         continue;
       }
 
       const perFileLimit = Math.min(SYSTEM_PROMPT_MAX_CHARS_PER_FILE, remaining);
-      const truncated = normalized.length > perFileLimit;
-      const snippet = truncated
-        ? `${normalized.slice(0, Math.max(0, perFileLimit - 24)).trimEnd()}\n...[truncated]`
-        : normalized;
-
-      blocks.push(`### ${name}\n${snippet}`);
-      remaining -= snippet.length;
+      const clipped = this.clipWithHeadTail(normalized, perFileLimit);
+      blocks.push(`### ${name}\n${clipped.snippet}`);
+      reports.push({
+        fileName: name,
+        originalChars: normalized.length,
+        includedChars: clipped.snippet.length,
+        truncated: clipped.truncated,
+        included: true,
+        missing: false,
+        snippet: clipped.snippet,
+      });
+      remaining -= clipped.snippet.length;
     }
 
-    if (blocks.length === 0) {
-      return "";
-    }
+    const text = blocks.length === 0
+      ? ""
+      : [
+          "Instruction priority inside workspace context: AGENTS.md > BOOTSTRAP.md > SOUL.md > other files.",
+          ...blocks,
+        ].join("\n\n");
 
-    return [
-      "Instruction priority inside workspace context: AGENTS.md > BOOTSTRAP.md > SOUL.md > other files.",
-      ...blocks,
-    ].join("\n\n");
+    return {
+      text,
+      report: {
+        maxCharsPerFile: SYSTEM_PROMPT_MAX_CHARS_PER_FILE,
+        maxCharsTotal: SYSTEM_PROMPT_MAX_CHARS_TOTAL,
+        totalIncludedChars: reports.reduce((sum, item) => sum + item.includedChars, 0),
+        files: reports,
+        hookApplied,
+      },
+    };
+  }
+
+  getWorkspacePromptContextReport(): WorkspacePromptContextReport {
+    return this.buildWorkspacePromptContext().report;
   }
 
   private isImageArtifactPath(artifactPath: string): boolean {
@@ -779,7 +898,7 @@ export class AgentRuntime {
       const skillsSummary = this.skillLoader.summaryText();
       const workspacePromptContext = this.buildWorkspacePromptContext();
       const effectivePromptMode = promptMode ?? this.config.agent.systemPromptMode;
-      const systemPrompt = buildSystemPrompt(skillsSummary, workspacePromptContext, {
+      const systemPrompt = buildSystemPrompt(skillsSummary, workspacePromptContext.text, {
         mode: effectivePromptMode,
       });
 

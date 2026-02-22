@@ -381,3 +381,89 @@ test("TelegramGateway /reset routes into onboarding when onboarding is pending",
     assert.match(sent[1].text, /简短初始化/);
   });
 });
+
+test("TelegramGateway /context returns summary report", async () => {
+  await withTempHome("openpocket-telegram-context-summary-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+    gateway.agent.getWorkspacePromptContextReport = () => ({
+      maxCharsPerFile: 20000,
+      maxCharsTotal: 150000,
+      totalIncludedChars: 1024,
+      hookApplied: false,
+      files: [
+        {
+          fileName: "AGENTS.md",
+          originalChars: 500,
+          includedChars: 500,
+          truncated: false,
+          included: true,
+          missing: false,
+          snippet: "test",
+        },
+      ],
+    });
+
+    await gateway.consumeMessage({
+      chat: { id: 9105 },
+      text: "/context",
+    });
+
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /Workspace prompt context report/);
+    assert.match(sent[0].text, /AGENTS\.md/);
+  });
+});
+
+test("TelegramGateway /context detail returns file snippet", async () => {
+  await withTempHome("openpocket-telegram-context-detail-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+    gateway.agent.getWorkspacePromptContextReport = () => ({
+      maxCharsPerFile: 20000,
+      maxCharsTotal: 150000,
+      totalIncludedChars: 2048,
+      hookApplied: true,
+      files: [
+        {
+          fileName: "SOUL.md",
+          originalChars: 1000,
+          includedChars: 900,
+          truncated: true,
+          included: true,
+          missing: false,
+          snippet: "soul-snippet-body",
+        },
+      ],
+    });
+
+    await gateway.consumeMessage({
+      chat: { id: 9106 },
+      text: "/context detail SOUL.md",
+    });
+
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /SOUL\.md/);
+    assert.match(sent[0].text, /soul-snippet-body/);
+  });
+});

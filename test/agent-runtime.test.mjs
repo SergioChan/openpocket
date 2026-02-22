@@ -118,6 +118,30 @@ test("AgentRuntime supports none system prompt mode for constrained runs", async
   }
 });
 
+test("AgentRuntime context report marks hook usage and head-tail truncation", () => {
+  const runtime = setupRuntime({ returnHomeOnTaskEnd: false });
+  const hookDir = path.join(runtime.config.workspaceDir, ".openpocket");
+  fs.mkdirSync(hookDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(hookDir, "bootstrap-context-hook.md"),
+    "hook-line\n",
+    "utf-8",
+  );
+
+  const oversized = `${"A".repeat(25_000)}\n${"B".repeat(25_000)}`;
+  fs.writeFileSync(path.join(runtime.config.workspaceDir, "AGENTS.md"), oversized, "utf-8");
+
+  const report = runtime.getWorkspacePromptContextReport();
+  assert.equal(report.hookApplied, true);
+  const hook = report.files.find((item) => item.fileName === "BOOTSTRAP_CONTEXT_HOOK");
+  assert.equal(Boolean(hook), true);
+
+  const agents = report.files.find((item) => item.fileName === "AGENTS.md");
+  assert.equal(Boolean(agents), true);
+  assert.equal(Boolean(agents?.truncated), true);
+  assert.match(String(agents?.snippet ?? ""), /truncated: middle content omitted/);
+});
+
 test("AgentRuntime returns home after successful task by default", async () => {
   const runtime = setupRuntime({ returnHomeOnTaskEnd: true });
   const actionCalls = [];
