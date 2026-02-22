@@ -36,6 +36,7 @@ export const TELEGRAM_MENU_COMMANDS: TelegramBot.BotCommand[] = [
 export interface TelegramGatewayOptions {
   onLogLine?: (line: string) => void;
   typingIntervalMs?: number;
+  logger?: (line: string) => void;
 }
 
 type ProgressNarrationState = {
@@ -55,7 +56,7 @@ export class TelegramGateway {
   private readonly localHumanAuthStack: LocalHumanAuthStack;
   private localHumanAuthActive = false;
   private chat: ChatAssistant;
-  private readonly onLogLine: ((line: string) => void) | null;
+  private readonly writeLogLine: (line: string) => void;
   private readonly typingIntervalMs: number;
   private readonly typingSessions = new Map<number, { refs: number; timer: NodeJS.Timeout }>();
   private lastSyncedBotDisplayName: string | null = null;
@@ -68,7 +69,17 @@ export class TelegramGateway {
     this.emulator = new EmulatorManager(config);
     this.agent = new AgentRuntime(config);
     this.chat = new ChatAssistant(config);
-    this.onLogLine = options?.onLogLine ?? null;
+    const onLogLine = options?.onLogLine ?? null;
+    const logger =
+      options?.logger ??
+      ((line: string) => {
+        // eslint-disable-next-line no-console
+        console.log(line);
+      });
+    this.writeLogLine = (line: string) => {
+      logger(line);
+      onLogLine?.(line);
+    };
     this.typingIntervalMs = Math.max(50, Math.round(options?.typingIntervalMs ?? 4000));
 
     const token =
@@ -92,9 +103,12 @@ export class TelegramGateway {
     });
 
     this.humanAuth = new HumanAuthBridge(config);
-    this.localHumanAuthStack = new LocalHumanAuthStack(config, (line) => this.log(line));
+    this.localHumanAuthStack = new LocalHumanAuthStack(config, (line) => this.writeLogLine(line));
 
     this.heartbeat = new HeartbeatRunner(config, {
+      log: (line) => {
+        this.writeLogLine(line);
+      },
       readSnapshot: () => {
         const status = this.emulator.status();
         return {
@@ -110,17 +124,14 @@ export class TelegramGateway {
     this.cron = new CronService(config, {
       runTask: async (job) => this.runScheduledJob(job),
       log: (line) => {
-        // eslint-disable-next-line no-console
-        console.log(line);
+        this.writeLogLine(line);
       },
     });
   }
 
   private log(message: string): void {
     const line = `[OpenPocket][gateway] ${new Date().toISOString()} ${message}`;
-    // eslint-disable-next-line no-console
-    console.log(line);
-    this.onLogLine?.(line);
+    this.writeLogLine(line);
   }
 
   isRunning(): boolean {

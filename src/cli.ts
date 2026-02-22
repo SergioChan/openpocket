@@ -22,11 +22,42 @@ import { runSetupWizard } from "./onboarding/setup-wizard";
 import { installCliShortcut } from "./install/cli-shortcut";
 import { ensureAndroidPrerequisites } from "./environment/android-prerequisites";
 import { PermissionLabManager } from "./test/permission-lab";
+import { createCliTheme, createOpenPocketBanner, type CliStepStatus, type CliTone } from "./utils/cli-theme";
 import type { OpenPocketConfig } from "./types";
 
-function printHelp(): void {
+const cliTheme = createCliTheme(output);
+
+function printRaw(message = ""): void {
   // eslint-disable-next-line no-console
-  console.log(`OpenPocket CLI (Node.js + TypeScript)\n
+  console.log(message);
+}
+
+function printInfo(message: string): void {
+  printRaw(cliTheme.info(message));
+}
+
+function printSuccess(message: string): void {
+  printRaw(cliTheme.success(message));
+}
+
+function printWarn(message: string): void {
+  printRaw(cliTheme.warn(message));
+}
+
+function printKeyValue(key: string, value: string, tone: CliTone = "plain"): void {
+  printRaw(cliTheme.kv(key, value, tone));
+}
+
+function printStep(step: number, total: number, title: string, status: CliStepStatus, detail: string): void {
+  printRaw(cliTheme.step(step, total, title, status, detail));
+}
+
+function printRuntimeLine(line: string): void {
+  printRaw(cliTheme.classifyRuntimeLine(line));
+}
+
+function printHelp(): void {
+  printRaw(`${cliTheme.emphasize("OpenPocket CLI (Node.js + TypeScript)", "accent")}\n
 Usage:
   openpocket [--config <path>] install-cli
   openpocket [--config <path>] onboard
@@ -164,34 +195,30 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
   }
 
   if (sub === "status") {
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify(emulator.status(), null, 2));
+    printRaw(cliTheme.section("Emulator Status"));
+    printRaw(JSON.stringify(emulator.status(), null, 2));
     return 0;
   }
   if (sub === "start") {
-    // eslint-disable-next-line no-console
-    console.log(await emulator.start());
+    printSuccess(await emulator.start());
     return 0;
   }
   if (sub === "stop") {
-    // eslint-disable-next-line no-console
-    console.log(emulator.stop());
+    printSuccess(emulator.stop());
     return 0;
   }
   if (sub === "hide") {
-    // eslint-disable-next-line no-console
-    console.log(await emulator.ensureHiddenBackground());
+    printInfo(await emulator.ensureHiddenBackground());
     return 0;
   }
   if (sub === "show") {
-    // eslint-disable-next-line no-console
-    console.log(await emulator.ensureWindowVisible());
+    printInfo(await emulator.ensureWindowVisible());
     return 0;
   }
   if (sub === "list-avds") {
+    printRaw(cliTheme.section("Available AVDs"));
     for (const avd of emulator.listAvds()) {
-      // eslint-disable-next-line no-console
-      console.log(avd);
+      printRaw(`- ${avd}`);
     }
     return 0;
   }
@@ -201,8 +228,7 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
     if (rest.length > 0) {
       throw new Error(`Unexpected arguments: ${rest.join(" ")}`);
     }
-    // eslint-disable-next-line no-console
-    console.log(emulator.captureScreenshot(outPath ?? undefined, deviceId ?? undefined));
+    printSuccess(emulator.captureScreenshot(outPath ?? undefined, deviceId ?? undefined));
     return 0;
   }
   if (sub === "tap") {
@@ -220,8 +246,7 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       throw new Error("Tap coordinates must be numbers.");
     }
-    // eslint-disable-next-line no-console
-    console.log(emulator.tap(Math.round(x), Math.round(y), deviceId ?? undefined));
+    printInfo(emulator.tap(Math.round(x), Math.round(y), deviceId ?? undefined));
     return 0;
   }
   if (sub === "type") {
@@ -233,8 +258,7 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
     if (text === null) {
       throw new Error("Usage: openpocket emulator type --text <text> [--device <id>]");
     }
-    // eslint-disable-next-line no-console
-    console.log(emulator.typeText(text, deviceId ?? undefined));
+    printInfo(emulator.typeText(text, deviceId ?? undefined));
     return 0;
   }
 
@@ -251,10 +275,12 @@ async function runAgentCommand(configPath: string | undefined, args: string[]): 
   const cfg = loadConfig(configPath);
   const agent = new AgentRuntime(cfg);
   const result = await agent.runTask(task, model ?? undefined);
-  // eslint-disable-next-line no-console
-  console.log(result.message);
-  // eslint-disable-next-line no-console
-  console.log(`Session: ${result.sessionPath}`);
+  if (result.ok) {
+    printSuccess(result.message);
+  } else {
+    printWarn(result.message);
+  }
+  printRaw(`Session: ${result.sessionPath}`);
   return result.ok ? 0 : 1;
 }
 
@@ -264,40 +290,45 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
     throw new Error(`Unknown gateway subcommand: ${sub}. Use: gateway start`);
   }
 
-  const printStartupHeader = (cfg: ReturnType<typeof loadConfig>): void => {
+  const tokenSourceLabel = (cfg: ReturnType<typeof loadConfig>): string => {
     const envName = cfg.telegram.botTokenEnv?.trim() || "TELEGRAM_BOT_TOKEN";
     const hasConfigToken = cfg.telegram.botToken.trim().length > 0;
     const hasEnvToken = Boolean(process.env[envName]?.trim());
-    const tokenSource = hasConfigToken
-      ? "config.json"
-      : hasEnvToken
-        ? `env:${envName}`
-        : `missing (${envName})`;
-
-    // eslint-disable-next-line no-console
-    console.log("");
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket] Gateway startup");
-    // eslint-disable-next-line no-console
-    console.log(`  config: ${cfg.configPath}`);
-    // eslint-disable-next-line no-console
-    console.log(`  project: ${cfg.projectName}`);
-    // eslint-disable-next-line no-console
-    console.log(`  model: ${cfg.defaultModel}`);
-    // eslint-disable-next-line no-console
-    console.log(`  telegram token: ${tokenSource}`);
-    // eslint-disable-next-line no-console
-    console.log(`  human auth: ${cfg.humanAuth.enabled ? "enabled" : "disabled"}`);
-    // eslint-disable-next-line no-console
-    console.log("");
+    if (hasConfigToken) {
+      return "config.json";
+    }
+    if (hasEnvToken) {
+      return `env:${envName}`;
+    }
+    return `missing (${envName})`;
   };
 
-  const printStartupStep = (step: number, total: number, title: string, detail: string): void => {
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][gateway-start] [${step}/${total}] ${title}: ${detail}`);
+  const printStartupHeader = (cfg: ReturnType<typeof loadConfig>): void => {
+    const tokenSource = tokenSourceLabel(cfg);
+    printRaw(createOpenPocketBanner({ subtitle: "GATEWAY STARTUP", stream: output }));
+    printRaw(cliTheme.section("Gateway Startup"));
+    printKeyValue("Config", cfg.configPath);
+    printKeyValue("Project", cfg.projectName, "accent");
+    printKeyValue("Model", cfg.defaultModel, "accent");
+    printKeyValue("Telegram token", tokenSource, tokenSource.startsWith("missing") ? "warn" : "success");
+    printKeyValue("Human auth", cfg.humanAuth.enabled ? "enabled" : "disabled");
+    printRaw("");
+  };
+
+  const printStartupStep = (
+    step: number,
+    total: number,
+    title: string,
+    status: CliStepStatus,
+    detail: string,
+  ): void => {
+    printStep(step, total, title, status, detail);
   };
 
   await runGatewayLoop({
+    log: (line) => {
+      printRuntimeLine(line);
+    },
     start: async () => {
       const cfg = loadConfig(configPath);
       const shortcut = installCliShortcut();
@@ -308,30 +339,26 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       let dashboard: DashboardServer | null = null;
 
       printStartupHeader(cfg);
-      printStartupStep(1, totalSteps, "Load config", "ok");
+      printStartupStep(1, totalSteps, "Load config", "ok", "loaded");
       if (shortcut.shellRcUpdated.length > 0 || !shortcut.binDirAlreadyInPath) {
-        // eslint-disable-next-line no-console
-        console.log(`[OpenPocket][gateway-start] CLI launcher ensured: ${shortcut.commandPath}`);
+        printSuccess(`CLI launcher ensured: ${shortcut.commandPath}`);
         if (shortcut.preferredPathCommandPath) {
-          // eslint-disable-next-line no-console
-          console.log(`[OpenPocket][gateway-start] Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
+          printKeyValue("Current-shell", shortcut.preferredPathCommandPath, "accent");
         }
         if (shortcut.shellRcUpdated.length > 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[OpenPocket][gateway-start] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
+          printKeyValue("Updated shell rc", shortcut.shellRcUpdated.join(", "), "accent");
         }
-        // eslint-disable-next-line no-console
-        console.log(
-          "[OpenPocket][gateway-start] Reload shell profile (or open a new terminal) before using `openpocket` without `./`.",
+        printWarn(
+          "Reload shell profile (or open a new terminal) before using `openpocket` without `./`.",
         );
       }
       if (!hasToken) {
-        printStartupStep(2, totalSteps, "Validate Telegram token", "failed");
+        printStartupStep(2, totalSteps, "Validate Telegram token", "failed", "token missing");
         throw new Error(
           `Telegram bot token is empty. Set config.telegram.botToken or env ${envName}.`,
         );
       }
-      printStartupStep(2, totalSteps, "Validate Telegram token", "ok");
+      printStartupStep(2, totalSteps, "Validate Telegram token", "ok", tokenSourceLabel(cfg));
 
       const emulator = new EmulatorManager(cfg);
       const bootstrapWindowed = process.platform === "darwin";
@@ -347,16 +374,17 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
           3,
           totalSteps,
           "Ensure emulator is running",
+          "ok",
           detail,
         );
       } else {
-        printStartupStep(3, totalSteps, "Ensure emulator is running", "starting");
+        printStartupStep(3, totalSteps, "Ensure emulator is running", "running", "booting emulator");
         const startMessage = await emulator.start(bootstrapWindowed ? false : true);
         if (bootstrapWindowed) {
           const hideMessage = await emulator.hideWindowInPlace();
-          printStartupStep(3, totalSteps, "Ensure emulator is running", `${startMessage}; ${hideMessage}`);
+          printStartupStep(3, totalSteps, "Ensure emulator is running", "ok", `${startMessage}; ${hideMessage}`);
         } else {
-          printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
+          printStartupStep(3, totalSteps, "Ensure emulator is running", "ok", startMessage);
         }
       }
       const readyStatus = emulator.status();
@@ -367,7 +395,7 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       }
 
       if (cfg.dashboard.enabled) {
-        printStartupStep(4, totalSteps, "Ensure local dashboard", "starting");
+        printStartupStep(4, totalSteps, "Ensure local dashboard", "running", "starting");
         const createDashboard = (port: number): DashboardServer =>
           new DashboardServer({
             config: cfg,
@@ -397,40 +425,56 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
           }
         }
 
-        printStartupStep(4, totalSteps, "Ensure local dashboard", `ok (${dashboard.address})`);
+        printStartupStep(4, totalSteps, "Ensure local dashboard", "ok", dashboard.address);
         if (cfg.dashboard.autoOpenBrowser) {
           openUrlInBrowser(dashboard.address);
-          // eslint-disable-next-line no-console
-          console.log(`[OpenPocket][gateway-start] Dashboard opened in browser: ${dashboard.address}`);
+          printInfo(`Dashboard opened in browser: ${dashboard.address}`);
         }
       } else {
-        printStartupStep(4, totalSteps, "Ensure local dashboard", "skipped (disabled in config)");
+        printStartupStep(4, totalSteps, "Ensure local dashboard", "skipped", "disabled in config");
       }
 
-      printStartupStep(5, totalSteps, "Initialize gateway runtime", "starting");
+      printStartupStep(5, totalSteps, "Initialize gateway runtime", "running", "initializing");
       gateway = new TelegramGateway(cfg, {
+        logger: (line) => {
+          printRuntimeLine(line);
+        },
         onLogLine: (line) => {
           dashboard?.ingestExternalLogLine(line);
         },
       });
-      printStartupStep(5, totalSteps, "Initialize gateway runtime", "ok");
-      printStartupStep(6, totalSteps, "Start services", "starting");
+      printStartupStep(5, totalSteps, "Initialize gateway runtime", "ok", "ready");
+      printStartupStep(6, totalSteps, "Start services", "running", "starting polling and services");
       await gateway.start();
-      printStartupStep(6, totalSteps, "Start services", "ok");
-      // eslint-disable-next-line no-console
-      console.log("[OpenPocket][gateway-start] Gateway is running. Press Ctrl+C to stop.");
+      printStartupStep(6, totalSteps, "Start services", "ok", "all services online");
+      printRaw("");
+      printRaw(cliTheme.section("Runtime Ready"));
+      printSuccess("Gateway is running. Press Ctrl+C to stop.");
       if (dashboard) {
-        // eslint-disable-next-line no-console
-        console.log(`[OpenPocket][gateway-start] Dashboard URL: ${dashboard.address}`);
+        const parsed = new URL(dashboard.address);
+        const dashboardPort = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+        printKeyValue("Dashboard port", dashboardPort, "success");
+        printKeyValue("Dashboard URL", dashboard.address, "success");
+      }
+      if (cfg.humanAuth.enabled) {
+        const relayBaseUrl = cfg.humanAuth.relayBaseUrl.trim();
+        const publicBaseUrl = cfg.humanAuth.publicBaseUrl.trim();
+        if (relayBaseUrl) {
+          printKeyValue("Relay URL", relayBaseUrl, "accent");
+        }
+        if (publicBaseUrl) {
+          const tone = /^https:\/\//i.test(publicBaseUrl) ? "success" : "warn";
+          printKeyValue("Public URL", publicBaseUrl, tone);
+        }
       }
       return {
         stop: async (reason?: string) => {
-          // eslint-disable-next-line no-console
-          console.log(`[OpenPocket][gateway-start] Stopping gateway (${reason ?? "run-loop-stop"})`);
+          printWarn(`Stopping gateway (${reason ?? "run-loop-stop"})`);
           await gateway?.stop(reason ?? "run-loop-stop");
           if (dashboard) {
             await dashboard.stop();
           }
+          printInfo("Gateway stopped.");
         },
       };
     },
@@ -440,14 +484,15 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
 
 async function runBootstrapCommand(configPath: string | undefined): Promise<ReturnType<typeof loadConfig>> {
   const cfg = loadConfig(configPath);
+  printRaw(cliTheme.section("Environment Bootstrap"));
   await ensureAndroidPrerequisites(cfg, {
     autoInstall: true,
     logger: (line) => {
-      // eslint-disable-next-line no-console
-      console.log(`[OpenPocket][env] ${line}`);
+      printRuntimeLine(`[OpenPocket][env] ${line}`);
     },
   });
   saveConfig(cfg);
+  printSuccess("Environment bootstrap completed.");
   return cfg;
 }
 
@@ -478,19 +523,15 @@ function installCliShortcutOnFirstOnboard(cfg: ReturnType<typeof loadConfig>): v
     "utf-8",
   );
 
-  // eslint-disable-next-line no-console
-  console.log(`[OpenPocket][onboard] CLI launcher installed: ${shortcut.commandPath}`);
+  printSuccess(`[OpenPocket][onboard] CLI launcher installed: ${shortcut.commandPath}`);
   if (shortcut.preferredPathCommandPath) {
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][onboard] Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
+    printInfo(`[OpenPocket][onboard] Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
   }
   if (shortcut.shellRcUpdated.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][onboard] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
+    printInfo(`[OpenPocket][onboard] Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
   }
   if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket][onboard] Reload shell profile (or open a new terminal) to use `openpocket` directly.");
+    printWarn("[OpenPocket][onboard] Reload shell profile (or open a new terminal) to use `openpocket` directly.");
   }
 }
 
@@ -503,19 +544,15 @@ async function runOnboardCommand(configPath: string | undefined): Promise<number
 
 async function runInstallCliCommand(): Promise<number> {
   const shortcut = installCliShortcut();
-  // eslint-disable-next-line no-console
-  console.log(`CLI launcher installed: ${shortcut.commandPath}`);
+  printSuccess(`CLI launcher installed: ${shortcut.commandPath}`);
   if (shortcut.preferredPathCommandPath) {
-    // eslint-disable-next-line no-console
-    console.log(`Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
+    printInfo(`Current-shell launcher: ${shortcut.preferredPathCommandPath}`);
   }
   if (shortcut.shellRcUpdated.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
+    printInfo(`Updated shell rc: ${shortcut.shellRcUpdated.join(", ")}`);
   }
   if (!shortcut.binDirAlreadyInPath || shortcut.shellRcUpdated.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log("Reload shell profile (or open a new terminal) to use `openpocket` directly.");
+    printWarn("Reload shell profile (or open a new terminal) to use `openpocket` directly.");
   }
   return 0;
 }
@@ -530,18 +567,15 @@ async function runSkillsCommand(configPath: string | undefined, args: string[]):
   const loader = new SkillLoader(cfg);
   const skills = loader.loadAll();
   if (skills.length === 0) {
-    // eslint-disable-next-line no-console
-    console.log("No skills loaded.");
+    printWarn("No skills loaded.");
     return 0;
   }
 
+  printRaw(cliTheme.section("Loaded Skills"));
   for (const skill of skills) {
-    // eslint-disable-next-line no-console
-    console.log(`[${skill.source}] ${skill.name} (${skill.id})`);
-    // eslint-disable-next-line no-console
-    console.log(`  ${skill.description}`);
-    // eslint-disable-next-line no-console
-    console.log(`  ${skill.path}`);
+    printRaw(cliTheme.emphasize(`[${skill.source}] ${skill.name} (${skill.id})`, "accent"));
+    printRaw(`  ${skill.description}`);
+    printRaw(`  ${skill.path}`);
   }
   return 0;
 }
@@ -575,17 +609,20 @@ async function runScriptCommand(configPath: string | undefined, args: string[]):
     timeout && Number.isFinite(Number(timeout)) ? Number(timeout) : undefined,
   );
 
-  // eslint-disable-next-line no-console
-  console.log(`ok=${result.ok} exitCode=${result.exitCode} timedOut=${result.timedOut}`);
-  // eslint-disable-next-line no-console
-  console.log(`runDir=${result.runDir}`);
+  printRaw(cliTheme.section("Script Execution"));
+  if (result.ok) {
+    printSuccess(`ok=${result.ok} exitCode=${result.exitCode} timedOut=${result.timedOut}`);
+  } else {
+    printWarn(`ok=${result.ok} exitCode=${result.exitCode} timedOut=${result.timedOut}`);
+  }
+  printKeyValue("runDir", result.runDir, "accent");
   if (result.stdout.trim()) {
-    // eslint-disable-next-line no-console
-    console.log(`stdout:\n${result.stdout}`);
+    printRaw(cliTheme.label("STDOUT", "info"));
+    printRaw(result.stdout);
   }
   if (result.stderr.trim()) {
-    // eslint-disable-next-line no-console
-    console.log(`stderr:\n${result.stderr}`);
+    printRaw(cliTheme.label("STDERR", "warn"));
+    printRaw(result.stderr);
   }
   return result.ok ? 0 : 1;
 }
@@ -833,20 +870,16 @@ async function runTelegramWhoamiCommand(cfg: ReturnType<typeof loadConfig>): Pro
   const allow = cfg.telegram.allowedChatIds;
   const allowPolicy = allow.length > 0 ? "allow_only_listed" : "allow_all";
 
-  // eslint-disable-next-line no-console
-  console.log("[OpenPocket] Telegram identity");
-  // eslint-disable-next-line no-console
-  console.log(`  token source: ${tokenInfo.source}`);
-  // eslint-disable-next-line no-console
-  console.log(`  allow policy: ${allowPolicy}`);
-  // eslint-disable-next-line no-console
-  console.log(
-    `  allowlist: ${allow.length > 0 ? allow.map((id) => String(id)).join(", ") : "empty (all chats allowed)"}`,
+  printRaw(cliTheme.section("Telegram Identity"));
+  printKeyValue("Token source", tokenInfo.source, tokenInfo.token ? "success" : "warn");
+  printKeyValue("Allow policy", allowPolicy);
+  printKeyValue(
+    "Allowlist",
+    allow.length > 0 ? allow.map((id) => String(id)).join(", ") : "empty (all chats allowed)",
   );
 
   if (!tokenInfo.token) {
-    // eslint-disable-next-line no-console
-    console.log(`\nTelegram token is not configured. Set config.telegram.botToken or env ${tokenInfo.envName}.`);
+    printWarn(`Telegram token is not configured. Set config.telegram.botToken or env ${tokenInfo.envName}.`);
     return 0;
   }
 
@@ -867,8 +900,7 @@ async function runTelegramWhoamiCommand(cfg: ReturnType<typeof loadConfig>): Pro
     // Ignore getMe failure and continue with updates probe.
   }
 
-  // eslint-disable-next-line no-console
-  console.log(`  bot: ${botName}`);
+  printKeyValue("Bot", botName, "accent");
 
   try {
     const updatesResp = await fetch(`${apiBase}/getUpdates`, {
@@ -910,29 +942,23 @@ async function runTelegramWhoamiCommand(cfg: ReturnType<typeof loadConfig>): Pro
     }
 
     if (seen.size === 0) {
-      // eslint-disable-next-line no-console
-      console.log("\nNo chat IDs discovered from recent updates.");
-      // eslint-disable-next-line no-console
-      console.log("Send one message to your bot in Telegram, then run `openpocket telegram whoami` again.");
+      printWarn("No chat IDs discovered from recent updates.");
+      printInfo("Send one message to your bot in Telegram, then run `openpocket telegram whoami` again.");
       return 0;
     }
 
-    // eslint-disable-next-line no-console
-    console.log("\nDiscovered chat IDs:");
+    printRaw(cliTheme.section("Discovered Chat IDs"));
     for (const chat of seen.values()) {
       const allowed = allow.length === 0 || allow.includes(chat.id);
-      // eslint-disable-next-line no-console
-      console.log(
+      printRaw(
         `  - ${chat.id} | type=${chat.type} | title=${chat.title} | source=${chat.source} | allowed=${allowed}`,
       );
     }
     return 0;
   } catch (error) {
     const message = (error as Error).message || "unknown error";
-    // eslint-disable-next-line no-console
-    console.log(`\nUnable to query recent Telegram updates: ${message}`);
-    // eslint-disable-next-line no-console
-    console.log("If gateway is running, polling conflict can happen. Stop gateway and retry this command.");
+    printWarn(`Unable to query recent Telegram updates: ${message}`);
+    printInfo("If gateway is running, polling conflict can happen. Stop gateway and retry this command.");
     return 0;
   }
 }
@@ -1004,15 +1030,17 @@ async function selectByArrowKeys<T extends string>(
     }
     const lines: string[] = [];
     lines.push("");
-    lines.push(truncateForTerminal(message, columns - 1));
+    lines.push(cliTheme.paint(truncateForTerminal(`[SELECT] ${message}`, columns - 1), "accent"));
     for (let i = 0; i < options.length; i += 1) {
       const option = options[i];
-      const prefix = i === index ? ">" : " ";
+      const selected = i === index;
+      const prefix = selected ? ">>" : "  ";
       const hint = option.hint ? ` (${option.hint})` : "";
       const rawLine = `  ${prefix} ${option.label}${hint}`;
-      lines.push(truncateForTerminal(rawLine, columns - 1));
+      const clipped = truncateForTerminal(rawLine, columns - 1);
+      lines.push(selected ? cliTheme.paint(clipped, "success") : clipped);
     }
-    lines.push(truncateForTerminal("Use Up/Down arrows and Enter to select.", columns - 1));
+    lines.push(cliTheme.paint(truncateForTerminal("[INPUT] Use Up/Down arrows and Enter to select.", columns - 1), "warn"));
     output.write(`${lines.join("\n")}\n`);
     renderedLines = lines.length;
   };
@@ -1079,18 +1107,15 @@ async function runTelegramSetupCommand(
 
   const rl = createInterface({ input, output });
   try {
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket] Telegram setup");
-    // eslint-disable-next-line no-console
-    console.log("Create your bot in Telegram with @BotFather before continuing.");
+    printRaw(cliTheme.section("Telegram Setup"));
+    printInfo("Create your bot in Telegram with @BotFather before continuing.");
 
     const fallbackEnv = "TELEGRAM_BOT_TOKEN";
     const configuredEnv = cfg.telegram.botTokenEnv || fallbackEnv;
     const currentEnv = normalizeEnvVarName(configuredEnv, fallbackEnv);
     if (currentEnv !== configuredEnv) {
       cfg.telegram.botTokenEnv = currentEnv;
-      // eslint-disable-next-line no-console
-      console.log(
+      printWarn(
         `[OpenPocket] Invalid botTokenEnv value detected (${configuredEnv}). Reset to ${currentEnv}.`,
       );
     }
@@ -1126,8 +1151,7 @@ async function runTelegramSetupCommand(
       cfg.telegram.botToken = "";
       const selectedEnvToken = process.env[envName]?.trim() ?? "";
       if (!selectedEnvToken) {
-        // eslint-disable-next-line no-console
-        console.log(
+        printWarn(
           `[OpenPocket] Warning: ${envName} is not set in this shell. Gateway start will fail until you export it.`,
         );
       }
@@ -1174,10 +1198,8 @@ async function runTelegramSetupCommand(
     }
 
     saveConfig(cfg);
-    // eslint-disable-next-line no-console
-    console.log("\nTelegram setup saved.");
-    // eslint-disable-next-line no-console
-    console.log("Next: run `openpocket gateway start`.");
+    printSuccess("Telegram setup saved.");
+    printInfo("Next: run `openpocket gateway start`.");
     return 0;
   } finally {
     if (input.setRawMode) {
@@ -1220,15 +1242,13 @@ async function runDashboardCommand(configPath: string | undefined, args: string[
   });
 
   await dashboard.start();
-  // eslint-disable-next-line no-console
-  console.log(`[OpenPocket][dashboard] started at ${dashboard.address}`);
-  // eslint-disable-next-line no-console
-  console.log("[OpenPocket][dashboard] press Ctrl+C to stop");
+  printRaw(cliTheme.section("Dashboard"));
+  printSuccess(`[OpenPocket][dashboard] started at ${dashboard.address}`);
+  printInfo("[OpenPocket][dashboard] press Ctrl+C to stop");
 
   if (cfg.dashboard.autoOpenBrowser) {
     openUrlInBrowser(dashboard.address);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][dashboard] opened browser: ${dashboard.address}`);
+    printInfo(`[OpenPocket][dashboard] opened browser: ${dashboard.address}`);
   }
 
   await new Promise<void>((resolve) => {
@@ -1242,8 +1262,7 @@ async function runDashboardCommand(configPath: string | undefined, args: string[
   });
 
   await dashboard.stop();
-  // eslint-disable-next-line no-console
-  console.log("[OpenPocket][dashboard] stopped");
+  printSuccess("[OpenPocket][dashboard] stopped");
   return 0;
 }
 
@@ -1288,10 +1307,21 @@ async function runHumanAuthRelayCommand(
   });
 
   await relay.start();
-  // eslint-disable-next-line no-console
-  console.log(`[OpenPocket][human-auth-relay] started at ${relay.address || `http://${host ?? "0.0.0.0"}:${port}`}`);
-  // eslint-disable-next-line no-console
-  console.log("[OpenPocket][human-auth-relay] press Ctrl+C to stop");
+  const relayAddress = relay.address || `http://${host ?? "0.0.0.0"}:${port}`;
+  printRaw(cliTheme.section("Human Auth Relay"));
+  printSuccess(`[OpenPocket][human-auth-relay] started at ${relayAddress}`);
+  printInfo("[OpenPocket][human-auth-relay] press Ctrl+C to stop");
+  printKeyValue("Relay URL", relayAddress, "success");
+  if (relayAddress.startsWith("http://")) {
+    const parsed = new URL(relayAddress);
+    const relayPort = parsed.port || "80";
+    printKeyValue("Relay port", relayPort, "accent");
+  }
+  if (relayAddress.startsWith("https://")) {
+    const parsed = new URL(relayAddress);
+    const relayPort = parsed.port || "443";
+    printKeyValue("Relay port", relayPort, "accent");
+  }
 
   await new Promise<void>((resolve) => {
     const onSignal = (): void => {
@@ -1304,6 +1334,7 @@ async function runHumanAuthRelayCommand(
   });
 
   await relay.stop();
+  printSuccess("[OpenPocket][human-auth-relay] stopped");
   return 0;
 }
 
@@ -1336,8 +1367,7 @@ async function runPermissionLabScenario(params: {
   const agent = new AgentRuntime(runtimeConfig);
   const humanAuth = new HumanAuthBridge(runtimeConfig);
   const localStack = new LocalHumanAuthStack(runtimeConfig, (line) => {
-    // eslint-disable-next-line no-console
-    console.log(line);
+    printRuntimeLine(line);
   });
   let localStackStarted = false;
 
@@ -1356,21 +1386,16 @@ async function runPermissionLabScenario(params: {
           discoveredPublicUrl ||
           configuredRelayBaseUrl
         ).replace(/\/+$/, "");
-        // eslint-disable-next-line no-console
-        console.log(`[OpenPocket][test] Reusing running human-auth relay: ${runtimeConfig.humanAuth.relayBaseUrl}`);
-        // eslint-disable-next-line no-console
-        console.log(`[OpenPocket][test] Reusing public auth URL: ${runtimeConfig.humanAuth.publicBaseUrl}`);
+        printInfo(`[OpenPocket][test] Reusing running human-auth relay: ${runtimeConfig.humanAuth.relayBaseUrl}`);
+        printInfo(`[OpenPocket][test] Reusing public auth URL: ${runtimeConfig.humanAuth.publicBaseUrl}`);
       } else {
-        // eslint-disable-next-line no-console
-        console.log("[OpenPocket][test] Starting local human-auth relay stack...");
+        printInfo("[OpenPocket][test] Starting local human-auth relay stack...");
         const started = await localStack.start();
         runtimeConfig.humanAuth.relayBaseUrl = started.relayBaseUrl;
         runtimeConfig.humanAuth.publicBaseUrl = started.publicBaseUrl;
         localStackStarted = true;
-        // eslint-disable-next-line no-console
-        console.log(`[OpenPocket][test] Human-auth relay: ${started.relayBaseUrl}`);
-        // eslint-disable-next-line no-console
-        console.log(`[OpenPocket][test] Human-auth public URL: ${started.publicBaseUrl}`);
+        printSuccess(`[OpenPocket][test] Human-auth relay: ${started.relayBaseUrl}`);
+        printSuccess(`[OpenPocket][test] Human-auth public URL: ${started.publicBaseUrl}`);
       }
     } else if (!runtimeConfig.humanAuth.relayBaseUrl.trim()) {
       throw new Error(
@@ -1389,24 +1414,19 @@ async function runPermissionLabScenario(params: {
       );
     }
 
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Scenario: ${scenario.id} (${scenario.title})`);
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket][test] Building and deploying PermissionLab for scenario run...");
+    printRaw(cliTheme.section("PermissionLab Scenario"));
+    printInfo(`[OpenPocket][test] Scenario: ${scenario.id} (${scenario.title})`);
+    printInfo("[OpenPocket][test] Building and deploying PermissionLab for scenario run...");
     const deployed = await permissionLab.deploy({
       deviceId: params.deviceId ?? undefined,
       launch: false,
       clean: params.clean,
     });
     runtimeConfig.agent.deviceId = deployed.deviceId;
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Device: ${deployed.deviceId}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Install: ${deployed.installOutput || "ok"}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Reset: ${permissionLab.reset(deployed.deviceId)}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Launch: ${permissionLab.launch(deployed.deviceId)}`);
+    printKeyValue("Device", deployed.deviceId, "accent");
+    printKeyValue("Install", deployed.installOutput || "ok", "success");
+    printKeyValue("Reset", permissionLab.reset(deployed.deviceId));
+    printKeyValue("Launch", permissionLab.launch(deployed.deviceId));
 
     const task = permissionLab.agentTaskForScenario(scenario.id);
     await sendTelegramMessage(tokenInfo.token, {
@@ -1463,18 +1483,18 @@ async function runPermissionLabScenario(params: {
         ? `[PermissionLab] Case ${scenario.id} completed.\nResult: ${result.message || "Completed."}`
         : `[PermissionLab] Case ${scenario.id} failed.\nReason: ${result.message || "Unknown error."}`,
     });
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Scenario completed. ok=${result.ok}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Result: ${result.message}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Session: ${result.sessionPath}`);
+    if (result.ok) {
+      printSuccess(`[OpenPocket][test] Scenario completed. ok=${result.ok}`);
+    } else {
+      printWarn(`[OpenPocket][test] Scenario completed. ok=${result.ok}`);
+    }
+    printInfo(`[OpenPocket][test] Result: ${result.message}`);
+    printRaw(`[OpenPocket][test] Session: ${result.sessionPath}`);
     return result.ok ? 0 : 1;
   } finally {
     if (localStackStarted) {
       await localStack.stop();
-      // eslint-disable-next-line no-console
-      console.log("[OpenPocket][test] Local human-auth relay stack stopped.");
+      printInfo("[OpenPocket][test] Local human-auth relay stack stopped.");
     }
   }
 }
@@ -1506,11 +1526,9 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
 
   if (action === "cases") {
     const scenarios = permissionLab.listScenarios();
-    // eslint-disable-next-line no-console
-    console.log("Permission-app scenarios:");
+    printRaw(cliTheme.section("Permission-app Scenarios"));
     for (const scenario of scenarios) {
-      // eslint-disable-next-line no-console
-      console.log(`- ${scenario.id}: ${scenario.title} | button="${scenario.buttonLabel}" | ${scenario.summary}`);
+      printRaw(`- ${scenario.id}: ${scenario.title} | button="${scenario.buttonLabel}" | ${scenario.summary}`);
     }
     return 0;
   }
@@ -1518,10 +1536,9 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
   if (action === "task") {
     const taskText = permissionLab.recommendedTelegramTask(scenarioId);
     if (!sendToTelegram) {
-      // eslint-disable-next-line no-console
-      console.log(taskText);
-      // eslint-disable-next-line no-console
-      console.log("Tip: add `--send` to run this scenario end-to-end (agent auto-click + Telegram human-auth link).");
+      printRaw(cliTheme.section("Recommended Task"));
+      printRaw(taskText);
+      printInfo("Tip: add `--send` to run this scenario end-to-end (agent auto-click + Telegram human-auth link).");
       return 0;
     }
 
@@ -1548,49 +1565,38 @@ async function runTestCommand(configPath: string | undefined, args: string[]): P
 
   if (action === "deploy" || action === "install") {
     const shouldLaunch = action === "deploy";
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket][test] Building and deploying Android PermissionLab...");
+    printRaw(cliTheme.section("PermissionLab Deploy"));
+    printInfo("[OpenPocket][test] Building and deploying Android PermissionLab...");
     const deployed = await permissionLab.deploy({
       deviceId: deviceId ?? undefined,
       launch: shouldLaunch,
       clean: hasClean,
     });
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] APK: ${deployed.apkPath}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Device: ${deployed.deviceId}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] SDK: ${deployed.sdkRoot}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Build-tools: ${deployed.buildToolsVersion} | Platform: ${deployed.platformVersion}`);
-    // eslint-disable-next-line no-console
-    console.log(`[OpenPocket][test] Install: ${deployed.installOutput || "ok"}`);
+    printKeyValue("APK", deployed.apkPath, "accent");
+    printKeyValue("Device", deployed.deviceId, "accent");
+    printKeyValue("SDK", deployed.sdkRoot);
+    printKeyValue("Build-tools", `${deployed.buildToolsVersion} | Platform: ${deployed.platformVersion}`);
+    printKeyValue("Install", deployed.installOutput || "ok", "success");
     if (deployed.launchOutput) {
-      // eslint-disable-next-line no-console
-      console.log(`[OpenPocket][test] Launch: ${deployed.launchOutput}`);
+      printKeyValue("Launch", deployed.launchOutput);
     }
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket][test] Suggested Telegram task:");
-    // eslint-disable-next-line no-console
-    console.log(permissionLab.recommendedTelegramTask(scenarioId));
+    printRaw(cliTheme.label("SUGGESTED TASK", "accent"));
+    printRaw(permissionLab.recommendedTelegramTask(scenarioId));
     return 0;
   }
 
   if (action === "launch") {
-    // eslint-disable-next-line no-console
-    console.log(permissionLab.launch(deviceId ?? undefined));
+    printInfo(permissionLab.launch(deviceId ?? undefined));
     return 0;
   }
 
   if (action === "reset") {
-    // eslint-disable-next-line no-console
-    console.log(permissionLab.reset(deviceId ?? undefined));
+    printInfo(permissionLab.reset(deviceId ?? undefined));
     return 0;
   }
 
   if (action === "uninstall") {
-    // eslint-disable-next-line no-console
-    console.log(permissionLab.uninstall(deviceId ?? undefined));
+    printInfo(permissionLab.uninstall(deviceId ?? undefined));
     return 0;
   }
 
@@ -1610,17 +1616,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const command = rest[0];
 
   if (command === "init") {
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket] `init` is deprecated. Use `openpocket onboard`.");
+    printWarn("[OpenPocket] `init` is deprecated. Use `openpocket onboard`.");
     const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
     if (interactive) {
       return runOnboardCommand(configPath ?? undefined);
     }
     const cfg = await runBootstrapCommand(configPath ?? undefined);
-    // eslint-disable-next-line no-console
-    console.log(`OpenPocket bootstrap completed.\nConfig: ${cfg.configPath}`);
-    // eslint-disable-next-line no-console
-    console.log("Run `openpocket onboard` in an interactive terminal to complete consent/model/API key onboarding.");
+    printSuccess(`OpenPocket bootstrap completed.\nConfig: ${cfg.configPath}`);
+    printInfo("Run `openpocket onboard` in an interactive terminal to complete consent/model/API key onboarding.");
     return 0;
   }
 
@@ -1630,8 +1633,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   if (command === "config-show") {
     const cfg = loadConfig(configPath ?? undefined);
-    // eslint-disable-next-line no-console
-    console.log(fs.readFileSync(cfg.configPath, "utf-8").trim());
+    printRaw(fs.readFileSync(cfg.configPath, "utf-8").trim());
     return 0;
   }
 
@@ -1672,8 +1674,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   if (command === "setup") {
-    // eslint-disable-next-line no-console
-    console.log("[OpenPocket] `setup` is deprecated. Use `openpocket onboard`.");
+    printWarn("[OpenPocket] `setup` is deprecated. Use `openpocket onboard`.");
     return runOnboardCommand(configPath ?? undefined);
   }
 
@@ -1691,7 +1692,7 @@ if (require.main === module) {
     })
     .catch((error) => {
       // eslint-disable-next-line no-console
-      console.error(`OpenPocket error: ${(error as Error).message}`);
+      console.error(cliTheme.error(`OpenPocket error: ${(error as Error).message}`));
       process.exitCode = 1;
     });
 }
