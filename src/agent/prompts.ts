@@ -18,6 +18,34 @@ const TOOL_CATALOG = [
 
 export type SystemPromptMode = "full" | "minimal" | "none";
 
+function trailingStreak(values: string[]): { value: string; count: number } {
+  if (values.length === 0) {
+    return { value: "", count: 0 };
+  }
+  const last = values[values.length - 1] ?? "";
+  if (!last) {
+    return { value: "", count: 0 };
+  }
+  let count = 0;
+  for (let i = values.length - 1; i >= 0; i -= 1) {
+    if (values[i] !== last) {
+      break;
+    }
+    count += 1;
+  }
+  return { value: last, count };
+}
+
+function parseActionFromHistoryLine(line: string): string {
+  const matched = line.match(/(?:^|\s)action=([a-z_]+)/i);
+  return matched?.[1]?.toLowerCase() ?? "";
+}
+
+function parseAppFromHistoryLine(line: string): string {
+  const matched = line.match(/(?:^|\s)app=([^\s]+)/i);
+  return matched?.[1]?.toLowerCase() ?? "";
+}
+
 export function buildSystemPrompt(
   skillsSummary = "(no skills loaded)",
   workspaceContext = "",
@@ -81,8 +109,13 @@ export function buildSystemPrompt(
     "- Prefer the smallest safe action that increases certainty.",
     "- Keep coordinates inside the provided screen bounds.",
     "- Before type_text, ensure the intended input field is focused.",
+    "- Input-focus anti-loop: do not tap the same field more than 2 times in a row.",
+    "- After one focus tap (or if field likely focused), attempt type_text with intended query instead of more focus taps.",
+    "- If two taps in similar area do not change state, switch strategy (type_text, keyevent KEYCODE_ENTER/KEYCODE_SEARCH, back, or relaunch).",
+    "- Never type internal logs/history/JSON (forbidden examples: [OpenPocket], action=..., step=..., parsed action).",
     "- Use KEYCODE_BACK for back navigation and KEYCODE_HOME for home.",
     "- Use wait for loading/animations/network delay; do not spam repeated taps during loading.",
+    "- If currentApp is unknown across multiple steps, avoid blind repetitive taps; try intent-driven actions and verify outcome.",
     "- Use run_script only as a controlled fallback and keep scripts short and deterministic.",
     "- Keep actions practical and reproducible.",
     "",
@@ -115,6 +148,7 @@ export function buildSystemPrompt(
     "",
     "## Heartbeat + Runtime Discipline",
     "- Avoid no-op loops; after two failed attempts, switch strategy explicitly.",
+    "- Hard constraint: do not repeat the same action pattern more than 3 times with unchanged outcome.",
     "- Respect runtime constraints and finish as soon as evidence shows completion.",
     "",
     "## Available Skills",
@@ -137,6 +171,12 @@ export function buildUserPrompt(
   history: string[],
 ): string {
   const recentHistory = history.slice(-8);
+  const recentActions = recentHistory.map(parseActionFromHistoryLine);
+  const recentApps = recentHistory.map(parseAppFromHistoryLine);
+  const actionStreak = trailingStreak(recentActions);
+  const appStreak = trailingStreak(recentApps);
+  const focusLoopRisk = actionStreak.value === "tap" && actionStreak.count >= 3;
+  const unknownAppStreak = appStreak.value === "unknown" ? appStreak.count : 0;
   return [
     "One-step decision for Android task execution.",
     `Task: ${task}`,
@@ -158,12 +198,20 @@ export function buildUserPrompt(
     "Recent execution history (oldest -> newest):",
     recentHistory.length > 0 ? recentHistory.join("\n") : "(none)",
     "",
+    "Runtime stuck signals:",
+    `- trailing action streak: ${actionStreak.value || "(none)"} x ${actionStreak.count}`,
+    `- trailing app streak: ${appStreak.value || "(none)"} x ${appStreak.count}`,
+    `- unknown-app streak: ${unknownAppStreak}`,
+    `- focus-loop risk: ${focusLoopRisk ? "high" : "low"}`,
+    "",
     "Decision checklist:",
     "1) What sub-goal is active right now?",
     "2) What evidence on screen/history supports the next action?",
     "3) If recently stuck, what alternative path should be tried now?",
-    "4) If blocked by authorization, use request_human_auth.",
-    "5) If done, use finish with a complete summary.",
+    "4) If this is text-entry intent: max 2 focus taps, then type_text once and submit with keyevent if needed.",
+    "5) Never type logs/history/JSON strings; text must come from user intent or on-screen content.",
+    "6) If blocked by authorization, use request_human_auth.",
+    "7) If done, use finish with a complete summary.",
     "",
     "Call exactly one tool now.",
   ].join("\n");

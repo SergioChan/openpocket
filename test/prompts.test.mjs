@@ -15,6 +15,8 @@ test("buildSystemPrompt includes planning rules and skills", () => {
   assert.match(prompt, /Skill Selection Protocol/);
   assert.match(prompt, /Memory Recall Protocol/);
   assert.match(prompt, /Write thought and all text fields in English/);
+  assert.match(prompt, /Input-focus anti-loop/);
+  assert.match(prompt, /Never type internal logs\/history\/JSON/);
   assert.match(prompt, /skill-a/);
 });
 
@@ -65,6 +67,8 @@ test("buildUserPrompt keeps only recent 8 history items", () => {
   assert.match(prompt, /step-history-12/);
   assert.match(prompt, /step-history-5/);
   assert.match(prompt, /Decision checklist/);
+  assert.match(prompt, /Runtime stuck signals/);
+  assert.match(prompt, /Never type logs\/history\/JSON strings/);
   assert.match(prompt, /Call exactly one tool now/);
   assert.doesNotMatch(prompt, /step-history-1(?!\d)/);
   assert.doesNotMatch(prompt, /step-history-4(?!\d)/);
