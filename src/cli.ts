@@ -334,11 +334,14 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       printStartupStep(2, totalSteps, "Validate Telegram token", "ok");
 
       const emulator = new EmulatorManager(cfg);
+      const bootstrapWindowed = process.platform === "darwin";
       const emulatorStatus = emulator.status();
       if (emulatorStatus.bootedDevices.length > 0) {
         let detail = `ok (${emulatorStatus.bootedDevices.join(", ")})`;
-        if (process.platform === "darwin") {
-          detail = `${detail}; ${await emulator.ensureHiddenBackground()}`;
+        if (bootstrapWindowed) {
+          const showMessage = await emulator.ensureWindowVisible();
+          const hideMessage = await emulator.hideWindowInPlace();
+          detail = `${detail}; ${showMessage}; ${hideMessage}`;
         }
         printStartupStep(
           3,
@@ -348,8 +351,13 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
         );
       } else {
         printStartupStep(3, totalSteps, "Ensure emulator is running", "starting");
-        const startMessage = await emulator.start(true);
-        printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
+        const startMessage = await emulator.start(bootstrapWindowed ? false : true);
+        if (bootstrapWindowed) {
+          const hideMessage = await emulator.hideWindowInPlace();
+          printStartupStep(3, totalSteps, "Ensure emulator is running", `${startMessage}; ${hideMessage}`);
+        } else {
+          printStartupStep(3, totalSteps, "Ensure emulator is running", startMessage);
+        }
       }
       const readyStatus = emulator.status();
       if (readyStatus.bootedDevices.length === 0) {

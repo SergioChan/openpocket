@@ -588,6 +588,41 @@ export class EmulatorManager {
     return this.restartWithMode(true, "Hide could not hide the current window process; switching emulator to headless background mode.");
   }
 
+  /**
+   * Hide the emulator window without changing process mode.
+   * This never restarts to headless fallback.
+   */
+  async hideWindowInPlace(): Promise<string> {
+    if (process.platform !== "darwin") {
+      return this.hideWindow();
+    }
+
+    const status = this.status();
+    if (status.devices.length === 0) {
+      if (this.isHeadlessProcessRunning()) {
+        return "Emulator is already running in headless mode.";
+      }
+      return "No running emulator found.";
+    }
+
+    if (this.isHeadlessProcessRunning()) {
+      return "Emulator is running in headless mode, no window to hide.";
+    }
+
+    const processName = this.windowedQemuProcessNameMac();
+    if (!processName) {
+      return "Windowed emulator process was not detected.";
+    }
+    if (this.setProcessVisibleMac(processName, false, false)) {
+      const hidden = await this.waitForProcessVisibleMac(processName, false, 1200);
+      if (hidden) {
+        return "Android Emulator window hidden.";
+      }
+    }
+
+    return "Failed to hide emulator window in-place. Keep current window or use headless fallback.";
+  }
+
   captureScreenshot(outputPath?: string, preferredDeviceId?: string): string {
     const deviceId = this.resolveOnlineDevice(preferredDeviceId);
 
