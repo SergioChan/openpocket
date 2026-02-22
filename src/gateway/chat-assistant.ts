@@ -882,7 +882,7 @@ export class ChatAssistant {
       "Decide whether user should be notified now.",
       "- notify=false when still repeating on same screen without clear user-visible progress.",
       "- notify=true when app/screen changed, checkpoint reached, auth required, or blocked by error.",
-      "- If notify=true, write concise natural-language status with step x/y.",
+      "- If notify=true, write concise conversational status with natural progress indicator (x/y).",
     ].join("\n");
   }
 
@@ -907,8 +907,10 @@ export class ChatAssistant {
       "1) notify=false when there is no clear, user-visible progress yet.",
       "2) notify=true when meaningful progress happened (page transition, key checkpoint, auth blocker, error, or completion signal).",
       "3) If notify=true, message must be concise, natural language, and in locale hint.",
-      "4) If notify=true, message must mention current step progress x/y and what changed.",
-      "5) If notify=false, message must be empty string.",
+      "4) If notify=true, include progress indicator naturally (e.g., (8/50)), not rigid log format.",
+      "5) Use conversational tone. Avoid repeating the same opening pattern across updates.",
+      "6) Do not expose internal mechanics (model, filters, callbacks, tools).",
+      "7) If notify=false, message must be empty string.",
       "",
       "TASK_PROGRESS_REPORTER.md:",
       this.readTaskProgressReporterGuide(),
@@ -1767,8 +1769,8 @@ export class ChatAssistant {
     const app = this.trimForPrompt(input.progress.currentApp || "unknown", 120);
     const summary = this.trimForPrompt(input.progress.thought || input.progress.message || "", 180);
     const messageText = input.locale === "zh"
-      ? `进度 ${stepToken}：当前在 ${app}，刚执行 ${input.progress.actionType}${summary ? `。${summary}` : "。"}`
-      : `Progress ${stepToken}: currently on ${app}, latest action ${input.progress.actionType}${summary ? `. ${summary}` : "."}`;
+      ? `小更新（${stepToken}）：我还在 ${app}，刚做了 ${input.progress.actionType}${summary ? `，${summary}` : ""}。`
+      : `Quick update (${stepToken}): still on ${app}, I just ran ${input.progress.actionType}${summary ? `, ${summary}` : ""}.`;
 
     return {
       notify: true,

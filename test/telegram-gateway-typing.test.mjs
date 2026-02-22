@@ -604,11 +604,100 @@ test("TelegramGateway narrates progress only when model marks meaningful updates
     assert.equal(sent[0].chatId, 9201);
     assert.equal(sent[0].text, "进度 1/5：已打开 Gmail 首页。");
     assert.equal(sent[1].text, "进度 4/5：已进入收件箱。");
-    assert.match(sent[2].text, /Task completed/);
+    assert.match(sent[2].text, /完成了/);
     assert.equal(
       sent.slice(0, 2).some((item) => /Current screen app:|Reasoning:|Action:/.test(item.text)),
       false,
       "legacy fixed progress template should not appear",
     );
+  });
+});
+
+test("TelegramGateway suppresses low-signal repetitive narration even if model requests notify", async () => {
+  await withTempHome("openpocket-telegram-progress-suppress-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+    gateway.bot.sendChatAction = async () => true;
+
+    const decisions = [
+      { notify: true, message: "6/50: Opened Gmail, still loading.", reason: "start" },
+      { notify: true, message: "8/50: Still on loading screen, trying refresh.", reason: "retry" },
+      { notify: true, message: "10/50: Still loading, waiting for inbox.", reason: "retry" },
+      { notify: true, message: "15/50: Inbox is visible now.", reason: "checkpoint" },
+    ];
+    let decisionIndex = 0;
+    gateway.chat.narrateTaskProgress = async () => {
+      const decision = decisions[decisionIndex] ?? { notify: false, message: "", reason: "exhausted" };
+      decisionIndex += 1;
+      return decision;
+    };
+
+    gateway.agent.runTask = async (_task, _modelName, onProgress) => {
+      await onProgress({
+        step: 6,
+        maxSteps: 50,
+        currentApp: "com.google.android.gm",
+        actionType: "launch_app",
+        message: "Opened Gmail and waiting",
+        thought: "loading",
+        screenshotPath: null,
+      });
+      await onProgress({
+        step: 8,
+        maxSteps: 50,
+        currentApp: "com.google.android.gm",
+        actionType: "wait",
+        message: "still loading",
+        thought: "retrying",
+        screenshotPath: null,
+      });
+      await onProgress({
+        step: 10,
+        maxSteps: 50,
+        currentApp: "com.google.android.gm",
+        actionType: "wait",
+        message: "still loading",
+        thought: "retrying",
+        screenshotPath: null,
+      });
+      await onProgress({
+        step: 15,
+        maxSteps: 50,
+        currentApp: "com.google.android.gm",
+        actionType: "tap",
+        message: "opened inbox",
+        thought: "inbox visible",
+        screenshotPath: null,
+      });
+      return {
+        ok: true,
+        message: "Inbox ready",
+        sessionPath: "/tmp/session-test-2.md",
+      };
+    };
+
+    const result = await gateway.runTaskAndReport({
+      chatId: 9301,
+      task: "Check Gmail inbox",
+      source: "chat",
+      modelName: null,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(decisionIndex, 4);
+    assert.equal(sent.length, 3);
+    assert.match(sent[0].text, /6\/50/);
+    assert.match(sent[1].text, /15\/50/);
+    assert.match(sent[2].text, /Done\./);
   });
 });

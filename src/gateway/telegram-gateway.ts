@@ -41,6 +41,7 @@ export interface TelegramGatewayOptions {
 
 type ProgressNarrationState = {
   lastNotifiedProgress: AgentProgressUpdate | null;
+  lastNotifiedMessage: string;
   skippedSteps: number;
   recentProgress: AgentProgressUpdate[];
 };
@@ -284,6 +285,130 @@ export class TelegramGateway {
 
   private inferTaskLocale(task: string): "zh" | "en" {
     return /[\u4e00-\u9fff]/.test(task) ? "zh" : "en";
+  }
+
+  private normalizeAppToken(app: string): string {
+    const normalized = String(app || "").trim().toLowerCase();
+    return normalized || "unknown";
+  }
+
+  private tokenizeNarrationMessage(text: string): string[] {
+    const normalized = String(text || "")
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/[0-9]+\/[0-9]+/g, " ")
+      .replace(/[0-9]+/g, " ")
+      .replace(/[^a-z0-9\u4e00-\u9fff\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) {
+      return [];
+    }
+    return normalized
+      .split(" ")
+      .map((token) => token.trim())
+      .filter((token) => token.length > 1);
+  }
+
+  private messageSimilarityScore(a: string, b: string): number {
+    const aTokens = new Set(this.tokenizeNarrationMessage(a));
+    const bTokens = new Set(this.tokenizeNarrationMessage(b));
+    if (aTokens.size === 0 || bTokens.size === 0) {
+      return 0;
+    }
+    let intersection = 0;
+    for (const token of aTokens) {
+      if (bTokens.has(token)) {
+        intersection += 1;
+      }
+    }
+    const denominator = Math.max(aTokens.size, bTokens.size);
+    if (denominator === 0) {
+      return 0;
+    }
+    return intersection / denominator;
+  }
+
+  private shouldSuppressLowSignalNarration(
+    progress: AgentProgressUpdate,
+    state: ProgressNarrationState,
+    message: string,
+  ): boolean {
+    const last = state.lastNotifiedProgress;
+    if (!last) {
+      return false;
+    }
+
+    const stepGap = progress.step - last.step;
+    if (stepGap <= 0) {
+      return true;
+    }
+
+    const action = String(progress.actionType || "").toLowerCase();
+    const highSignalAction =
+      action === "request_human_auth"
+      || action === "run_script"
+      || action === "finish"
+      || action === "tap"
+      || action === "swipe"
+      || action === "type_text";
+    const errorLike = /(error|failed|timeout|interrupted|rejected|not completed)/i.test(
+      `${progress.message} ${progress.thought}`,
+    );
+    if (highSignalAction || errorLike) {
+      return false;
+    }
+
+    const sameApp = this.normalizeAppToken(progress.currentApp) === this.normalizeAppToken(last.currentApp);
+    if (!sameApp) {
+      return false;
+    }
+
+    const loadingLike = /(loading|still loading|gett?ing your messages|sync|等待|加载|同步|重试)/i.test(
+      `${message} ${progress.message} ${progress.thought}`,
+    );
+    if ((action === "wait" || action === "launch_app") && stepGap < 8) {
+      return true;
+    }
+    if (loadingLike && stepGap < 12) {
+      return true;
+    }
+
+    const similarity = this.messageSimilarityScore(message, state.lastNotifiedMessage);
+    if (similarity >= 0.78 && stepGap < 12) {
+      return true;
+    }
+    return false;
+  }
+
+  private renderTaskAcceptedMessage(task: string, locale: "zh" | "en"): string {
+    if (locale === "zh") {
+      return `收到，我先处理这个任务：${task}\n有明确进展我会及时告诉你。`;
+    }
+    return `On it: ${task}\nI'll update you when there's meaningful progress.`;
+  }
+
+  private isTaskStoppedByUser(message: string): boolean {
+    return /(task stopped by user|stopped by user|stop requested)/i.test(String(message || ""));
+  }
+
+  private renderTaskCompletionMessage(
+    ok: boolean,
+    message: string,
+    locale: "zh" | "en",
+  ): string {
+    const summary = this.sanitizeForChat(message, 800) || (locale === "zh" ? "暂无更多细节。" : "No extra details.");
+    if (ok) {
+      return locale === "zh" ? `完成了。\n${summary}` : `Done.\n${summary}`;
+    }
+    if (this.isTaskStoppedByUser(message)) {
+      return locale === "zh"
+        ? "已按你的指令停止这次任务。"
+        : "Stopped as requested.";
+    }
+    return locale === "zh"
+      ? `这次还没完成。\n原因：${summary}`
+      : `This task is not completed yet.\nReason: ${summary}`;
   }
 
   private async syncBotDisplayName(
@@ -803,9 +928,7 @@ export class TelegramGateway {
     const locale = this.inferTaskLocale(task);
     await this.bot.sendMessage(
       chatId,
-      locale === "zh"
-        ? `任务已接收：${task}\n我会让模型判断何时值得播报，只在有明确进展时同步，不会每一步刷屏。`
-        : `Task accepted: ${task}\nI will let the model decide when progress is meaningful, instead of sending every single step.`,
+      this.renderTaskAcceptedMessage(task, locale),
     );
     void this.runTaskAndReport({ chatId, task, source: "chat", modelName: null });
   }
@@ -841,6 +964,7 @@ export class TelegramGateway {
     const progressLocale = this.inferTaskLocale(task);
     const progressNarrationState: ProgressNarrationState = {
       lastNotifiedProgress: null,
+      lastNotifiedMessage: "",
       skippedSteps: 0,
       recentProgress: [],
     };
@@ -879,7 +1003,13 @@ export class TelegramGateway {
               progressNarrationState.recentProgress = recentProgress;
               return;
             }
+            if (this.shouldSuppressLowSignalNarration(progress, progressNarrationState, message)) {
+              progressNarrationState.skippedSteps += 1;
+              progressNarrationState.recentProgress = recentProgress;
+              return;
+            }
             progressNarrationState.lastNotifiedProgress = progress;
+            progressNarrationState.lastNotifiedMessage = message;
             progressNarrationState.skippedSteps = 0;
             progressNarrationState.recentProgress = [];
             await this.bot.sendMessage(chatId, message);
@@ -969,17 +1099,10 @@ export class TelegramGateway {
         this.log(`task done source=${source} chat=${chatId ?? "(none)"} ok=${result.ok} session=${result.sessionPath}`);
 
         if (chatId !== null) {
-          if (result.ok) {
-            await this.bot.sendMessage(
-              chatId,
-              `Task completed.\nResult: ${this.sanitizeForChat(result.message, 800) || "Completed."}`,
-            );
-          } else {
-            await this.bot.sendMessage(
-              chatId,
-              `Task not completed.\nReason: ${this.sanitizeForChat(result.message, 800) || "Unknown error."}`,
-            );
-          }
+          await this.bot.sendMessage(
+            chatId,
+            this.renderTaskCompletionMessage(result.ok, result.message, progressLocale),
+          );
         }
 
         return {

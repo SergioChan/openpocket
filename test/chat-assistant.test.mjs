@@ -471,5 +471,5 @@ test("ChatAssistant narrateTaskProgress falls back when model output is unavaila
   });
 
   assert.equal(out.notify, true);
-  assert.match(out.message, /Progress 1\/10/i);
+  assert.match(out.message, /Quick update \(1\/10\)/i);
 });
