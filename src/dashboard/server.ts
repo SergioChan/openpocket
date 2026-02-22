@@ -124,6 +124,7 @@ export class DashboardServer {
   private server: http.Server | null = null;
   private previewCache: PreviewSnapshot | null = null;
   private readonly logs: string[] = [];
+  private emulatorLifecycleQueue: Promise<void> = Promise.resolve();
 
   constructor(options: DashboardServerOptions) {
     this.config = options.config;
@@ -207,6 +208,23 @@ export class DashboardServer {
 
   clearLogs(): void {
     this.logs.splice(0, this.logs.length);
+  }
+
+  private async runEmulatorLifecycleExclusive<T>(action: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.emulatorLifecycleQueue;
+    let resolveQueue!: () => void;
+    this.emulatorLifecycleQueue = new Promise<void>((resolve) => {
+      resolveQueue = resolve;
+    });
+
+    await previous;
+    this.log(`emulator action begin ${action}`);
+    try {
+      return await fn();
+    } finally {
+      this.log(`emulator action end ${action}`);
+      resolveQueue();
+    }
   }
 
   private gatewayStatus(): DashboardGatewayStatus {
@@ -1173,6 +1191,7 @@ export class DashboardServer {
       previewTimer: null,
       runtimeTimer: null,
       logsTimer: null,
+      emulatorActionPending: false,
       credentialStatus: {},
     };
 
@@ -1519,9 +1538,29 @@ export class DashboardServer {
     }
 
     async function emulatorAction(action) {
-      const payload = await api("/api/emulator/" + action, { method: "POST", body: "{}" });
-      setStatus(payload.message || ("Emulator " + action + " done."), "ok");
-      await loadRuntime();
+      if (state.emulatorActionPending) {
+        setStatus("Another emulator action is already running. Please wait.", "error");
+        return;
+      }
+      state.emulatorActionPending = true;
+      setEmulatorButtonsDisabled(true);
+      setStatus("Running emulator action: " + action + " ...");
+      try {
+        const payload = await api("/api/emulator/" + action, { method: "POST", body: "{}" });
+        setStatus(payload.message || ("Emulator " + action + " done."), "ok");
+        await loadRuntime();
+      } finally {
+        state.emulatorActionPending = false;
+        setEmulatorButtonsDisabled(false);
+      }
+    }
+
+    function setEmulatorButtonsDisabled(disabled) {
+      document
+        .querySelectorAll("[data-emu-action], #emu-refresh-btn, #onboard-start-emu, #onboard-show-emu")
+        .forEach((button) => {
+          button.disabled = Boolean(disabled);
+        });
     }
 
     async function sendTextInput() {
@@ -2039,28 +2078,28 @@ export class DashboardServer {
       }
 
       if (method === "POST" && url.pathname === "/api/emulator/start") {
-        const message = await this.emulator.start(true);
+        const message = await this.runEmulatorLifecycleExclusive("start", () => this.emulator.start(true));
         this.log(`emulator start ${message}`);
         sendJson(res, 200, { ok: true, message });
         return;
       }
 
       if (method === "POST" && url.pathname === "/api/emulator/stop") {
-        const message = this.emulator.stop();
+        const message = await this.runEmulatorLifecycleExclusive("stop", async () => this.emulator.stop());
         this.log(`emulator stop ${message}`);
         sendJson(res, 200, { ok: true, message });
         return;
       }
 
       if (method === "POST" && url.pathname === "/api/emulator/show") {
-        const message = await this.emulator.ensureWindowVisible();
+        const message = await this.runEmulatorLifecycleExclusive("show", () => this.emulator.ensureWindowVisible());
         this.log(`emulator show ${message}`);
         sendJson(res, 200, { ok: true, message });
         return;
       }
 
       if (method === "POST" && url.pathname === "/api/emulator/hide") {
-        const message = this.emulator.hideWindow();
+        const message = await this.runEmulatorLifecycleExclusive("hide", async () => this.emulator.hideWindow());
         this.log(`emulator hide ${message}`);
         sendJson(res, 200, { ok: true, message });
         return;
