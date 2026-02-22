@@ -156,6 +156,25 @@ export class EmulatorManager {
     return this.emulatorDevices().length === 0;
   }
 
+  private hasEmulatorProcessForAvd(): boolean {
+    const avdToken = `-avd ${this.config.emulator.avdName}`;
+    return this.listProcessCommands().some((line) => {
+      const isEmuProc = line.includes("qemu-system") || line.includes("/emulator") || line.includes(" emulator ");
+      return isEmuProc && line.includes(avdToken);
+    });
+  }
+
+  private async waitForProcessExit(timeoutMs: number): Promise<boolean> {
+    const startAt = Date.now();
+    while (Date.now() - startAt < timeoutMs) {
+      if (!this.hasEmulatorProcessForAvd()) {
+        return true;
+      }
+      await sleep(500);
+    }
+    return !this.hasEmulatorProcessForAvd();
+  }
+
   private listProcessCommands(): string[] {
     try {
       const output = execFileSync("ps", ["-ax", "-o", "command="], {
@@ -212,13 +231,32 @@ export class EmulatorManager {
     }
   }
 
-  private async restartInWindowedMode(reason: string): Promise<string> {
+  private forceKillEmulatorProcessForAvdMac(): boolean {
+    if (process.platform !== "darwin") {
+      return false;
+    }
+    try {
+      const escapedAvd = this.config.emulator.avdName.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&");
+      spawnSync("pkill", ["-f", `qemu-system.*-avd ${escapedAvd}`], {
+        stdio: "ignore",
+      });
+      spawnSync("pkill", ["-f", `emulator.*-avd ${escapedAvd}`], {
+        stdio: "ignore",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async restartWithMode(headless: boolean, reason: string): Promise<string> {
     const devicesBeforeStop = this.emulatorDevices();
     const stopMessage = this.stop();
     let stopped = await this.waitForShutdown(20000);
+    let processStopped = await this.waitForProcessExit(5000);
     let forcedKill = false;
 
-    if (!stopped && devicesBeforeStop.length > 0) {
+    if ((!stopped || !processStopped) && devicesBeforeStop.length > 0) {
       for (const device of devicesBeforeStop) {
         try {
           this.adb(["-s", device, "emu", "kill"]);
@@ -227,23 +265,33 @@ export class EmulatorManager {
         }
       }
       stopped = await this.waitForShutdown(10000);
+      processStopped = await this.waitForProcessExit(5000);
     }
 
-    if (!stopped) {
+    if (!stopped || !processStopped) {
       forcedKill = this.forceKillHeadlessProcessMac();
       if (forcedKill) {
         stopped = await this.waitForShutdown(8000);
+        processStopped = await this.waitForProcessExit(6000);
       }
     }
 
-    const startMessage = await this.start(false);
-    const showMessage = this.showWindow();
+    if (!stopped || !processStopped) {
+      forcedKill = this.forceKillEmulatorProcessForAvdMac() || forcedKill;
+      if (forcedKill) {
+        stopped = await this.waitForShutdown(8000);
+        processStopped = await this.waitForProcessExit(8000);
+      }
+    }
+
+    const startMessage = await this.start(headless);
+    const showMessage = headless ? null : this.showWindow();
     return [
       reason,
       stopMessage,
-      forcedKill ? "Applied force-kill fallback for headless emulator process." : null,
+      forcedKill ? "Applied force-kill fallback for emulator process." : null,
       startMessage,
-      showMessage,
+      headless ? "Switched to headless mode." : showMessage,
     ]
       .filter((item): item is string => Boolean(item))
       .join(" ");
@@ -395,13 +443,16 @@ export class EmulatorManager {
 
     const status = this.status();
     if (status.devices.length === 0) {
+      if (this.hasEmulatorProcessForAvd()) {
+        return this.restartWithMode(false, "Emulator process exists without an online device; restarting in windowed mode.");
+      }
       const startMessage = await this.start(false);
       const showMessage = this.showWindow();
       return `${startMessage}; ${showMessage}`;
     }
 
     if (this.isHeadlessProcessRunning()) {
-      return this.restartInWindowedMode("Detected headless emulator runtime; switching to windowed mode.");
+      return this.restartWithMode(false, "Detected headless emulator runtime; switching to windowed mode.");
     }
 
     const showMessage = this.showWindow();
@@ -410,7 +461,30 @@ export class EmulatorManager {
       return showMessage;
     }
 
-    return this.restartInWindowedMode("No visible emulator window detected; restarting in windowed mode.");
+    return this.restartWithMode(false, "No visible emulator window detected; restarting in windowed mode.");
+  }
+
+  async ensureHiddenBackground(): Promise<string> {
+    if (process.platform !== "darwin") {
+      return this.hideWindow();
+    }
+
+    const status = this.status();
+    if (status.devices.length === 0) {
+      if (this.isHeadlessProcessRunning()) {
+        return "Emulator is already running in background (headless).";
+      }
+      if (this.hasEmulatorProcessForAvd()) {
+        return this.restartWithMode(true, "Emulator process exists without an online device; restarting in headless mode.");
+      }
+      return "No running emulator found.";
+    }
+
+    if (this.isHeadlessProcessRunning()) {
+      return "Emulator is already running in background (headless).";
+    }
+
+    return this.restartWithMode(true, "Switching emulator to headless background mode.");
   }
 
   captureScreenshot(outputPath?: string, preferredDeviceId?: string): string {

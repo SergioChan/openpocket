@@ -2099,7 +2099,7 @@ export class DashboardServer {
       }
 
       if (method === "POST" && url.pathname === "/api/emulator/hide") {
-        const message = await this.runEmulatorLifecycleExclusive("hide", async () => this.emulator.hideWindow());
+        const message = await this.runEmulatorLifecycleExclusive("hide", () => this.emulator.ensureHiddenBackground());
         this.log(`emulator hide ${message}`);
         sendJson(res, 200, { ok: true, message });
         return;

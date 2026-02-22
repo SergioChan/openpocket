@@ -657,7 +657,7 @@ export class TelegramGateway {
     }
 
     if (text.startsWith("/hidevm")) {
-      await this.bot.sendMessage(chatId, this.emulator.hideWindow());
+      await this.bot.sendMessage(chatId, await this.emulator.ensureHiddenBackground());
       return;
     }
 

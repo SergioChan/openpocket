@@ -180,7 +180,7 @@ async function runEmulatorCommand(configPath: string | undefined, args: string[]
   }
   if (sub === "hide") {
     // eslint-disable-next-line no-console
-    console.log(emulator.hideWindow());
+    console.log(await emulator.ensureHiddenBackground());
     return 0;
   }
   if (sub === "show") {
@@ -338,7 +338,7 @@ async function runGatewayCommand(configPath: string | undefined, args: string[])
       if (emulatorStatus.bootedDevices.length > 0) {
         let detail = `ok (${emulatorStatus.bootedDevices.join(", ")})`;
         if (process.platform === "darwin") {
-          detail = `${detail}; ${emulator.hideWindow()}`;
+          detail = `${detail}; ${await emulator.ensureHiddenBackground()}`;
         }
         printStartupStep(
           3,
