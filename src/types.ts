@@ -19,6 +19,9 @@ export interface AgentConfig {
   progressReportInterval: number;
   returnHomeOnTaskEnd: boolean;
   systemPromptMode: "full" | "minimal" | "none";
+  /** Maximum total chars for workspace prompt context injection.
+   *  Defaults to 150 000. Lower this for models with small context windows. */
+  contextBudgetChars: number;
   lang: "en";
   verbose: boolean;
   deviceId: string | null;

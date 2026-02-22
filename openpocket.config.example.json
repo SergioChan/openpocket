@@ -22,6 +22,7 @@
     "progressReportInterval": 1,
     "returnHomeOnTaskEnd": true,
     "systemPromptMode": "full",
+    "contextBudgetChars": 150000,
     "lang": "en",
     "verbose": true,
     "deviceId": null

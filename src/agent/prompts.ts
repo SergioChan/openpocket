@@ -40,6 +40,9 @@ export function buildSystemPrompt(
     return [
       "You are OpenPocket, an Android phone-use agent running one tool step at a time.",
       "",
+      "## Tooling",
+      TOOL_CATALOG,
+      "",
       "## Core Rules",
       "- Call exactly one tool per step.",
       "- Pick the smallest deterministic action that progresses the task.",

@@ -271,7 +271,6 @@ test("ChatAssistant onboarding triggers on default scaffold with blank profile f
     reply: "先做个简短初始化：我该怎么称呼你？",
     writeProfile: false,
     onboardingComplete: false,
-    deleteBootstrap: false,
   });
 
   fs.writeFileSync(
@@ -324,7 +323,6 @@ test("ChatAssistant model-driven onboarding completes and removes bootstrap file
         reply: "你好，我先确认下：我该怎么称呼你？",
         writeProfile: false,
         onboardingComplete: false,
-        deleteBootstrap: false,
       };
     }
     return {
@@ -339,7 +337,6 @@ test("ChatAssistant model-driven onboarding completes and removes bootstrap file
       },
       writeProfile: true,
       onboardingComplete: true,
-      deleteBootstrap: true,
     };
   };
 

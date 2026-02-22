@@ -29,6 +29,8 @@ test("buildSystemPrompt supports minimal mode", () => {
   assert.match(prompt, /Core Rules/);
   assert.match(prompt, /Call exactly one tool per step/);
   assert.match(prompt, /Workspace Prompt Context/);
+  assert.match(prompt, /Tooling/);
+  assert.match(prompt, /tap.*swipe/s);
   assert.doesNotMatch(prompt, /Planning Loop/);
 });
 

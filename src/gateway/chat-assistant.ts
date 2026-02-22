@@ -35,7 +35,6 @@ interface BootstrapModelDecision {
   };
   writeProfile?: boolean;
   onboardingComplete?: boolean;
-  deleteBootstrap?: boolean;
 }
 
 type OnboardingStep = 1 | 2 | 3;
@@ -322,14 +321,15 @@ export class ChatAssistant {
 
     const zhMatch = raw.match(/(?:^|\n)##\s*zh\s*\n([\s\S]*?)(?=\n##\s*en\s*\n|$)/i);
     const enMatch = raw.match(/(?:^|\n)##\s*en\s*\n([\s\S]*?)(?=\n##\s*zh\s*\n|$)/i);
-    const zh = this.normalizeOneLine((zhMatch?.[1] ?? "").replace(/\n{2,}/g, "\n").trim());
-    const en = this.normalizeOneLine((enMatch?.[1] ?? "").replace(/\n{2,}/g, "\n").trim());
+    // Preserve multi-line formatting; only collapse excessive blank lines.
+    const zh = (zhMatch?.[1] ?? "").replace(/\n{3,}/g, "\n\n").trim();
+    const en = (enMatch?.[1] ?? "").replace(/\n{3,}/g, "\n\n").trim();
 
     if (zh && en) {
       return locale === "zh" ? zh : en;
     }
 
-    return this.normalizeOneLine(raw) || DEFAULT_SESSION_RESET_PROMPT[locale];
+    return raw.replace(/\n{3,}/g, "\n\n").trim() || DEFAULT_SESSION_RESET_PROMPT[locale];
   }
 
   private workspaceFilePath(name: string): string {
@@ -605,8 +605,9 @@ export class ChatAssistant {
     if (this.needsProfileOnboarding()) {
       return true;
     }
+    // Workspace onboarding not yet marked as completed — treat as pending.
     if (!isWorkspaceOnboardingCompleted(this.config.workspaceDir)) {
-      return this.needsProfileOnboarding();
+      return true;
     }
     return false;
   }
@@ -802,8 +803,7 @@ export class ChatAssistant {
       '    "languagePreference": "<string optional>"',
       "  },",
       '  "writeProfile": true|false,',
-      '  "onboardingComplete": true|false,',
-      '  "deleteBootstrap": true|false',
+      '  "onboardingComplete": true|false',
       "}",
       "Rules:",
       "1) Keep reply concise and in user language.",
@@ -931,7 +931,6 @@ export class ChatAssistant {
         } : undefined,
         writeProfile: Boolean(parsed.writeProfile),
         onboardingComplete: Boolean(parsed.onboardingComplete),
-        deleteBootstrap: Boolean(parsed.deleteBootstrap),
       };
     } catch {
       return null;
@@ -1072,10 +1071,17 @@ export class ChatAssistant {
     const userBody = userCurrent
       ? (() => {
           let body = userCurrent;
-          body = this.upsertBulletValue(body, "Name", snapshot.userName ?? "");
+          // Only upsert optional fields when they have a value to avoid blank bullet entries.
+          if (snapshot.userName) {
+            body = this.upsertBulletValue(body, "Name", snapshot.userName);
+          }
           body = this.upsertBulletValue(body, "Preferred form of address", snapshot.userPreferredAddress);
-          body = this.upsertBulletValue(body, "Timezone", snapshot.timezone ?? "");
-          body = this.upsertBulletValue(body, "Language preference", snapshot.languagePreference ?? "");
+          if (snapshot.timezone) {
+            body = this.upsertBulletValue(body, "Timezone", snapshot.timezone);
+          }
+          if (snapshot.languagePreference) {
+            body = this.upsertBulletValue(body, "Language preference", snapshot.languagePreference);
+          }
           body = this.upsertBulletValue(body, "Preferred assistant name", snapshot.assistantName);
           body = this.upsertBulletValue(body, "Preferred assistant persona", snapshot.assistantPersona);
           return body;

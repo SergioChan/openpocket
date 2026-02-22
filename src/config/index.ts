@@ -37,6 +37,7 @@ function defaultConfigObject() {
       progressReportInterval: 1,
       returnHomeOnTaskEnd: true,
       systemPromptMode: "full" as const,
+      contextBudgetChars: 150_000,
       lang: "en" as const,
       verbose: true,
       deviceId: null,
@@ -276,6 +277,7 @@ function normalizeLegacyKeys(input: Record<string, unknown>): Record<string, unk
     progress_report_interval: "progressReportInterval",
     return_home_on_task_end: "returnHomeOnTaskEnd",
     system_prompt_mode: "systemPromptMode",
+    context_budget_chars: "contextBudgetChars",
     device_id: "deviceId",
   };
   for (const [oldKey, newKey] of Object.entries(agentMap)) {
@@ -524,6 +526,10 @@ function normalizeConfig(raw: Record<string, unknown>, configPath: string): Open
       progressReportInterval: Math.max(1, Number(agent.progressReportInterval ?? 1)),
       returnHomeOnTaskEnd: Boolean(agent.returnHomeOnTaskEnd ?? true),
       systemPromptMode,
+      contextBudgetChars: Math.max(
+        10_000,
+        Number(agent.contextBudgetChars ?? agent.context_budget_chars ?? 150_000) || 150_000,
+      ),
       lang: "en",
       verbose: Boolean(agent.verbose),
       deviceId: agent.deviceId ? String(agent.deviceId) : null,

@@ -79,7 +79,8 @@ const SYSTEM_PROMPT_CONTEXT_FILES = [
 ] as const;
 const SYSTEM_PROMPT_CONTEXT_HOOK_FILE = path.join(".openpocket", "bootstrap-context-hook.md");
 const SYSTEM_PROMPT_MAX_CHARS_PER_FILE = 20_000;
-const SYSTEM_PROMPT_MAX_CHARS_TOTAL = 150_000;
+/** Default total char budget. Overridden by config.agent.contextBudgetChars at runtime. */
+const SYSTEM_PROMPT_MAX_CHARS_TOTAL_DEFAULT = 150_000;
 
 type WorkspacePromptFileReport = {
   fileName: string;
@@ -88,6 +89,8 @@ type WorkspacePromptFileReport = {
   truncated: boolean;
   included: boolean;
   missing: boolean;
+  /** True when the file was skipped because the total char budget was exhausted. */
+  budgetExhausted: boolean;
   snippet: string;
 };
 
@@ -224,9 +227,17 @@ export class AgentRuntime {
       return { snippet: input, truncated: false };
     }
     const marker = "\n...[truncated: middle content omitted]...\n";
-    const budget = Math.max(0, limit - marker.length);
-    const headChars = Math.max(0, Math.ceil(budget * 0.6));
-    const tailChars = Math.max(0, budget - headChars);
+    // When the limit is too small to fit marker + meaningful content, fall back
+    // to a simple head truncation so the output is still useful.
+    if (limit < marker.length + 100) {
+      return {
+        snippet: input.slice(0, Math.max(0, limit)).trimEnd(),
+        truncated: true,
+      };
+    }
+    const budget = limit - marker.length;
+    const headChars = Math.ceil(budget * 0.6);
+    const tailChars = budget - headChars;
     const head = input.slice(0, headChars).trimEnd();
     const tail = tailChars > 0 ? input.slice(-tailChars).trimStart() : "";
     return {
@@ -238,7 +249,8 @@ export class AgentRuntime {
   private buildWorkspacePromptContext(): { text: string; report: WorkspacePromptContextReport } {
     const blocks: string[] = [];
     const reports: WorkspacePromptFileReport[] = [];
-    let remaining = SYSTEM_PROMPT_MAX_CHARS_TOTAL;
+    const totalBudget = this.config.agent.contextBudgetChars || SYSTEM_PROMPT_MAX_CHARS_TOTAL_DEFAULT;
+    let remaining = totalBudget;
     let hookApplied = false;
 
     const hookPath = path.join(this.config.workspaceDir, SYSTEM_PROMPT_CONTEXT_HOOK_FILE);
@@ -263,6 +275,7 @@ export class AgentRuntime {
         truncated: clipped.truncated,
         included: true,
         missing: false,
+        budgetExhausted: false,
         snippet: clipped.snippet,
       });
       remaining -= clipped.snippet.length;
@@ -278,6 +291,7 @@ export class AgentRuntime {
           truncated: false,
           included: false,
           missing: false,
+          budgetExhausted: true,
           snippet: "",
         });
         continue;
@@ -291,6 +305,7 @@ export class AgentRuntime {
           truncated: false,
           included: false,
           missing: true,
+          budgetExhausted: false,
           snippet: "",
         });
         continue;
@@ -307,6 +322,7 @@ export class AgentRuntime {
           truncated: false,
           included: false,
           missing: true,
+          budgetExhausted: false,
           snippet: "",
         });
         continue;
@@ -321,6 +337,7 @@ export class AgentRuntime {
           truncated: false,
           included: false,
           missing: false,
+          budgetExhausted: false,
           snippet: "",
         });
         continue;
@@ -336,6 +353,7 @@ export class AgentRuntime {
         truncated: clipped.truncated,
         included: true,
         missing: false,
+        budgetExhausted: false,
         snippet: clipped.snippet,
       });
       remaining -= clipped.snippet.length;
@@ -352,7 +370,7 @@ export class AgentRuntime {
       text,
       report: {
         maxCharsPerFile: SYSTEM_PROMPT_MAX_CHARS_PER_FILE,
-        maxCharsTotal: SYSTEM_PROMPT_MAX_CHARS_TOTAL,
+        maxCharsTotal: totalBudget,
         totalIncludedChars: reports.reduce((sum, item) => sum + item.includedChars, 0),
         files: reports,
         hookApplied,

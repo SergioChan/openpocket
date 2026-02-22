@@ -164,7 +164,11 @@ export class TelegramGateway {
     } catch {
       return "";
     }
-    const match = raw.match(/^\s*-\s*Name\s*:\s*(.+)$/im);
+    // Match "- Name:" only inside the "## Agent Identity" section to avoid
+    // picking up unrelated Name bullets from other sections.
+    const sectionMatch = raw.match(/##\s*Agent\s+Identity\b[\s\S]*?(?=\n##\s|\n#\s|$)/i);
+    const section = sectionMatch ? sectionMatch[0] : raw;
+    const match = section.match(/^\s*-\s*Name\s*:\s*(.+)$/im);
     if (!match?.[1]) {
       return "";
     }
@@ -185,6 +189,29 @@ export class TelegramGateway {
     }
   }
 
+  /**
+   * Shared helper: run onboarding seed through chat.decide and send the reply.
+   * Returns true if onboarding message was sent, false if onboarding is not pending.
+   */
+  private async trySendOnboardingReply(chatId: number, locale: "zh" | "en"): Promise<boolean> {
+    if (!this.chat.isOnboardingPending()) {
+      return false;
+    }
+    const onboardingSeed = locale === "zh" ? "你好" : "hello";
+    const decision = await this.chat.decide(chatId, onboardingSeed);
+    const reply = decision.reply || (
+      locale === "zh"
+        ? "我们先做一个简短初始化。"
+        : "Let's do a quick onboarding first."
+    );
+    await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
+    const profileUpdate = this.chat.consumePendingProfileUpdate(chatId);
+    if (profileUpdate) {
+      await this.syncBotDisplayName(chatId, profileUpdate.assistantName, profileUpdate.locale);
+    }
+    return true;
+  }
+
   private buildContextSummaryMessage(): string {
     const report = this.agent.getWorkspacePromptContextReport();
     const lines = [
@@ -195,8 +222,9 @@ export class TelegramGateway {
       "- files:",
     ];
     for (const file of report.files) {
+      const status = file.included ? "included" : file.budgetExhausted ? "budget-exhausted" : "skipped";
       lines.push(
-        `  - ${file.fileName}: ${file.included ? "included" : "skipped"}`
+        `  - ${file.fileName}: ${status}`
         + `, missing=${file.missing}, truncated=${file.truncated}, chars=${file.includedChars}/${file.originalChars}`,
       );
     }
@@ -505,19 +533,7 @@ export class TelegramGateway {
 
     if (/^\/start(?:\s.*)?$/i.test(text) && !text.startsWith("/startvm")) {
       const locale = this.inferLocale(message);
-      if (this.chat.isOnboardingPending()) {
-        const onboardingSeed = locale === "zh" ? "你好" : "hello";
-        const decision = await this.chat.decide(chatId, onboardingSeed);
-        const reply = decision.reply || (
-          locale === "zh"
-            ? "我们先做一个简短初始化。"
-            : "Let's do a quick onboarding first."
-        );
-        await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
-        const profileUpdate = this.chat.consumePendingProfileUpdate(chatId);
-        if (profileUpdate) {
-          await this.syncBotDisplayName(chatId, profileUpdate.assistantName, profileUpdate.locale);
-        }
+      if (await this.trySendOnboardingReply(chatId, locale)) {
         return;
       }
 
@@ -676,19 +692,7 @@ export class TelegramGateway {
         : "Conversation memory cleared. No running task to stop.";
       await this.bot.sendMessage(chatId, resetSummary);
 
-      if (this.chat.isOnboardingPending()) {
-        const onboardingSeed = locale === "zh" ? "你好" : "hello";
-        const decision = await this.chat.decide(chatId, onboardingSeed);
-        const reply = decision.reply || (
-          locale === "zh"
-            ? "我们先做一个简短初始化。"
-            : "Let's do a quick onboarding first."
-        );
-        await this.bot.sendMessage(chatId, this.sanitizeForChat(reply, 1800));
-        const profileUpdate = this.chat.consumePendingProfileUpdate(chatId);
-        if (profileUpdate) {
-          await this.syncBotDisplayName(chatId, profileUpdate.assistantName, profileUpdate.locale);
-        }
+      if (await this.trySendOnboardingReply(chatId, locale)) {
         return;
       }
 

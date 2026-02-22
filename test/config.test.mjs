@@ -49,6 +49,7 @@ test("loadConfig creates defaults including returnHomeOnTaskEnd", () => {
     const cfg = loadConfig();
     assert.equal(cfg.agent.returnHomeOnTaskEnd, true);
     assert.equal(cfg.agent.systemPromptMode, "full");
+    assert.equal(cfg.agent.contextBudgetChars, 150_000);
     assert.equal(cfg.humanAuth.enabled, false);
     assert.equal(cfg.humanAuth.useLocalRelay, true);
     assert.equal(cfg.humanAuth.localRelayPort, 8787);
@@ -89,6 +90,7 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
             max_steps: 10,
             return_home_on_task_end: false,
             system_prompt_mode: "minimal",
+            context_budget_chars: 30000,
             verbose: true,
           },
           models: {
@@ -134,6 +136,7 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
     const cfg = loadConfig();
     assert.equal(cfg.agent.returnHomeOnTaskEnd, false);
     assert.equal(cfg.agent.systemPromptMode, "minimal");
+    assert.equal(cfg.agent.contextBudgetChars, 30000);
     assert.deepEqual(cfg.emulator.extraArgs, ["-accel", "off"]);
     assert.equal(cfg.humanAuth.enabled, true);
     assert.equal(cfg.humanAuth.relayBaseUrl, "https://relay.example.com");
@@ -152,6 +155,7 @@ test("loadConfig migrates legacy snake_case return_home_on_task_end", () => {
     const saved = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
     assert.equal(saved.agent.returnHomeOnTaskEnd, false);
     assert.equal(saved.agent.systemPromptMode, "minimal");
+    assert.equal(saved.agent.contextBudgetChars, 30000);
     assert.equal(saved.agent.return_home_on_task_end, undefined);
     assert.deepEqual(saved.emulator.extraArgs, ["-accel", "off"]);
     assert.equal(saved.emulator.extra_args, undefined);
