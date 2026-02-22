@@ -156,6 +156,99 @@ export class EmulatorManager {
     return this.emulatorDevices().length === 0;
   }
 
+  private listProcessCommands(): string[] {
+    try {
+      const output = execFileSync("ps", ["-ax", "-o", "command="], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      return output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  private isHeadlessProcessRunning(): boolean {
+    const processes = this.listProcessCommands();
+    if (processes.length === 0) {
+      return false;
+    }
+
+    const avdToken = `-avd ${this.config.emulator.avdName}`;
+    const emulatorHeadless = processes.some(
+      (line) => line.includes("-no-window") && line.includes("-avd") && line.includes("emulator"),
+    );
+    if (emulatorHeadless) {
+      return true;
+    }
+
+    const matchedAvdHeadless = processes.some((line) => line.includes("-no-window") && line.includes(avdToken));
+    if (matchedAvdHeadless) {
+      return true;
+    }
+
+    const qemuHeadless = processes.some((line) => line.includes("-no-window") && line.includes("qemu-system"));
+    return qemuHeadless;
+  }
+
+  private forceKillHeadlessProcessMac(): boolean {
+    if (process.platform !== "darwin") {
+      return false;
+    }
+    try {
+      spawnSync("pkill", ["-f", "qemu-system.*-no-window"], {
+        stdio: "ignore",
+      });
+      spawnSync("pkill", ["-f", "emulator.*-no-window"], {
+        stdio: "ignore",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async restartInWindowedMode(reason: string): Promise<string> {
+    const devicesBeforeStop = this.emulatorDevices();
+    const stopMessage = this.stop();
+    let stopped = await this.waitForShutdown(20000);
+    let forcedKill = false;
+
+    if (!stopped && devicesBeforeStop.length > 0) {
+      for (const device of devicesBeforeStop) {
+        try {
+          this.adb(["-s", device, "emu", "kill"]);
+        } catch {
+          // Keep trying best effort.
+        }
+      }
+      stopped = await this.waitForShutdown(10000);
+    }
+
+    if (!stopped) {
+      forcedKill = this.forceKillHeadlessProcessMac();
+      if (forcedKill) {
+        stopped = await this.waitForShutdown(8000);
+      }
+    }
+
+    const startMessage = await this.start(false);
+    const showMessage = this.showWindow();
+    return [
+      reason,
+      stopMessage,
+      forcedKill ? "Applied force-kill fallback for headless emulator process." : null,
+      startMessage,
+      showMessage,
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join(" ");
+  }
+
   async start(headless?: boolean): Promise<string> {
     const timeoutMs = Math.max(20, this.config.emulator.bootTimeoutSec) * 1000;
     const status = this.status();
@@ -307,22 +400,17 @@ export class EmulatorManager {
       return `${startMessage}; ${showMessage}`;
     }
 
+    if (this.isHeadlessProcessRunning()) {
+      return this.restartInWindowedMode("Detected headless emulator runtime; switching to windowed mode.");
+    }
+
     const showMessage = this.showWindow();
     const becameVisible = await this.waitForVisibleWindowMac(1500);
     if (becameVisible) {
       return showMessage;
     }
 
-    const stopMessage = this.stop();
-    await this.waitForShutdown(15000);
-    const startMessage = await this.start(false);
-    const showAfterRestart = this.showWindow();
-    return [
-      "Emulator was running in headless mode; restarted in windowed mode.",
-      stopMessage,
-      startMessage,
-      showAfterRestart,
-    ].join(" ");
+    return this.restartInWindowedMode("No visible emulator window detected; restarting in windowed mode.");
   }
 
   captureScreenshot(outputPath?: string, preferredDeviceId?: string): string {

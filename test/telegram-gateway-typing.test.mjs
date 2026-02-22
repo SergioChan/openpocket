@@ -501,3 +501,114 @@ test("TelegramGateway /context detail returns file snippet", async () => {
     assert.match(sent[0].text, /soul-snippet-body/);
   });
 });
+
+test("TelegramGateway narrates progress only when model marks meaningful updates", async () => {
+  await withTempHome("openpocket-telegram-progress-narration-", async () => {
+    const cfg = loadConfig();
+    cfg.telegram.botToken = "test-bot-token";
+
+    const gateway = new TelegramGateway(cfg, { typingIntervalMs: 30 });
+    gateway.bot.on("polling_error", () => {});
+    await gateway.bot.stopPolling().catch(() => {});
+
+    const sent = [];
+    gateway.bot.sendMessage = async (chatId, text) => {
+      sent.push({ chatId, text });
+      return {};
+    };
+    gateway.bot.sendChatAction = async () => true;
+
+    const observed = [];
+    const decisions = [
+      { notify: true, message: "进度 1/5：已打开 Gmail 首页。", reason: "screen_transition" },
+      { notify: false, message: "", reason: "same_screen_retry" },
+      { notify: false, message: "", reason: "same_screen_retry" },
+      { notify: true, message: "进度 4/5：已进入收件箱。", reason: "checkpoint" },
+    ];
+    let decisionIndex = 0;
+    gateway.chat.narrateTaskProgress = async (input) => {
+      observed.push({
+        step: input.progress.step,
+        skippedSteps: input.skippedSteps,
+        recentProgressCount: input.recentProgress.length,
+      });
+      const decision = decisions[decisionIndex] ?? { notify: false, message: "", reason: "exhausted" };
+      decisionIndex += 1;
+      return decision;
+    };
+
+    gateway.agent.runTask = async (_task, _modelName, onProgress) => {
+      await onProgress({
+        step: 1,
+        maxSteps: 5,
+        currentApp: "com.google.android.gm",
+        actionType: "launch_app",
+        message: "Opened app",
+        thought: "go to inbox",
+        screenshotPath: null,
+      });
+      await onProgress({
+        step: 2,
+        maxSteps: 5,
+        currentApp: "com.google.android.gm",
+        actionType: "wait",
+        message: "wait",
+        thought: "waiting",
+        screenshotPath: null,
+      });
+      await onProgress({
+        step: 3,
+        maxSteps: 5,
+        currentApp: "com.google.android.gm",
+        actionType: "wait",
+        message: "wait",
+        thought: "still waiting",
+        screenshotPath: null,
+      });
+      await onProgress({
+        step: 4,
+        maxSteps: 5,
+        currentApp: "com.google.android.gm",
+        actionType: "tap",
+        message: "Tapped inbox",
+        thought: "open inbox",
+        screenshotPath: null,
+      });
+      return {
+        ok: true,
+        message: "Inbox ready",
+        sessionPath: "/tmp/session-test.md",
+      };
+    };
+
+    const result = await gateway.runTaskAndReport({
+      chatId: 9201,
+      task: "打开 Gmail 并进入收件箱",
+      source: "chat",
+      modelName: null,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(decisionIndex, 4);
+    assert.equal(observed.length, 4);
+    assert.deepEqual(
+      observed.map((item) => [item.step, item.skippedSteps]),
+      [
+        [1, 0],
+        [2, 0],
+        [3, 1],
+        [4, 2],
+      ],
+    );
+    assert.equal(sent.length, 3);
+    assert.equal(sent[0].chatId, 9201);
+    assert.equal(sent[0].text, "进度 1/5：已打开 Gmail 首页。");
+    assert.equal(sent[1].text, "进度 4/5：已进入收件箱。");
+    assert.match(sent[2].text, /Task completed/);
+    assert.equal(
+      sent.slice(0, 2).some((item) => /Current screen app:|Reasoning:|Action:/.test(item.text)),
+      false,
+      "legacy fixed progress template should not appear",
+    );
+  });
+});

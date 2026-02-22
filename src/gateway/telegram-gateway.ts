@@ -2,7 +2,7 @@ import TelegramBot, { type Message } from "node-telegram-bot-api";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { CronJob, OpenPocketConfig } from "../types";
+import type { AgentProgressUpdate, CronJob, OpenPocketConfig } from "../types";
 import { saveConfig } from "../config";
 import { AgentRuntime } from "../agent/agent-runtime";
 import { EmulatorManager } from "../device/emulator-manager";
@@ -37,6 +37,12 @@ export interface TelegramGatewayOptions {
   onLogLine?: (line: string) => void;
   typingIntervalMs?: number;
 }
+
+type ProgressNarrationState = {
+  lastNotifiedProgress: AgentProgressUpdate | null;
+  skippedSteps: number;
+  recentProgress: AgentProgressUpdate[];
+};
 
 export class TelegramGateway {
   private readonly config: OpenPocketConfig;
@@ -263,6 +269,10 @@ export class TelegramGateway {
     }
     const text = message.text ?? "";
     return /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
+  }
+
+  private inferTaskLocale(task: string): "zh" | "en" {
+    return /[\u4e00-\u9fff]/.test(task) ? "zh" : "en";
   }
 
   private async syncBotDisplayName(
@@ -779,7 +789,13 @@ export class TelegramGateway {
       await this.bot.sendMessage(chatId, "A previous task is still running. Please wait.");
       return;
     }
-    await this.bot.sendMessage(chatId, `Task accepted: ${task}\nI will send step-by-step progress updates.`);
+    const locale = this.inferTaskLocale(task);
+    await this.bot.sendMessage(
+      chatId,
+      locale === "zh"
+        ? `任务已接收：${task}\n我会让模型判断何时值得播报，只在有明确进展时同步，不会每一步刷屏。`
+        : `Task accepted: ${task}\nI will let the model decide when progress is meaningful, instead of sending every single step.`,
+    );
     void this.runTaskAndReport({ chatId, task, source: "chat", modelName: null });
   }
 
@@ -811,11 +827,59 @@ export class TelegramGateway {
     modelName: string | null;
   }): Promise<CronRunResult> {
     const { chatId, task, source, modelName } = params;
+    const progressLocale = this.inferTaskLocale(task);
+    const progressNarrationState: ProgressNarrationState = {
+      lastNotifiedProgress: null,
+      skippedSteps: 0,
+      recentProgress: [],
+    };
+    let progressWork: Promise<void> = Promise.resolve();
     this.log(
       `task accepted source=${source} chat=${chatId ?? "(none)"} task=${JSON.stringify(task)} model=${modelName ?? this.config.defaultModel}`,
     );
 
     return this.withTypingStatus(source === "chat" ? chatId : null, async () => {
+      const enqueueProgressNarration = (progress: AgentProgressUpdate): void => {
+        progressWork = progressWork
+          .then(async () => {
+            if (chatId === null) {
+              return;
+            }
+            this.log(
+              `progress source=${source} chat=${chatId} step=${progress.step}/${progress.maxSteps} action=${progress.actionType} app=${progress.currentApp}`,
+            );
+            const recentProgress = [...progressNarrationState.recentProgress, progress].slice(-8);
+            const decision = await this.chat.narrateTaskProgress({
+              task,
+              locale: progressLocale,
+              progress,
+              recentProgress,
+              lastNotifiedProgress: progressNarrationState.lastNotifiedProgress,
+              skippedSteps: progressNarrationState.skippedSteps,
+            });
+            if (!decision.notify) {
+              progressNarrationState.skippedSteps += 1;
+              progressNarrationState.recentProgress = recentProgress;
+              return;
+            }
+            const message = this.sanitizeForChat(decision.message, 1800);
+            if (!message.trim()) {
+              progressNarrationState.skippedSteps += 1;
+              progressNarrationState.recentProgress = recentProgress;
+              return;
+            }
+            progressNarrationState.lastNotifiedProgress = progress;
+            progressNarrationState.skippedSteps = 0;
+            progressNarrationState.recentProgress = [];
+            await this.bot.sendMessage(chatId, message);
+          })
+          .catch((error) => {
+            this.log(
+              `progress narration error source=${source} chat=${chatId ?? "(none)"} error=${(error as Error).message}`,
+            );
+          });
+      };
+
       try {
         const result = await this.agent.runTask(
           task,
@@ -823,21 +887,7 @@ export class TelegramGateway {
           chatId === null
             ? undefined
             : async (progress) => {
-                this.log(
-                  `progress source=${source} chat=${chatId} step=${progress.step}/${progress.maxSteps} action=${progress.actionType} app=${progress.currentApp}`,
-                );
-                const thought = this.sanitizeForChat(progress.thought, 120);
-                const actionResult = this.sanitizeForChat(progress.message, 180);
-                await this.bot.sendMessage(
-                  chatId,
-                  [
-                    `Progress ${progress.step}/${progress.maxSteps}`,
-                    `Current screen app: ${progress.currentApp}`,
-                    `Action: ${progress.actionType}`,
-                    `Reasoning: ${thought || "Continue observing and planning the next step."}`,
-                    `Result: ${actionResult || "Action executed."}`,
-                  ].join("\n"),
-                );
+                enqueueProgressNarration(progress);
               },
           chatId === null
             ? undefined
@@ -903,6 +953,7 @@ export class TelegramGateway {
               },
           source === "cron" ? "minimal" : undefined,
         );
+        await progressWork;
 
         this.log(`task done source=${source} chat=${chatId ?? "(none)"} ok=${result.ok} session=${result.sessionPath}`);
 
@@ -926,6 +977,7 @@ export class TelegramGateway {
           message: result.message,
         };
       } catch (error) {
+        await progressWork.catch(() => {});
         const message = `Execution interrupted: ${(error as Error).message || "Unknown error."}`;
         this.log(`task crash source=${source} chat=${chatId ?? "(none)"} error=${(error as Error).message}`);
         if (chatId !== null) {

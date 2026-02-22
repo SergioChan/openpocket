@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { OpenPocketConfig } from "../types";
+import type { AgentProgressUpdate, OpenPocketConfig } from "../types";
 import { getModelProfile, resolveModelAuth } from "../config";
 import {
   DEFAULT_BOOTSTRAP_FILENAME,
@@ -35,6 +35,21 @@ interface BootstrapModelDecision {
   };
   writeProfile?: boolean;
   onboardingComplete?: boolean;
+}
+
+interface TaskProgressNarrationInput {
+  task: string;
+  locale: OnboardingLocale;
+  progress: AgentProgressUpdate;
+  recentProgress: AgentProgressUpdate[];
+  lastNotifiedProgress: AgentProgressUpdate | null;
+  skippedSteps: number;
+}
+
+interface TaskProgressNarrationDecision {
+  notify: boolean;
+  message: string;
+  reason?: string;
 }
 
 type OnboardingStep = 1 | 2 | 3;
@@ -90,6 +105,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 const PROFILE_ONBOARDING_TEMPLATE_FILE = "PROFILE_ONBOARDING.json";
 const BARE_SESSION_RESET_TEMPLATE_FILE = "BARE_SESSION_RESET_PROMPT.md";
+const TASK_PROGRESS_REPORTER_TEMPLATE_FILE = "TASK_PROGRESS_REPORTER.md";
 
 const DEFAULT_SESSION_RESET_PROMPT: Record<OnboardingLocale, string> = {
   zh: [
@@ -832,6 +848,85 @@ export class ChatAssistant {
     ].join("\n");
   }
 
+  private trimForPrompt(input: string, maxChars: number): string {
+    const normalized = this.normalizeOneLine(input);
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxChars - 12))}...[truncated]`;
+  }
+
+  private compactProgressForPrompt(progress: AgentProgressUpdate | null): Record<string, unknown> | null {
+    if (!progress) {
+      return null;
+    }
+    return {
+      step: progress.step,
+      maxSteps: progress.maxSteps,
+      currentApp: this.trimForPrompt(progress.currentApp || "unknown", 120),
+      actionType: this.trimForPrompt(progress.actionType || "unknown", 80),
+      message: this.trimForPrompt(progress.message || "", 220),
+      thought: this.trimForPrompt(progress.thought || "", 220),
+      screenshotPath: progress.screenshotPath ?? null,
+    };
+  }
+
+  private readTaskProgressReporterGuide(): string {
+    const guide = this.readTextSafe(this.workspaceFilePath(TASK_PROGRESS_REPORTER_TEMPLATE_FILE)).trim();
+    if (guide) {
+      return guide;
+    }
+    return [
+      "# TASK_PROGRESS_REPORTER",
+      "",
+      "Decide whether user should be notified now.",
+      "- notify=false when still repeating on same screen without clear user-visible progress.",
+      "- notify=true when app/screen changed, checkpoint reached, auth required, or blocked by error.",
+      "- If notify=true, write concise natural-language status with step x/y.",
+    ].join("\n");
+  }
+
+  private buildTaskProgressNarrationPrompt(input: TaskProgressNarrationInput): string {
+    const payload = {
+      task: this.trimForPrompt(input.task, 240),
+      localeHint: input.locale,
+      skippedStepsSinceLastNotification: input.skippedSteps,
+      lastNotifiedProgress: this.compactProgressForPrompt(input.lastNotifiedProgress),
+      recentProgress: input.recentProgress.slice(-6).map((item) => this.compactProgressForPrompt(item)),
+      currentProgress: this.compactProgressForPrompt(input.progress),
+    };
+    const identity = this.readTextSafe(this.profileFilePath("IDENTITY.md")).trim() || "(empty)";
+    const user = this.readTextSafe(this.profileFilePath("USER.md")).trim() || "(empty)";
+    const soul = this.readTextSafe(this.workspaceFilePath("SOUL.md")).trim() || "(empty)";
+
+    return [
+      "You are OpenPocket task-progress narrator.",
+      "Decide whether to notify user now. Return strict JSON only:",
+      '{"notify": true|false, "message":"...", "reason":"..."}',
+      "Rules:",
+      "1) notify=false when there is no clear, user-visible progress yet.",
+      "2) notify=true when meaningful progress happened (page transition, key checkpoint, auth blocker, error, or completion signal).",
+      "3) If notify=true, message must be concise, natural language, and in locale hint.",
+      "4) If notify=true, message must mention current step progress x/y and what changed.",
+      "5) If notify=false, message must be empty string.",
+      "",
+      "TASK_PROGRESS_REPORTER.md:",
+      this.readTaskProgressReporterGuide(),
+      "",
+      "SOUL.md:",
+      this.trimForPrompt(soul, 1600),
+      "",
+      "IDENTITY.md:",
+      this.trimForPrompt(identity, 1200),
+      "",
+      "USER.md:",
+      this.trimForPrompt(user, 1200),
+      "",
+      "Progress context JSON:",
+      JSON.stringify(payload, null, 2),
+    ].join("\n");
+  }
+
   private async requestBootstrapOnboardingDecision(
     client: OpenAI,
     model: string,
@@ -931,6 +1026,87 @@ export class ChatAssistant {
         } : undefined,
         writeProfile: Boolean(parsed.writeProfile),
         onboardingComplete: Boolean(parsed.onboardingComplete),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async requestTaskProgressNarrationDecision(
+    client: OpenAI,
+    model: string,
+    maxTokens: number,
+    prompt: string,
+  ): Promise<TaskProgressNarrationDecision | null> {
+    const tryModes: Array<"responses" | "chat" | "completions"> =
+      this.modeHint === "responses"
+        ? ["responses", "chat", "completions"]
+        : this.modeHint === "chat"
+          ? ["chat", "responses", "completions"]
+          : ["completions", "responses", "chat"];
+
+    let output = "";
+    const errors: string[] = [];
+    for (const mode of tryModes) {
+      try {
+        if (mode === "responses") {
+          const response = await client.responses.create({
+            model,
+            max_output_tokens: Math.min(maxTokens, 260),
+            input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+          } as never);
+          output = readResponseOutputText(response);
+        } else if (mode === "chat") {
+          const response = await client.chat.completions.create({
+            model,
+            max_tokens: Math.min(maxTokens, 260),
+            messages: [{ role: "user", content: prompt }],
+          } as never);
+          output = typeof response.choices?.[0]?.message?.content === "string"
+            ? response.choices?.[0]?.message?.content.trim()
+            : "";
+        } else {
+          const response = await client.completions.create({
+            model,
+            max_tokens: Math.min(maxTokens, 260),
+            prompt,
+          } as never);
+          output = (response.choices?.[0]?.text ?? "").trim();
+        }
+
+        if (!output) {
+          continue;
+        }
+        if (this.modeHint !== mode) {
+          this.modeHint = mode;
+          // eslint-disable-next-line no-console
+          console.log(`[OpenPocket][chat] switched endpoint mode -> ${mode}`);
+        }
+        break;
+      } catch (error) {
+        errors.push(`${mode}: ${stringifyError(error)}`);
+      }
+    }
+
+    if (!output) {
+      // eslint-disable-next-line no-console
+      console.warn(`[OpenPocket][chat] progress narration failed: ${errors.join(" | ")}`);
+      return null;
+    }
+
+    const jsonText = extractJsonObjectText(output);
+    try {
+      const parsed = JSON.parse(jsonText) as {
+        notify?: unknown;
+        message?: unknown;
+        reason?: unknown;
+      };
+      const notify = Boolean(parsed.notify);
+      const message = typeof parsed.message === "string" ? parsed.message.trim() : "";
+      return {
+        notify,
+        message,
+        reason: typeof parsed.reason === "string" ? parsed.reason.trim() : undefined,
       };
     } catch {
       return null;
@@ -1564,6 +1740,85 @@ export class ChatAssistant {
       throw new Error("Completions API returned empty text output.");
     }
     return text;
+  }
+
+  private fallbackTaskProgressNarration(input: TaskProgressNarrationInput): TaskProgressNarrationDecision {
+    const action = String(input.progress.actionType || "").toLowerCase();
+    const message = String(input.progress.message || "");
+    const isErrorLike = /(error|failed|timeout|interrupted|not completed|rejected)/i.test(message);
+    const shouldNotify =
+      input.progress.step === 1
+      || action === "launch_app"
+      || action === "request_human_auth"
+      || action === "run_script"
+      || action === "finish"
+      || isErrorLike
+      || input.skippedSteps >= 10;
+
+    if (!shouldNotify) {
+      return {
+        notify: false,
+        message: "",
+        reason: "fallback_skip",
+      };
+    }
+
+    const stepToken = `${input.progress.step}/${input.progress.maxSteps}`;
+    const app = this.trimForPrompt(input.progress.currentApp || "unknown", 120);
+    const summary = this.trimForPrompt(input.progress.thought || input.progress.message || "", 180);
+    const messageText = input.locale === "zh"
+      ? `进度 ${stepToken}：当前在 ${app}，刚执行 ${input.progress.actionType}${summary ? `。${summary}` : "。"}`
+      : `Progress ${stepToken}: currently on ${app}, latest action ${input.progress.actionType}${summary ? `. ${summary}` : "."}`;
+
+    return {
+      notify: true,
+      message: messageText,
+      reason: "fallback_notify",
+    };
+  }
+
+  async narrateTaskProgress(input: TaskProgressNarrationInput): Promise<TaskProgressNarrationDecision> {
+    const profile = getModelProfile(this.config);
+    const auth = resolveModelAuth(profile);
+    if (!auth) {
+      return this.fallbackTaskProgressNarration(input);
+    }
+
+    const client = new OpenAI({
+      apiKey: auth.apiKey,
+      baseURL: auth.baseUrl ?? profile.baseUrl,
+    });
+    const prompt = this.buildTaskProgressNarrationPrompt(input);
+
+    try {
+      const decision = await this.requestTaskProgressNarrationDecision(
+        client,
+        profile.model,
+        profile.maxTokens,
+        prompt,
+      );
+      if (!decision) {
+        return this.fallbackTaskProgressNarration(input);
+      }
+      if (!decision.notify) {
+        return {
+          notify: false,
+          message: "",
+          reason: decision.reason ?? "model_skip",
+        };
+      }
+      const message = this.normalizeOneLine(decision.message);
+      if (!message) {
+        return this.fallbackTaskProgressNarration(input);
+      }
+      return {
+        notify: true,
+        message,
+        reason: decision.reason ?? "model_notify",
+      };
+    } catch {
+      return this.fallbackTaskProgressNarration(input);
+    }
   }
 
   async reply(chatId: number, inputText: string): Promise<string> {

@@ -395,3 +395,81 @@ test("ChatAssistant updates profile from regular rename message", async () => {
   assert.equal(payload?.assistantName, "Jarvis-Phone");
   assert.equal(payload?.locale, "zh");
 });
+
+test("ChatAssistant narrateTaskProgress uses model decision output", async () => {
+  const { assistant } = createAssistant({ withApiKey: true });
+  let capturedPrompt = "";
+  assistant.requestTaskProgressNarrationDecision = async (_client, _model, _maxTokens, prompt) => {
+    capturedPrompt = prompt;
+    return {
+      notify: true,
+      message: "进度 4/20：已进入 Gmail 收件箱。",
+      reason: "checkpoint",
+    };
+  };
+
+  const out = await assistant.narrateTaskProgress({
+    task: "打开 Gmail 并进入收件箱",
+    locale: "zh",
+    progress: {
+      step: 4,
+      maxSteps: 20,
+      currentApp: "com.google.android.gm",
+      actionType: "tap",
+      message: "Tapped inbox",
+      thought: "open inbox",
+      screenshotPath: null,
+    },
+    recentProgress: [
+      {
+        step: 3,
+        maxSteps: 20,
+        currentApp: "com.google.android.gm",
+        actionType: "wait",
+        message: "waited",
+        thought: "waiting for list",
+        screenshotPath: null,
+      },
+    ],
+    lastNotifiedProgress: {
+      step: 1,
+      maxSteps: 20,
+      currentApp: "com.google.android.gm",
+      actionType: "launch_app",
+      message: "Opened app",
+      thought: "start app",
+      screenshotPath: null,
+    },
+    skippedSteps: 2,
+  });
+
+  assert.equal(out.notify, true);
+  assert.match(out.message, /进度 4\/20/);
+  assert.match(capturedPrompt, /TASK_PROGRESS_REPORTER\.md/);
+  assert.match(capturedPrompt, /Progress context JSON/);
+});
+
+test("ChatAssistant narrateTaskProgress falls back when model output is unavailable", async () => {
+  const { assistant } = createAssistant({ withApiKey: true });
+  assistant.requestTaskProgressNarrationDecision = async () => null;
+
+  const out = await assistant.narrateTaskProgress({
+    task: "open Gmail",
+    locale: "en",
+    progress: {
+      step: 1,
+      maxSteps: 10,
+      currentApp: "com.google.android.gm",
+      actionType: "launch_app",
+      message: "Opened app",
+      thought: "launch Gmail first",
+      screenshotPath: null,
+    },
+    recentProgress: [],
+    lastNotifiedProgress: null,
+    skippedSteps: 0,
+  });
+
+  assert.equal(out.notify, true);
+  assert.match(out.message, /Progress 1\/10/i);
+});
